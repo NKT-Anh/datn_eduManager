@@ -20,6 +20,7 @@ import { Subject, ClassType } from "@/types/class";
 import { TeachingAssignment, TeachingAssignmentPayload } from "@/types/class";
 
 import { autoAssignTeaching ,payloadsToAssignments} from "@/services/smartSystem/autoAssignTeaching";
+import schoolConfigApi from "@/services/schoolConfigApi";
 
 // Schema cho form thêm mới
 const assignmentSchema = z.object({
@@ -42,6 +43,9 @@ export default function TeachingAssignmentPage() {
   const [open, setOpen] = useState(false);
   const [filterYear, setFilterYear] = useState<string>("all");
   const [filterSemester, setFilterSemester] = useState<string>("all");
+  const [schoolYears, setSchoolYears] = useState<{ code: string; name: string }[]>([]);
+const [currentYear, setCurrentYear] = useState<string>("");
+
 
   
 
@@ -63,40 +67,75 @@ const [selectedGrades, setSelectedGrades] = useState<string[]>(["10"]);
     resolver: zodResolver(assignmentSchema),
     defaultValues: { year: getCurrentSchoolYear(), semester: "1" },
   });
+useEffect(() => {
+  const fetchData = async () => {
+    try {
+      const [
+        teacherRes,
+        subjectRes,
+        classRes,
+        assignmentRes,
+        schoolYearRes
+      ] = await Promise.all([
+        teacherApi.getAll(),
+        subjectApi.getSubjects(),
+        classApi.getAll(),
+        assignmentApi.getAll(),
+        schoolConfigApi.getSchoolYears(), // 🟢 vẫn trả về AxiosResponse
+      ]);
 
-  // Load dữ liệu
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [teacherRes, subjectRes, classRes, assignmentRes] = await Promise.all([
-          teacherApi.getAll(),
-          subjectApi.getSubjects(),
-          classApi.getAll(),
-          assignmentApi.getAll(),
-        ]);
-
-        setTeachers(teacherRes);
-        setSubjects(subjectRes);
-        setClasses(classRes);
-
-        // Sắp xếp lớp lên đầu
-        const sortedAssignments = assignmentRes.sort((a, b) =>
+      setTeachers(teacherRes);
+      setSubjects(subjectRes);
+      setClasses(classRes);
+      setAssignments(
+        assignmentRes.sort((a, b) =>
           a.classId?.className.localeCompare(b.classId?.className)
-        );
-        setAssignments(sortedAssignments);
-      } catch (err) {
-        console.error("Lỗi load data:", err);
+        )
+      );
+
+      // ✅ Kiểm tra cẩn thận trường hợp undefined
+      const years = Array.isArray(schoolYearRes.data)
+        ? schoolYearRes.data
+        : [];
+
+      setSchoolYears(years);
+
+      // ✅ Tìm năm hiện tại hoặc lấy phần tử đầu tiên
+      const current =
+        years.find((y: any) => y.isCurrent) || years[0];
+
+      if (current) {
+        setCurrentYear(current.code);
+        form.setValue("year", current.code);
+      } else {
+        console.warn("⚠️ Không tìm thấy năm học trong danh sách!");
       }
-    };
-    fetchData();
-  }, []);
+    } catch (err) {
+      console.error("❌ Lỗi load dữ liệu:", err);
+    }
+  };
+  fetchData();
+}, []);
+
+
+
 
   // Thêm mới
   const handleSubmit = async (data: AssignmentFormData) => {
     try {
-       const exists = assignments.some(
-      a => a.classId._id === data.classId && a.subjectId._id === data.subjectId
-    );
+     const exists = assignments.some(
+  (a) =>
+    a.classId._id === data.classId &&
+    a.subjectId._id === data.subjectId &&
+    a.year === data.year &&
+    a.semester === data.semester
+);
+
+if (exists) {
+  alert("Môn học này đã được phân công cho lớp này trong học kỳ và năm học đó!");
+  return;
+}
+
     if (exists) {
       alert("Lớp này đã được phân công cho môn học này rồi!");
       return;
@@ -108,6 +147,7 @@ const [selectedGrades, setSelectedGrades] = useState<string[]>(["10"]);
         semester: data.semester,
         year: data.year,
       };
+      console.log("📦 Payload gửi lên:", payload);
       const newAssignment = await assignmentApi.create(payload);
       setAssignments(prev => [newAssignment, ...prev]);
       setOpen(false);
@@ -116,22 +156,30 @@ const [selectedGrades, setSelectedGrades] = useState<string[]>(["10"]);
       console.error("Lỗi khi phân công:", err);
     }
   };
-  // Lấy danh sách môn chưa được phân công cho lớp
-  const getAvailableSubjects = (classId: string) => {
-  // 1. Lọc danh sách môn đã được phân công cho lớp này
+// 🔧 Lọc môn học khả dụng cho 1 lớp - năm học - học kỳ
+const getAvailableSubjects = (classId: string, year: string, semester: string) => {
+  // 1️⃣ Lọc ra các môn đã được phân công cho lớp đó, cùng năm học + học kỳ
   const assignedSubjectIds = assignments
-    .filter(a => a.classId._id === classId)
-    .map(a => a.subjectId._id);
+    .filter(
+      (a) =>
+        a.classId._id === classId &&
+        a.year === year &&
+        a.semester === semester
+    )
+    .map((a) => a.subjectId._id);
 
-  // 2. Lọc danh sách môn theo lớp (grade) và chưa được phân công
-  const classObj = classes.find(c => c._id === classId);
+  // 2️⃣ Lọc ra lớp tương ứng
+  const classObj = classes.find((c) => c._id === classId);
   if (!classObj) return [];
 
+  // 3️⃣ Lọc môn phù hợp với khối lớp, chưa được phân công
   return subjects.filter(
-    // s => s.grades.includes(classObj.grade) && !assignedSubjectIds.includes(s._id!)
-    sub => !assignedSubjectIds.includes(sub._id)
+    (s) =>
+      s.grades.includes(classObj.grade as any) &&
+      !assignedSubjectIds.includes(s._id!)
   );
 };
+
 
 
   // Delete
@@ -443,40 +491,39 @@ const handleConfirmAutoAssign = async () => {
                   </Select>
                 </TableCell> */}
 
-                  <TableCell>
-                    <Select
-                      value={a.subjectId?._id || ""}
-                      onValueChange={v => handleUpdate(a._id, "subjectId", v)}
-                    >
-                      <SelectTrigger className="w-36">
-                        <SelectValue placeholder="Chọn môn học" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {/* Luôn render môn hiện tại nếu có */}
-                        {a.subjectId && (
-                          <SelectItem key={a.subjectId._id} value={a.subjectId._id}>
-                            {a.subjectId.name}
-                          </SelectItem>
-                        )}
+<TableCell>
+  {a.subjectId ? (
+    <Select
+      value={a.subjectId._id || ""}
+      onValueChange={(v) => handleUpdate(a._id, "subjectId", v)}
+    >
+      <SelectTrigger className="w-36">
+        <SelectValue placeholder="Chọn môn học">
+          {a.subjectId?.name || "Chưa chọn"}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {getAvailableSubjects(a.classId._id, a.year, a.semester)
+          .filter((s) => s._id !== a.subjectId?._id)
+          .map((s) => (
+            <SelectItem key={s._id} value={s._id}>
+              {s.name}
+            </SelectItem>
+          ))}
 
-                        {/* Render các môn khả dụng khác (lọc trừ môn hiện tại để tránh trùng) */}
-                        {getAvailableSubjects(a.classId._id)
-                          .filter(s => s._id !== a.subjectId?._id)
-                          .map(s => (
-                            <SelectItem key={s._id} value={s._id}>
-                              {s.name}
-                            </SelectItem>
-                          ))}
+        {getAvailableSubjects(a.classId._id, a.year, a.semester).length === 0 && (
+          <div className="p-2 text-sm text-muted-foreground">
+            Không còn môn nào khả dụng
+          </div>
+        )}
+      </SelectContent>
+    </Select>
+  ) : (
+    <span className="text-muted-foreground italic">Chưa chọn môn</span>
+  )}
+</TableCell>
 
-                        {/* Nếu không còn môn nào */}
-                        {(!a.subjectId && getAvailableSubjects(a.classId._id).length === 0) && (
-                          <div className="p-2 text-sm text-muted-foreground">
-                            Không còn môn nào khả dụng
-                          </div>
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
+
 
 
                       
@@ -532,74 +579,96 @@ const handleConfirmAutoAssign = async () => {
           <Form {...form}>
             <form onSubmit={form.handleSubmit(handleSubmit)} noValidate  className="space-y-4">
               {/* Chọn lớp */}
-              <FormField
-                control={form.control}
-                name="classId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Lớp</FormLabel>
-                    <FormControl>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Chọn lớp" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {classes.map(c => (
-                            <SelectItem key={c._id} value={c._id}>{c.className}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+<FormField
+  control={form.control}
+  name="classId"
+  render={({ field }) => {
+    // Năm học hiện tại đang được chọn trong form
+    const selectedYear = form.watch("year");
+
+    // Lọc lớp theo năm học (ưu tiên năm học hiện tại)
+    const availableClasses = classes.filter((c) => c.year === selectedYear);
+
+    return (
+      <FormItem>
+        <FormLabel>Lớp</FormLabel>
+        <FormControl>
+          <Select onValueChange={field.onChange} value={field.value}>
+            <SelectTrigger>
+              <SelectValue placeholder={`Chọn lớp (${selectedYear})`} />
+            </SelectTrigger>
+            <SelectContent>
+              {availableClasses.length > 0 ? (
+                availableClasses.map((c) => (
+                  <SelectItem key={c._id} value={c._id}>
+                    {c.className}
+                  </SelectItem>
+                ))
+              ) : (
+                <div className="p-2 text-sm text-muted-foreground">
+                  Không có lớp nào cho năm {selectedYear}
+                </div>
+              )}
+            </SelectContent>
+          </Select>
+        </FormControl>
+        <FormMessage />
+      </FormItem>
+    );
+  }}
+/>
+
 
               {/* Chọn môn học */}
-              <FormField
-                control={form.control}
-                name="subjectId"
-                render={({ field }) => {
-                  const selectedClassId = form.watch("classId");
-                  const selectedClass = classes.find(c => c._id === selectedClassId);
-                  const availableSubjects = selectedClass
-                    ? subjects.filter(s => s.grades.includes(selectedClass.grade as "10" | "11" | "12"))
-                    : [];
-                  return (
-                    <FormItem>
-                    <FormLabel>Môn học</FormLabel>
-                    <FormControl>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Chọn môn học" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {selectedClass ? (
-                            getAvailableSubjects(selectedClass._id).length > 0 ? (
-                              getAvailableSubjects(selectedClass._id).map((s) => (
-                                <SelectItem key={s._id} value={s._id}>
-                                  {s.name}
-                                </SelectItem>
-                              ))
-                            ) : (
-                              <div className="p-2 text-sm text-muted-foreground">
-                                Tất cả môn đã được phân công cho lớp này
-                              </div>
-                            )
-                          ) : (
-                            <div className="p-2 text-sm text-muted-foreground">
-                              Hãy chọn lớp trước
-                            </div>
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
+<FormField
+  control={form.control}
+  name="subjectId"
+  render={({ field }) => {
+    const selectedClassId = form.watch("classId");
+    const selectedYear = form.watch("year");
+    const selectedSemester = form.watch("semester");
+    const selectedClass = classes.find((c) => c._id === selectedClassId);
 
-                  );
-                }}
-              />
+    const availableSubjects =
+      selectedClass && selectedYear && selectedSemester
+        ? getAvailableSubjects(selectedClass._id, selectedYear, selectedSemester)
+        : [];
+
+    return (
+      <FormItem>
+        <FormLabel>Môn học</FormLabel>
+        <FormControl>
+          <Select onValueChange={field.onChange} value={field.value}>
+            <SelectTrigger>
+              <SelectValue placeholder="Chọn môn học" />
+            </SelectTrigger>
+            <SelectContent>
+              {selectedClass ? (
+                availableSubjects.length > 0 ? (
+                  availableSubjects.map((s) => (
+                    <SelectItem key={s._id} value={s._id}>
+                      {s.name}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <div className="p-2 text-sm text-muted-foreground">
+                    Không có môn học nào khả dụng cho lớp này
+                  </div>
+                )
+              ) : (
+                <div className="p-2 text-sm text-muted-foreground">
+                  Hãy chọn lớp trước
+                </div>
+              )}
+            </SelectContent>
+          </Select>
+        </FormControl>
+        <FormMessage />
+      </FormItem>
+    );
+  }}
+/>
+
 
               {/* Chọn giáo viên */}
              <FormField
@@ -676,19 +745,37 @@ const handleConfirmAutoAssign = async () => {
               />
 
               {/* Năm học */}
-              <FormField
-                control={form.control}
-                name="year"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Năm học</FormLabel>
-                    <FormControl>
-                      <Input {...field} readOnly />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+<FormField
+  control={form.control}
+  name="year"
+  render={({ field }) => (
+    <FormItem>
+      <FormLabel>Năm học</FormLabel>
+      <FormControl>
+        <Select
+          value={field.value || currentYear}
+          onValueChange={(v) => {
+            field.onChange(v);
+            setCurrentYear(v);
+          }}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Chọn năm học" />
+          </SelectTrigger>
+          <SelectContent>
+            {schoolYears.map((y) => (
+              <SelectItem key={y.code} value={y.code}>
+                {y.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FormControl>
+      <FormMessage />
+    </FormItem>
+  )}
+/>
+
 
               <DialogFooter className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>Hủy</Button>

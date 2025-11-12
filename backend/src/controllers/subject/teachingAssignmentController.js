@@ -37,14 +37,14 @@ exports.createAssignment = async (req, res) => {
     if (!teacherId || !subjectId || !classId || !year || !semester) {
       return res.status(400).json({ error: "Không được để trống" });
     }
-        // ✅ Check trùng: cùng classId + subjectId + year + semester
+
+    // ✅ Kiểm tra trùng
     const exists = await TeachingAssignment.findOne({ classId, subjectId, year, semester });
     if (exists) {
       return res.status(400).json({ error: "Lớp này đã được phân công cho môn học này trong năm học và học kỳ này!" });
     }
 
-
-    // Tạo mới
+    // ✅ Tạo mới
     const newAssignment = await TeachingAssignment.create({
       teacherId,
       subjectId,
@@ -52,20 +52,15 @@ exports.createAssignment = async (req, res) => {
       year,
       semester,
     });
+
+    // ✅ Cập nhật teacher
     await Teacher.findByIdAndUpdate(
       teacherId,
-      {
-        $addToSet: { 
-          // subjectIds: subjectId, 
-          classIds: classId 
-        }
-      },
+      { $addToSet: { classIds: classId } },
       { new: true }
     );
-    if (err.code === 11000) {
-  return res.status(400).json({ error: "Phân công này đã tồn tại" });
-}
-    // Populate để trả về đầy đủ thông tin
+
+    // ✅ Populate trả về
     const populated = await TeachingAssignment.findById(newAssignment._id)
       .populate("teacherId", "name")
       .populate("subjectId", "name")
@@ -74,9 +69,13 @@ exports.createAssignment = async (req, res) => {
     res.status(201).json(populated);
     
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    if (err.code === 11000) {
+      return res.status(400).json({ error: "Phân công này đã tồn tại (duplicate key)" });
+    }
+    res.status(400).json({ error: "Lỗi khi tạo phân công", details: err.message });
   }
 };
+
 
 exports.updateAssignment = async (req, res) => {
   try {

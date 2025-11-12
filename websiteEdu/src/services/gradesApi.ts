@@ -49,13 +49,24 @@ const gradesApi = {
     return res.data;
   },
   initGradeTable : async (payload: {
-  gradeLevel: string;
+  gradeLevel?: string;
   schoolYear: string;
   semester: string;
+  classId?: string; // Tùy chọn: nếu có thì chỉ khởi tạo cho lớp đó
 }) => {
   const res = await axiosClient.post(('/grades/init'),payload)
   return res.data;
 },
+
+  // ✅ Học sinh xem điểm của bản thân
+  getStudentGrades: async (params?: {
+    studentId?: string;
+    schoolYear?: string;
+    semester?: string;
+  }) => {
+    const res = await axiosClient.get('/grades/student', { params });
+    return res.data;
+  },
 };
 
 export default gradesApi;

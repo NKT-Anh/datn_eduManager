@@ -32,7 +32,7 @@ import { Student } from '@/types/student';
 import { Teacher } from '@/types/auth';
 import { useToast } from '@/hooks/use-toast';
 import { teacherApi } from '@/services/teacherApi';
-import { getStudents } from '@/services/studentApi';
+import studentApi from '@/services/studentApi';
 
 const classSchema = z.object({
   className: z.string().min(1, 'Tên lớp là bắt buộc'),
@@ -78,7 +78,7 @@ export const ClassForm = ({ open, onOpenChange, classData, onSubmit }: ClassForm
   // ✅ Load danh sách GV và HS
   useEffect(() => {
     teacherApi.getAll().then(setTeachers).catch(console.error);
-    getStudents().then(setStudents).catch(console.error);
+    studentApi.getAll().then(setStudents).catch(console.error);
   }, []);
 
   // ✅ Reset lại form khi classData thay đổi (fix lỗi khi chỉnh sửa)

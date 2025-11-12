@@ -1,3 +1,4 @@
 "backend/config/serviceAccountKey.json" 
 "backend/src/config/key_admin.json"
 "backend/.env"
+node_modules

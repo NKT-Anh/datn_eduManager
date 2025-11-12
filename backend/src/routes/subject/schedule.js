@@ -20,6 +20,7 @@ router.post("/delete-by-grade-year-semester", scheduleController.deleteScheduleB
 
 router.get("/year/:year/semester/:semester", scheduleController.getSchedulesByYearSemester); // 🆕 toàn trường
 router.get("/grade/:grade/year/:year/semester/:semester", scheduleController.getSchedulesByGrade); // 🆕 theo khối
+router.get("/teacher/:teacherName/:year/:semester", scheduleController.getScheduleByTeacher); // 🆕 theo giáo viên
 
 
 

@@ -1,23 +1,5 @@
 export type UserRole = 'student' | 'teacher' | 'admin';
-import { Account } from './student'; // hoặc file chứa type Account
-import { ClassType } from './class';
-
-// export interface User {
-//   id: string;
-//   username: string;
-//   password: string;
-//   role: UserRole;
-//   name: string;
-//   email?: string;
-//   classId?: string; // for students
-//   subjectIds?: string[]; // for teachers
-// }
-
-// export interface AuthState {
-//   user: User | null;
-//   isAuthenticated: boolean;
-// }
-
+import { Account } from './student';
 
 
 
@@ -46,9 +28,22 @@ export interface Student {
   } | null;
   admissionYear?: number;
   grade?: "10" | "11" | "12";
-  status?: "active" | "inactive";
+  status?: "active" | "inactive" | "graduated" | "suspended" | "transferred";
   parents?: ParentInfo[];
   accountId?: Account | null; // populated từ backend
+    // 🆕 Thông tin cá nhân mở rộng
+  ethnic?: string; // Dân tộc
+  religion?: string; // Tôn giáo
+  idNumber?: string; // CCCD / CMND
+  birthPlace?: string; // Nơi sinh
+  hometown?: string; // Quê quán
+  avatarUrl?: string; // Ảnh đại diện
+  note?: string; // Ghi chú thêm
+    currentYear?: string; // ví dụ: "2025-2026"
+
+  
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Teacher {
@@ -107,7 +102,7 @@ export interface Teacher {
 
   // Thông tin bổ sung
   notes?: string;
-  profilePhoto?: string;
+  avatarUrl?: string;
    maxClasses?: number;
 
   createdAt?: string;
@@ -128,8 +123,17 @@ export interface StudentFormValues {
   classId?: string | null;
   admissionYear: number;
   grade: "10" | "11" | "12";
-  status: "active" | "inactive";
+  status: "active" | "inactive" | "graduated" | "suspended" | "transferred";
   parents: ParentInfo[]; // 👈 thay vì fatherName, motherName...
+
+    // 🆕 Field bổ sung
+  ethnic?: string;
+  religion?: string;
+  idNumber?: string;
+  birthPlace?: string;
+  hometown?: string;
+  avatarUrl?: string;
+  note?: string;
 }
 
 // Học sinh hiển thị ở bảng
@@ -137,3 +141,31 @@ export interface StudentRow extends Student {
   entranceScore?: number;
   gpa?: number;
 }
+
+export interface ProfileBase {
+  _id: string;
+  role: "student" | "teacher" | "admin" | "parent";
+  name: string;
+  email?: string;
+  phone?: string;
+  dob?: string;
+  gender?: "male" | "female" | "other";
+  address?: string;
+  avatarUrl?: string;
+  note?: string;
+  ethnic?: string;
+    status: "active" | "inactive" | "graduated" | "suspended" | "transferred";
+
+  religion?: string;
+  idNumber?: string;
+  birthPlace?: string;
+  hometown?: string;
+}
+
+export type Profile =
+  | (ProfileBase & Student)
+  | (ProfileBase & Teacher)
+  | (ProfileBase & {
+      department?: string;
+      position?: string;
+    });

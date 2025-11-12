@@ -19,7 +19,8 @@ import {
   ClipboardList,
   GraduationCap,
   Settings,
-  User
+  User,
+  BarChart3
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -40,7 +41,7 @@ export function AdminSidebar() {
     { title: "Quản lý môn học", url: `${prefix}/subjects`, icon: BookOpen },
     { title: "Thời khóa biểu", url: `${prefix}/schedule`, icon: Calendar },
     { title: "Quản lý điểm", url: `${prefix}/grades`, icon: ClipboardList },
-    { title: "Điểm danh", url: `${prefix}/attendance`, icon: GraduationCap },
+    { title: "Cấu hình điểm số", url: `${prefix}/grade-config`, icon: BarChart3 },
     { title: "Hồ sơ", url: `${prefix}/profile`, icon: User },
     { title: "Cài đặt", url: `${prefix}/settings`, icon: Settings },
   ];

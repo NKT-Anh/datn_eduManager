@@ -1,6 +1,7 @@
 const GradeItem = require('../models/grade/gradeItem');
 const GradeSummary = require('../models/grade/gradeSummary');
 const GradeConfig = require('../models/grade/gradeConfig');
+const Subject = require('../models/subject/subject');
 
 /**
  * 🔹 Lấy cấu hình điểm động từ DB
@@ -151,23 +152,59 @@ async function recomputeSummary({ studentId, subjectId, classId, schoolYear, sem
     throw new Error('Thiếu trường bắt buộc: studentId, subjectId, schoolYear, semester');
   }
 
-  const config = await getActiveConfig(schoolYear, semester);
-  const { weights, rounding } = config;
+  // Lấy thông tin môn học để kiểm tra includeInAverage
+  const subject = await Subject.findById(subjectId).lean();
+  if (!subject) {
+    throw new Error('Không tìm thấy môn học');
+  }
 
   const items = await GradeItem.find({ studentId, subjectId, schoolYear, semester }).lean();
-  const { averages, average } = computeAverages(items, weights, rounding);
+  
+  let averages = {};
+  let average = null;
+  let result = null; // "D" hoặc "K" cho môn không tính điểm TB
+
+  // Nếu môn học tính điểm trung bình
+  if (subject.includeInAverage) {
+    const config = await getActiveConfig(schoolYear, semester);
+    const { weights, rounding } = config;
+    const computed = computeAverages(items, weights, rounding);
+    averages = computed.averages;
+    average = computed.average;
+  } else {
+    // Môn không tính điểm TB - kiểm tra có điểm nào không để quyết định D/K
+    // Nếu có ít nhất 1 điểm >= 5.0 thì D (đạt), ngược lại K (không đạt)
+    // Nếu chưa có điểm nào thì result = null
+    if (items.length > 0) {
+      const allScores = items.map(item => item.score);
+      const hasPassingScore = allScores.some(score => score >= 5.0);
+      result = hasPassingScore ? 'D' : 'K';
+    }
+  }
+
+  // 🔹 Đảm bảo không cập nhật classId nếu đã tồn tại (giữ nguyên classId của năm học đó)
+  // Chỉ set classId khi tạo mới (upsert) hoặc khi classId chưa có
+  const existingSummary = await GradeSummary.findOne({ studentId, subjectId, schoolYear, semester }).lean();
+  
+  const updateData = {
+    averages,
+    average,
+    result,
+    computedAt: new Date(),
+    version: 'v1',
+  };
+  
+  // Chỉ cập nhật classId nếu:
+  // 1. Chưa có summary (tạo mới)
+  // 2. Hoặc classId hiện tại là null/undefined
+  if (!existingSummary || !existingSummary.classId) {
+    updateData.classId = classId;
+  }
+  // Nếu đã có classId, giữ nguyên để tránh ghi đè khi học sinh lên lớp
 
   const summary = await GradeSummary.findOneAndUpdate(
     { studentId, subjectId, schoolYear, semester },
-    {
-      $set: {
-        classId,
-        averages,
-        average,
-        computedAt: new Date(),
-        version: 'v1',
-      },
-    },
+    { $set: updateData },
     { new: true, upsert: true, setDefaultsOnInsert: true }
   );
 
@@ -239,6 +276,71 @@ async function saveScores({ classId, subjectId, schoolYear, semester, scores }) 
   return { successCount, errorCount, results };
 }
 
+/**
+ * 🔹 Tự động tạo bảng điểm cho học sinh khi được thêm vào lớp
+ * @param {Object} params - { studentId, classId, schoolYear, semester }
+ */
+async function initGradesForStudent({ studentId, classId, schoolYear, semester }) {
+  if (!studentId || !classId || !schoolYear || !semester) {
+    return { success: false, message: 'Thiếu thông tin studentId, classId, schoolYear, semester' };
+  }
+
+  try {
+    // Lấy thông tin lớp để biết khối
+    const Class = require('../models/class/class');
+    const classItem = await Class.findById(classId).lean();
+    if (!classItem) {
+      return { success: false, message: 'Không tìm thấy lớp học' };
+    }
+
+    const grade = classItem.grade;
+
+    // Lấy tất cả môn học phù hợp với khối
+    const subjects = await Subject.find({ grades: grade }).lean();
+    if (subjects.length === 0) {
+      return { success: false, message: 'Không tìm thấy môn học cho khối này', created: 0 };
+    }
+
+    // Tạo GradeSummary cho mỗi môn học
+    const summariesToCreate = [];
+    for (const subject of subjects) {
+      // Kiểm tra xem đã có GradeSummary chưa
+      const exists = await GradeSummary.findOne({
+        studentId,
+        subjectId: subject._id,
+        schoolYear,
+        semester,
+      });
+
+      if (!exists) {
+        summariesToCreate.push({
+          studentId,
+          subjectId: subject._id,
+          classId,
+          schoolYear,
+          semester,
+          averages: {},
+          average: null,
+          result: null,
+          computedAt: new Date(),
+          version: 'v1',
+        });
+      }
+    }
+
+    // Insert nhiều GradeSummary cùng lúc
+    if (summariesToCreate.length > 0) {
+      await GradeSummary.insertMany(summariesToCreate);
+      return { success: true, created: summariesToCreate.length, skipped: subjects.length - summariesToCreate.length };
+    }
+
+    return { success: true, created: 0, skipped: subjects.length, message: 'Tất cả bản ghi đã tồn tại' };
+  } catch (error) {
+    console.error('[initGradesForStudent]', error);
+    return { success: false, message: error.message, created: 0 };
+  }
+}
+
 module.exports = {
   upsertGradeItem,
   recomputeSummary,
@@ -246,4 +348,5 @@ module.exports = {
   computeAverages,
   getActiveConfig,
   saveScores,
+  initGradesForStudent,
 };

@@ -165,3 +165,57 @@ exports.getSchedulesByGrade = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+// 🧩 Lấy TKB theo giáo viên (tên giáo viên)
+exports.getScheduleByTeacher = async (req, res) => {
+  try {
+    const { teacherName, year, semester } = req.params;
+
+    if (!teacherName || !year || !semester) {
+      return res.status(400).json({ message: 'Thiếu thông tin teacherName/year/semester' });
+    }
+
+    // Lấy tất cả TKB theo năm và học kỳ
+    const allSchedules = await Schedule.find({ year, semester })
+      .populate("classId", "className grade classCode")
+      .lean();
+
+    // Lọc các Schedule có chứa giáo viên này trong timetable
+    const teacherSchedules = allSchedules
+      .map(schedule => {
+        // Tạo bảng TKB mới chỉ chứa các tiết của giáo viên này
+        const filteredTimetable = schedule.timetable
+          .map(dayEntry => {
+            const filteredPeriods = dayEntry.periods
+              .map((period, idx) => {
+                // Kiểm tra nếu period có teacher trùng với teacherName
+                if (period.teacher && period.teacher.includes(teacherName)) {
+                  return {
+                    ...period,
+                    periodIndex: idx + 1,
+                  };
+                }
+                return null;
+              })
+              .filter(p => p !== null);
+
+            return filteredPeriods.length > 0 ? {
+              day: dayEntry.day,
+              periods: filteredPeriods,
+            } : null;
+          })
+          .filter(day => day !== null);
+
+        return filteredTimetable.length > 0 ? {
+          ...schedule,
+          timetable: filteredTimetable,
+        } : null;
+      })
+      .filter(s => s !== null);
+
+    res.status(200).json(teacherSchedules);
+  } catch (err) {
+    console.error("❌ Lỗi khi lấy TKB theo giáo viên:", err);
+    res.status(500).json({ message: err.message });
+  }
+};

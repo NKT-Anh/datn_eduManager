@@ -1,10 +1,11 @@
-import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { useAuth } from '@/contexts/AuthContext11';
-import { mockAttendance, mockStudents, mockClasses } from '@/data/mockData';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
+import attendanceApi from '@/services/attendanceApi';
 import { 
   ClipboardList,
   Search,

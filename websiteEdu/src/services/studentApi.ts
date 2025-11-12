@@ -1,26 +1,16 @@
-import axios from 'axios';
-import { Account } from '@/types/student';
-// const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:3000';
-const API_BASE = import.meta.env.VITE_API_BASE_URL;
-const BASE = `${API_BASE}/students`;
+// src/services/studentApi.ts
+import api from "@/services/axiosInstance";
+import { Account } from "@/types/student";
 
-
-export interface StudentUpdatePayload {
+/* =========================================================
+   📘 Interfaces
+========================================================= */
+export interface ParentPayload {
+  _id?: string;
   name?: string;
-  dob?: string; // ISO string
-  gender?: "male" | "female" | "other";
-  address?: string;
   phone?: string;
-  classId?: string;
-  admissionYear?: number;
-  grade?: "10" | "11" | "12";
-  status?: "active" | "inactive";
-  parents?: {
-    _id?: string;
-    name?: string;
-    phone?: string;
-    occupation?: string;
-  }[];
+  occupation?: string;
+  relation?: "father" | "mother" | "guardian";
 }
 
 export interface StudentCreatePayload {
@@ -33,65 +23,84 @@ export interface StudentCreatePayload {
   classId?: string | null;
   admissionYear?: number;
   grade?: "10" | "11" | "12";
-  status?: "active" | "inactive";
-  parents?: {
-    _id?: string;
-    name?: string;
-    phone?: string;
-    relation?: "father" | "mother" | "guardian";
-        occupation?: string; 
-  }[];
+  status?: "active" | "inactive" | "graduated" | "suspended" | "transferred";
+  parents?: ParentPayload[];
   accountId?: Account | null;
+
+  // 🆕 Bổ sung thông tin cá nhân mở rộng (theo backend)
+  ethnic?: string;
+  religion?: string;
+  idNumber?: string;
+  birthPlace?: string;
+  hometown?: string;
+  avatarUrl?: string;
+  note?: string;
 }
 
+export interface StudentUpdatePayload extends Partial<StudentCreatePayload> {}
 
-
-export const getStudents = async () => {
-  try {
-    const res = await axios.get(BASE);
+/* =========================================================
+   📡 API functions (dùng axiosInstance -> tự gắn token)
+========================================================= */
+const studentApi = {
+  // 📋 Lấy danh sách học sinh (hỗ trợ params: page, limit, grade, classId, year, search...)
+  async getAll(params?: Record<string, any>) {
+    const res = await api.get("/students", { params });
     return res.data;
-  } catch (err) {
-    console.error('Error fetching students:', err);
-    throw err;
-  }
+  },
+
+  // 🔍 Lấy chi tiết 1 học sinh
+  async getById(id: string) {
+    const res = await api.get(`/students/${id}`);
+    return res.data;
+  },
+
+  // ➕ Tạo mới học sinh
+  async create(payload: StudentCreatePayload) {
+    const res = await api.post("/students", payload);
+    return res.data;
+  },
+
+  // ✏️ Cập nhật thông tin học sinh
+  async update(id: string, payload: StudentUpdatePayload) {
+    try {
+      const res = await api.put(`/students/${id}`, payload);
+      return res.data;
+    } catch (err: any) {
+      console.error(`Error updating student ${id}:`, err.response?.data || err.message);
+      throw new Error(err.response?.data?.message || "Failed to update student");
+    }
+  },
+
+  // 🗑️ Xóa học sinh
+  async remove(id: string) {
+    const res = await api.delete(`/students/${id}`);
+    return res.data;
+  },
+
+  // 🔑 Tạo tài khoản Firebase cho học sinh (backend sẽ tạo user & Account)
+  async createAccount(studentId: string) {
+    const res = await api.post("/students/create-account", { studentId });
+    return res.data;
+  },
+
+  // ❌ Xóa parent (nếu backend hỗ trợ route)
+  async deleteParent(parentId: string) {
+    const res = await api.delete(`/students/parent/${parentId}`);
+    return res.data;
+  },
+
+  // 📥 Import / bulk create (nếu cần)
+  async bulkCreate(data: StudentCreatePayload[]) {
+    const res = await api.post("/students/bulk", { students: data });
+    return res.data;
+  },
+  // 📘 Phân lớp tự động cho học sinh (backend sẽ chia đều theo khối + năm học)
+async autoAssignToClasses(year: string) {
+  const res = await api.post("/students/auto-assign", { year });
+  return res.data;
+},
+
 };
 
-export const getStudent = async (id: string) => {
-  try {
-    const res = await axios.get(`${BASE}/${id}`);
-    return res.data;
-  } catch (err) {
-    console.error(`Error fetching student ${id}:`, err);
-    throw err;
-  }
-};
-
-export const createStudent = async (payload: StudentCreatePayload) => {
-  try {
-    const res = await axios.post(BASE, payload);
-    return res.data;
-  } catch (err) {
-    console.error('Error creating student:', err);
-    throw err;
-  }
-};
-
-export const updateStudent = async (id: string, payload: StudentUpdatePayload) => {
-  try {
-    const res = await axios.put(`${BASE}/${id}`, payload);
-    return res.data;
-  } catch (err: any) {
-    console.error(`Error updating student ${id}:`, err.response?.data || err.message);
-    throw new Error(err.response?.data?.message || "Failed to update student");
-  }
-};
-
-export const deleteStudent = async (id: string) => {
-  try {
-    const res = await axios.delete(`${BASE}/${id}`);
-    return res.data;
-  } catch (err) {
-    console.error(`Error deleting student ${id}:`, err);
-    throw err;
-  }
-};
+export default studentApi;

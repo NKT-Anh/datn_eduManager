@@ -42,9 +42,6 @@ const authMiddleware = async (req, res, next) => {
   //   console.error("Lỗi xác thực:", error.message, error.code, error);
   //   res.status(401).json({ message: "Sai token hoặc tài khoản" });
   // }
-  console.log("== Incoming Request ==");
-console.log("Headers:", req.headers);
-
 try {
   const authHeader = req.headers.authorization;
   console.log("Auth header:", authHeader);
@@ -54,13 +51,10 @@ try {
   }
 
   const idToken = authHeader.split(" ")[1];
-  console.log("ID Token:", idToken);
 
   const decodedToken = await admin.auth().verifyIdToken(idToken);
-  console.log("Decoded token:", decodedToken);
 
   const account = await Account.findOne({ uid: decodedToken.uid });
-  console.log("Account in DB:", account);
 
   if (!account) {
     return res.status(401).json({ message: "Tài khoản không tồn tại trong hệ thống" });

@@ -1,4 +1,4 @@
-import { Student } from './student';
+import { Student } from './auth';
 
 import { Teacher } from './auth';
 export interface Grade {
@@ -23,23 +23,35 @@ export interface ClassType {
   className: string;
   grade: '10' | '11' | '12';
   capacity: number;
-  currentSize: number;
+  currentSize?: number;
   teacherId?: Teacher | null;
   students?: Array<Pick<Student, '_id' | 'name' | 'studentCode'>>;
   year?: string;
+    roomId?: {
+    _id: string;
+    roomCode: string;
+    name?: string;
+    capacity?: number;
+    type?: "normal" | "lab" | "computer";
+    status?: "available" | "maintenance" | "inactive";
+  } | null;
+
+  
   createdAt?: string;
   updatedAt?: string;
 }
 
 
 export interface Subject {
-  _id?: string; // MongoDB sẽ trả về _id
+  _id: string; // MongoDB sẽ trả về _id
   name: string;
   code?: string;
   grades: Array<'10' | '11' | '12'>;
   description?: string;
   createdAt?: string; // ISO string từ backend
   includeInAverage?: boolean; // Mặc định true
+    defaultExamDuration?: number; // 🕒 thêm trường này
+
 }
 
 // Data gửi khi tạo mới hoặc update
@@ -119,4 +131,34 @@ export interface ActivityInput {
   endDate: string;
   isActive?: boolean;
 }
+
+// ==================== 🧩 Exam (Lịch thi) ====================
+
+export interface Exam {
+  _id?: string;
+  name: string;                     // Tên kỳ thi, ví dụ: "Giữa kỳ I"
+  subjectId: Subject | string;      // Môn học
+  classId: ClassType | string;      // Lớp thi
+  date: string;                     // Ngày thi (ISO string)
+  startTime: string;                // Giờ bắt đầu (vd: "08:00")
+  endTime: string;                  // Giờ kết thúc (vd: "09:30")
+  room: string;                     // Phòng thi
+  examiner?: string;                // Giáo viên coi thi
+  note?: string;                    // Ghi chú
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ExamInput {
+  name: string;
+  subjectId: string;
+  classId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  room: string;
+  examiner?: string;
+  note?: string;
+}
+
 

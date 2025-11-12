@@ -29,18 +29,17 @@ export const assignmentApi = {
     return res.data;
   },
 
-  // 🆕 Thêm hàm này:
-getByTeacher: async (
-  teacherId: string,
-  year?: string,
-  semester?: string
-): Promise<TeachingAssignment[]> => {
-  const params: any = {};
-  if (year) params.year = year;
-  if (semester) params.semester = semester;
+  // 🆕 Lấy phân công theo giáo viên
+  getByTeacher: async (
+    teacherId: string,
+    params?: { year?: string; semester?: string }
+  ): Promise<TeachingAssignment[]> => {
+    const queryParams: any = {};
+    if (params?.year) queryParams.year = params.year;
+    if (params?.semester) queryParams.semester = params.semester;
 
-  const res = await axios.get(`${API_URL}/teacher/${teacherId}`, { params });
-  return res.data;
-},
+    const res = await axios.get(`${API_URL}/teacher/${teacherId}`, { params: queryParams });
+    return res.data;
+  },
 
 };

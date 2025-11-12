@@ -6,7 +6,7 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import userApi from '@/services/userApi';
-import { getStudents } from '@/services/studentApi';
+import studentApi from '@/services/studentApi';
 import { teacherApi } from '@/services/teacherApi';
 
 const BatchAccountPage = () => {
@@ -28,7 +28,7 @@ const BatchAccountPage = () => {
     setSearch('');
 
     if (activeTab === 'student') {
-      getStudents()
+      studentApi.getAll()
         .then(setStudents)
         .catch(() =>
           toast({

@@ -1,0 +1,29 @@
+.radix-select-trigger {
+  border: 1px solid #d9d9d9;
+  padding: 6px 10px;
+  border-radius: 8px;
+  min-width: 260px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  background: #fff;
+}
+
+.radix-select-content {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  padding: 4px 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+
+.radix-select-item {
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.radix-select-item:hover {
+  background-color: #e6f4ff;
+  color: #1677ff;
+}

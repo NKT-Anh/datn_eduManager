@@ -1,8 +1,8 @@
 // src/api/subjectApi.ts
-import { Subject, SubjectInput, SubjectDetailResponse } from '@/types/class';
-import axiosClient from './axiosInstance';
+import { Subject, SubjectInput, SubjectDetailResponse } from "@/types/class";
+import axiosClient from "./axiosInstance";
 
-const BASE_URL = '/subjects'; // axiosClient đã có baseURL rồi
+const BASE_URL = "/subjects"; // axiosClient đã có baseURL rồi
 
 export const subjectApi = {
   // 📘 Lấy danh sách tất cả môn học
@@ -41,9 +41,25 @@ export const subjectApi = {
   },
 
   // ⚙️ Cập nhật việc tính điểm trung bình (includeInAverage)
-  updateIncludeInAverage: async (subjectId: string, includeInAverage: boolean) => {
-    const res = await axiosClient.put(`${BASE_URL}/${subjectId}/include-average`, { includeInAverage });
-    return res.data;
+  updateIncludeInAverage: async (
+    subjectId: string,
+    includeInAverage: boolean
+  ): Promise<Subject> => {
+    const res = await axiosClient.put(`${BASE_URL}/${subjectId}/include-average`, {
+      includeInAverage,
+    });
+    return res.data.subject;
+  },
+
+  // 🕒 Cập nhật thời lượng thi mặc định
+  updateDefaultExamDuration: async (
+    subjectId: string,
+    defaultExamDuration: number
+  ): Promise<Subject> => {
+    const res = await axiosClient.patch(`${BASE_URL}/${subjectId}/default-duration`, {
+      defaultExamDuration,
+    });
+    return res.data.subject;
   },
 };
 

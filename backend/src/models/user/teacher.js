@@ -31,18 +31,6 @@ const teacherSchema = new mongoose.Schema({
   position: { type: String },                                                 // chức vụ: Giáo viên, Tổ trưởng, PHT...
   weeklyLessons: { type: Number },                                            // số tiết / tuần
   hireYearInField: { type: Number },                                          // năm vào ngành
-  // Lịch rảnh
-  //  availableMatrix: {
-  //   type: [[Boolean]], // Mảng 2 chiều (6 ngày × 10 tiết)
-  //   default: [
-  //     [false, false, false, false, false, false, false, false, false, false], // Thứ 2
-  //     [false, false, false, false, false, false, false, false, false, false], // Thứ 3
-  //     [false, false, false, false, false, false, false, false, false, false], // Thứ 4
-  //     [false, false, false, false, false, false, false, false, false, false], // Thứ 5
-  //     [false, false, false, false, false, false, false, false, false, false], // Thứ 6
-  //     [false, false, false, false, false, false, false, false, false, false], // Thứ 7
-  //   ]
-  // },
   maxClasses: { type: Number, default: 3 } ,
 
   availableMatrix: {
@@ -54,7 +42,7 @@ const teacherSchema = new mongoose.Schema({
   },
   // Thông tin bổ sung
   notes: { type: String },                                                    // ghi chú
-  profilePhoto: { type: String },                                             // URL ảnh đại diện
+  avatarUrl: { type: String },                                             // URL ảnh đại diện
 }, {
   timestamps: true
 });

@@ -105,7 +105,14 @@ export default function GradesAdminPage() {
         schoolYear: filters.schoolYear,
         semester: filters.semester,
       });
-      toast({ title: 'Hoàn tất', description: `Đã khởi tạo bảng điểm cho ${res.createdCount} học sinh` });
+      const created = res.createdCount || res.data?.created || 0;
+      const skipped = res.skippedCount || res.data?.skipped || 0;
+      const message = created > 0 
+        ? `Đã khởi tạo ${created} bản ghi bảng điểm${skipped > 0 ? `, bỏ qua ${skipped} bản ghi đã tồn tại` : ''}`
+        : skipped > 0 
+          ? `Tất cả bản ghi đã tồn tại (${skipped} bản ghi)`
+          : 'Không có dữ liệu để khởi tạo';
+      toast({ title: 'Hoàn tất', description: message });
 
       // Nếu đã chọn lớp + môn, tải luôn bảng điểm rỗng
       if (filters.classId && filters.subjectId) fetchSummary();

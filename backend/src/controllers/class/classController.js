@@ -1,41 +1,76 @@
-const User = require('../../models/user/user');
-const Class = require('../../models/class/class');
-const Student = require('../../models/user/student');
-const mongoose = require('mongoose');
+const User = require("../../models/user/user");
+const Class = require("../../models/class/class");
+const Student = require("../../models/user/student");
+const Room = require("../../models/room/room");
+const mongoose = require("mongoose");
 
+/* =========================================================
+   📘 LẤY TẤT CẢ LỚP
+========================================================= */
 exports.getAllClasses = async (req, res) => {
   try {
-    const cls = await Class.find()
-      .populate('teacherId', 'name')
-      .populate('students', 'name studentCode').sort({ grade: 1, className: 1 });
-    res.json(cls);
+    const filter = {};
+
+    if (req.query.year) filter.year = req.query.year;
+    if (req.query.grade) filter.grade = req.query.grade;
+
+    const cls = await Class.find(filter)
+      .populate("teacherId", "name")
+      .populate("students", "name studentCode grade classId")
+      .populate("roomId", "roomCode name type status")
+      .sort({ grade: 1, className: 1 });
+
+    res.status(200).json(cls);
   } catch (error) {
-    res.status(500).json({ message: 'Lỗi khi lấy danh sách lớp' });
+    console.error("❌ Lỗi khi lấy danh sách lớp:", error);
+    res.status(500).json({ message: "Không thể tải danh sách lớp" });
   }
 };
 
+/* =========================================================
+   📗 LẤY LỚP THEO ID
+========================================================= */
 exports.getClassById = async (req, res) => {
   try {
     const cls = await Class.findById(req.params.id)
-      .populate('teacherId', 'name')
-      .populate('students', 'name studentCode');
-    if (!cls) return res.status(404).json({ message: 'Không tìm thấy lớp' });
+      .populate("teacherId", "name")
+      .populate("students", "name studentCode")
+      .populate("roomId", "roomCode name");
+    if (!cls) return res.status(404).json({ message: "Không tìm thấy lớp" });
     res.json(cls);
   } catch (error) {
-    res.status(500).json({ message: 'Lỗi khi lấy lớp' });
+    res.status(500).json({ message: "Lỗi khi lấy lớp" });
   }
 };
 
+/* =========================================================
+   ➕ TẠO LỚP HỌC (TỰ GẮN PHÒNG)
+========================================================= */
 exports.createClass = async (req, res) => {
   try {
-    const { className, year, grade, capacity, teacherId } = req.body;
+    let { className, year, grade, capacity, teacherId } = req.body;
+
+    if (!className || !year) {
+      return res.status(400).json({ message: "Thiếu tên lớp hoặc năm học" });
+    }
+
+    // 🔹 Chuẩn hoá dữ liệu
+    className = className.trim().toUpperCase();
     const classCode = `${year}-${className}`;
+
+    // 🔹 Tự động phát hiện khối nếu chưa nhập
+    if (!grade && /^10/.test(className)) grade = "10";
+    if (!grade && /^11/.test(className)) grade = "11";
+    if (!grade && /^12/.test(className)) grade = "12";
 
     // 🔹 Kiểm tra lớp trùng
     const existing = await Class.findOne({ classCode });
-    if (existing) return res.status(400).json({ message: 'Đã tồn tại lớp này' });
+    if (existing)
+      return res
+        .status(400)
+        .json({ message: `Đã tồn tại lớp ${className} (${year})` });
 
-    // 🔹 Nếu có chọn giáo viên thì kiểm tra xem giáo viên đó đã là GVCN của lớp nào trong cùng năm chưa
+    // 🔹 Kiểm tra giáo viên GVCN trùng trong năm
     if (teacherId) {
       const teacherUsed = await Class.findOne({ teacherId, year });
       if (teacherUsed) {
@@ -45,36 +80,66 @@ exports.createClass = async (req, res) => {
       }
     }
 
+    // 🔹 Giới hạn sĩ số lớp
+    if (capacity && (capacity < 20 || capacity > 60)) {
+      return res.status(400).json({
+        message: "Sĩ số lớp phải trong khoảng 20–60 học sinh",
+      });
+    }
+
+    /* =========================================================
+       🏫 Tự động tạo / gán phòng học tương ứng (VD: 10A1 → roomCode: 10A1)
+    ========================================================= */
+    let room = await Room.findOne({ roomCode: className });
+    if (!room) {
+      room = await Room.create({
+        roomCode: className,
+        name: `Phòng học ${className}`,
+        capacity: capacity || 45,
+        type: "normal",
+        status: "available",
+      });
+      console.log(`🏫 Đã tạo phòng mới: ${room.roomCode}`);
+    }
+
+    // ✅ Tạo lớp và gán roomId
     const newClass = await Class.create({
       classCode,
       className,
       year,
       grade,
-      capacity,
+      capacity: capacity || room.capacity || 45,
       currentSize: 0,
       teacherId: teacherId || null,
+      roomId: room._id,
     });
+
+    console.log(`✅ Tạo lớp ${className} (${year}) thành công`);
 
     res.status(201).json(newClass);
   } catch (error) {
-    console.error('[createClass]', error);
-    res.status(500).json({ message: 'Không thể tạo lớp' });
+    console.error("[createClass]", error);
+    res.status(500).json({
+      message: "Không thể tạo lớp",
+      error: error.message,
+    });
   }
 };
 
+/* =========================================================
+   ✏️ CẬP NHẬT LỚP
+========================================================= */
 exports.updateClass = async (req, res) => {
   try {
     const { teacherId, year } = req.body;
     const classId = req.params.id;
 
-    // 🔹 Nếu có chọn giáo viên, kiểm tra trùng lớp chủ nhiệm trong cùng năm
     if (teacherId) {
       const teacherUsed = await Class.findOne({
         teacherId,
         year,
-        _id: { $ne: classId }, // loại trừ chính lớp đang cập nhật
+        _id: { $ne: classId },
       });
-
       if (teacherUsed) {
         return res.status(400).json({
           message: `Giáo viên này đã là GVCN của lớp ${teacherUsed.className} (${teacherUsed.year})`,
@@ -83,42 +148,95 @@ exports.updateClass = async (req, res) => {
     }
 
     const cls = await Class.findByIdAndUpdate(classId, req.body, { new: true });
-    if (!cls) return res.status(404).json({ message: 'Không tìm thấy lớp' });
+    if (!cls) return res.status(404).json({ message: "Không tìm thấy lớp" });
 
     res.json(cls);
   } catch (error) {
-    console.error('[updateClass]', error);
-    res.status(500).json({ message: 'Lỗi khi cập nhật lớp' });
+    console.error("[updateClass]", error);
+    res.status(500).json({ message: "Lỗi khi cập nhật lớp" });
   }
 };
 
+/* =========================================================
+   🗑️ XOÁ LỚP
+========================================================= */
 exports.deleteClass = async (req, res) => {
+  const classId = req.params.id;
   try {
-    const cls = await Class.findByIdAndDelete(req.params.id);
-    if (!cls) return res.status(404).json({ message: 'Không tìm thấy id lớp' });
-    res.json({ message: 'Đã xóa lớp thành công' });
+    const cls = await Class.findById(classId);
+    if (!cls) return res.status(404).json({ message: "Không tìm thấy lớp" });
+
+    // 🔹 Gỡ classId khỏi học sinh
+    await Student.updateMany({ classId }, { $set: { classId: null } });
+
+    await Class.findByIdAndDelete(classId);
+
+    res.json({
+      message: `Đã xoá lớp ${cls.className} thành công và cập nhật học sinh.`,
+    });
   } catch (error) {
-    res.status(500).json({ message: 'Lỗi deleteClass' });
+    console.error("[deleteClass]", error);
+    res
+      .status(500)
+      .json({ message: "Lỗi khi xoá lớp", error: error.message });
   }
 };
 
+/* =========================================================
+   🔗 JOIN CLASS (học sinh vào lớp)
+========================================================= */
 exports.joinClass = async (req, res) => {
   const { userId, classCode } = req.body;
-  console.log('Join class input:', { userId, classCode });
   try {
     const classObj = await Class.findOne({ classCode });
-    if (!classObj) {
-      return res.status(404).json({ message: 'Class code not found' });
-    }
+    if (!classObj)
+      return res.status(404).json({ message: "Class code not found" });
+
+    const student = await Student.findById(userId);
+    const oldClassId = student?.classId?.toString();
+
     await User.findByIdAndUpdate(userId, { classId: classObj._id });
     if (!classObj.students.includes(userId)) {
       classObj.students.push(userId);
       await classObj.save();
     }
-    res.json({ message: 'Joined class successfully' });
-    console.log(`User ${userId} joined class ${classCode}`);
+
+    // 🧾 Tạo bảng điểm nếu cần
+    if (
+      student &&
+      oldClassId !== classObj._id.toString() &&
+      student.status === "active"
+    ) {
+      try {
+        const { initGradesForStudent } = require("../../services/gradeService");
+        const Setting = require("../../models/settings");
+        const settings = await Setting.findOne({}).lean();
+        const currentSchoolYear = settings?.currentSchoolYear || "2024-2025";
+
+        initGradesForStudent({
+          studentId: userId,
+          classId: classObj._id,
+          schoolYear: currentSchoolYear,
+          semester: "1",
+        }).catch((err) =>
+          console.error("[joinClass] Lỗi tạo bảng điểm HK1:", err)
+        );
+        initGradesForStudent({
+          studentId: userId,
+          classId: classObj._id,
+          schoolYear: currentSchoolYear,
+          semester: "2",
+        }).catch((err) =>
+          console.error("[joinClass] Lỗi tạo bảng điểm HK2:", err)
+        );
+      } catch (error) {
+        console.error("[joinClass] Lỗi khi tạo bảng điểm:", error);
+      }
+    }
+
+    res.json({ message: "Joined class successfully" });
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: "Server error" });
   }
 };
 
@@ -155,6 +273,8 @@ exports.autoAssignGrade = async (req, res) => {
 
       let ci = 0;
       let assigned = 0;
+      const assignedStudents = []; // Lưu danh sách học sinh đã được gán để tạo bảng điểm sau
+      
       for (const s of students) {
         if (caps.every(c => c.left <= 0)) break;
         let spin = 0;
@@ -172,10 +292,32 @@ exports.autoAssignGrade = async (req, res) => {
         );
         cls.left -= 1;
         assigned += 1;
+        assignedStudents.push({ studentId: s._id, classId: cls.id });
         ci = (ci + 1) % caps.length;
       }
 
       const unassigned = students.length - assigned;
+      
+      // Tạo bảng điểm cho các học sinh đã được gán (sau khi transaction commit)
+      if (assignedStudents.length > 0) {
+        // Chạy async sau khi transaction commit
+        setImmediate(async () => {
+          try {
+            const { initGradesForStudent } = require('../../services/gradeService');
+            const Setting = require('../../models/settings');
+            const settings = await Setting.findOne({}).lean();
+            const currentSchoolYear = settings?.currentSchoolYear || '2024-2025';
+            
+            for (const { studentId, classId } of assignedStudents) {
+              await initGradesForStudent({ studentId, classId, schoolYear: currentSchoolYear, semester: '1' });
+              await initGradesForStudent({ studentId, classId, schoolYear: currentSchoolYear, semester: '2' });
+            }
+          } catch (error) {
+            console.error('[autoAssignGrade] Lỗi khi tạo bảng điểm:', error);
+          }
+        });
+      }
+      
       return res.json({
         assigned,
         unassigned,
@@ -222,5 +364,38 @@ exports.setupYearClasses = async (req, res) => {
   } catch (err) {
     console.error('[setupYearClasses]', err);
     return res.status(500).json({ message: 'Server error' });
+  }
+};
+exports.getGradesAndClassesByYear = async (req, res) => {
+  try {
+    const { year } = req.query;
+
+    if (!year) {
+      return res.status(400).json({ message: "Thiếu tham số year" });
+    }
+
+    // 🔍 Lấy tất cả lớp theo niên khóa
+    const classes = await Class.find({ year })
+      .populate("teacherId", "name")
+      .populate("students", "name studentCode grade")
+      .sort({ grade: 1, className: 1 });
+
+    // 🔹 Gom nhóm theo khối
+    const grouped = {};
+    classes.forEach((cls) => {
+      if (!grouped[cls.grade]) grouped[cls.grade] = [];
+      grouped[cls.grade].push(cls);
+    });
+
+    // 🔹 Chuyển về dạng [{ grade, classes }]
+    const result = Object.entries(grouped).map(([grade, classes]) => ({
+      grade,
+      classes,
+    }));
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("❌ Lỗi khi lấy danh sách lớp theo niên khóa:", error);
+    res.status(500).json({ message: "Không thể tải danh sách lớp theo niên khóa" });
   }
 };

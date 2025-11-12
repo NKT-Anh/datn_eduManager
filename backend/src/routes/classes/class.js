@@ -15,7 +15,7 @@ router.get('/auto-assign', classController.autoAssignGrade);
 
 // Tạo lớp cho 1 năm học
 router.post('/setup-year', classController.setupYearClasses);
-
+router.get("/group-by-year", classController.getGradesAndClassesByYear);
 // Tạo lớp mới
 router.post('/', classController.createClass);
 

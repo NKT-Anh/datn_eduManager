@@ -33,7 +33,7 @@ interface AuthContextType {
   firebaseUser: FirebaseUser | null;
   backendUser: BackendUser | null;
   loading: boolean;
-  setBackendUser: (user: BackendUser | null) => void;
+  setBackendUser: React.Dispatch<React.SetStateAction<BackendUser | null>>; // ✅ đổi dòng này
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }

@@ -47,6 +47,11 @@ export const scheduleApi = {
     const res = await axios.get(`${API_BASE}/schedules/grade/${grade}/year/${year}/semester/${semester}`);
     return res.data;
   },
+  // 🆕 🧩 Lấy TKB theo giáo viên
+  getScheduleByTeacher: async (teacherName: string, year: string, semester: string) => {
+    const res = await axios.get(`${API_BASE}/schedules/teacher/${encodeURIComponent(teacherName)}/${year}/${semester}`);
+    return res.data;
+  },
 saveOrUpdateSchedule: async (payload: SchedulePayload) => {
   try {
     const { classId, year, semester, timetable } = payload;

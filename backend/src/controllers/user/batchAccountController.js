@@ -39,13 +39,19 @@ const createAccountIfNotExists = async (email, role, phone, defaultPassword) => 
     });
 
     // 🔹 Lưu vào Mongo
-    const account = await Account.create({
-      uid: firebaseUser.uid,
-      email,
-      role,
-      phone: phone || '',
-    });
+    const accountData = {
+  uid: firebaseUser.uid,
+  email,
+  role,
+};
 
+if (phone && phone.trim() !== '') {
+  accountData.phone = phone.trim();
+}
+
+const account = await Account.create(accountData);
+
+ console.log('✅ Mongo Account created:', account);
     return {
       existed: false,
       email,
@@ -92,12 +98,29 @@ const createBatchStudents = async (req, res) => {
         defaultPassword
       );
 
-      if (result.existed) existedAccounts.push(result.email);
+      if (result.existed) {
+  // 🔹 Nếu Account tồn tại, lấy nó ra và gắn lại vào Student
+  const existedAcc = await Account.findOne({ email });
+  if (existedAcc) {
+    await Student.findByIdAndUpdate(s._id, { accountId: existedAcc._id });
+    existedAccounts.push(result.email);
+  }
+}
+
       else if (result.error) existedAccounts.push(`${result.email} (lỗi: ${result.error})`);
       else {
-        await Student.findByIdAndUpdate(s._id, {
-          accountId: result.accountId,
-        });
+        const updatedStudent = await User.findByIdAndUpdate(
+  s._id,
+  { accountId: result.accountId },
+  { new: true }
+);
+
+if (updatedStudent)
+  console.log(`✅ Gắn accountId cho ${updatedStudent.name}`);
+else
+  console.warn(`⚠️ Không tìm thấy học sinh có id ${s._id}`);
+
+console.log(`✅ Gắn accountId cho ${updatedStudent.name}`);
         createdAccounts.push({
           email: result.email,
           password: result.password,
@@ -156,9 +179,8 @@ const createBatchTeachers = async (req, res) => {
       if (result.existed) existedAccounts.push(result.email);
       else if (result.error) existedAccounts.push(`${result.email} (lỗi: ${result.error})`);
       else {
-        await Teacher.findByIdAndUpdate(t._id, {
-          accountId: result.accountId,
-        });
+        await Teacher.findByIdAndUpdate(t._id, { accountId: result.accountId }, { new: true });
+
         createdAccounts.push({
           email: result.email,
           password: result.password,

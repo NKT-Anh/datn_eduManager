@@ -11,7 +11,7 @@ import { DeleteConfirmDialog } from "@/components/dialogs/DeleteConfirmDialog";
 import { Subject } from "@/types/class";
 import { useToast } from "@/hooks/use-toast";
 import { subjectApi } from "@/services/subjectApi";
-import { Search, Plus, Edit, Trash2, Eye, BookOpen, Code, Settings2 } from "lucide-react";
+import { Search, Plus, Edit, Trash2, Eye, BookOpen, Code, Settings2,Clock  } from "lucide-react";
 
 const SubjectsPage = () => {
   const { backendUser } = useAuth();
@@ -27,6 +27,7 @@ const SubjectsPage = () => {
   const [detailSubjectId, setDetailSubjectId] = useState<string | undefined>();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingSubject, setDeletingSubject] = useState<Subject | undefined>();
+const [editingValues, setEditingValues] = useState<Record<string, number>>({});
 
   // Fetch subjects
   const fetchSubjects = async () => {
@@ -90,6 +91,7 @@ const SubjectsPage = () => {
       });
     }
   };
+  
 
   const handleDeleteSubject = async () => {
     if (!deletingSubject) return;
@@ -111,6 +113,41 @@ const SubjectsPage = () => {
       setIsDeleteDialogOpen(false);
     }
   };
+  // Lưu thời lượng thi khi người dùng nhấn Enter hoặc blur
+  const handleSaveExamDuration = async (
+  subject: Subject,
+  newValue: number,
+  oldValue: number
+) => {
+  if (isNaN(newValue) || newValue < 15 || newValue > 300 || newValue === oldValue) {
+    console.log("⚠️ Không cần lưu (giá trị không thay đổi hoặc không hợp lệ)");
+    return;
+  }
+
+  console.log("🟦 Gọi API updateDefaultExamDuration:", subject._id, newValue);
+
+  try {
+    const updated = await subjectApi.updateDefaultExamDuration(subject._id, newValue);
+    console.log("✅ API trả về:", updated);
+
+    setSubjects((prev) =>
+      prev.map((s) => (s._id === subject._id ? updated : s))
+    );
+
+    toast({
+      title: "✅ Cập nhật thành công",
+      description: `Thời lượng thi được đặt thành ${newValue} phút.`,
+    });
+  } catch (err) {
+    console.error("❌ Lỗi khi lưu:", err);
+    toast({
+      title: "❌ Lỗi",
+      description: "Không thể cập nhật thời lượng thi",
+      variant: "destructive",
+    });
+  }
+};
+
 
   // Toggle includeInAverage (Cấu hình tính điểm)
   const handleToggleIncludeInAverage = async (
@@ -273,24 +310,70 @@ const SubjectsPage = () => {
               </CardHeader>
 
               <CardContent className="space-y-4">
-                {/* Cấu hình tính điểm */}
-                <div className="flex items-center justify-between p-2 border rounded-lg bg-muted/40">
-                  <div className="flex items-center space-x-2">
-                    <Settings2 className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm text-foreground">
-                      Tính vào điểm trung bình
-                    </span>
-                  </div>
-                  <Switch
-                    checked={subject.includeInAverage}
-                    onCheckedChange={() =>
-                      handleToggleIncludeInAverage(
-                        subject._id,
-                        subject.includeInAverage
-                      )
-                    }
-                  />
-                </div>
+{/* Thời lượng thi */}
+<div className="flex items-center justify-between p-2 border rounded-lg bg-muted/40">
+  <div className="flex items-center space-x-2">
+    <Clock className="h-4 w-4 text-muted-foreground" />
+    <span className="text-sm text-foreground">Thời lượng thi (phút)</span>
+  </div>
+
+{/* Ô nhập chỉnh sửa thời lượng thi */}
+<Input
+  type="number"
+  min={15}
+  max={300}
+  className="w-20 text-center h-8"
+  value={subject.defaultExamDuration ?? 90}
+  onFocus={() => {
+    setEditingValues((prev) => ({
+      ...prev,
+      [subject._id]: subject.defaultExamDuration ?? 90,
+    }));
+  }}
+  onChange={(e) => {
+    const value = parseInt(e.target.value) || 0;
+    setSubjects((prev) =>
+      prev.map((s) =>
+        s._id === subject._id ? { ...s, defaultExamDuration: value } : s
+      )
+    );
+  }}
+  onBlur={async (e) => {
+    const newValue = parseInt(e.target.value);
+    const oldValue = editingValues[subject._id] ?? subject.defaultExamDuration ?? 90;
+    console.log("🟡 BLUR chạy, cũ:", oldValue, "mới:", newValue);
+    await handleSaveExamDuration(subject, newValue, oldValue);
+  }}
+  onKeyDown={async (e) => {
+    if (e.key === "Enter") {
+      const newValue = parseInt((e.target as HTMLInputElement).value);
+      const oldValue = editingValues[subject._id] ?? subject.defaultExamDuration ?? 90;
+      (e.target as HTMLInputElement).blur();
+      await handleSaveExamDuration(subject, newValue, oldValue);
+    }
+  }}
+/>
+
+
+</div>
+
+
+  {/* Cấu hình tính điểm */}
+  <div className="flex items-center justify-between p-2 border rounded-lg bg-muted/40">
+    <div className="flex items-center space-x-2">
+      <Settings2 className="h-4 w-4 text-muted-foreground" />
+      <span className="text-sm text-foreground">
+        Tính vào điểm trung bình
+      </span>
+    </div>
+    <Switch
+      checked={subject.includeInAverage}
+      onCheckedChange={() =>
+        handleToggleIncludeInAverage(subject._id, subject.includeInAverage)
+      }
+    />
+  </div>
+
 
                 {/* Buttons */}
                 <div className="flex space-x-2">

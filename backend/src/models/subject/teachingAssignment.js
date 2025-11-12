@@ -15,3 +15,4 @@ teachingAssignmentSchema.index(
 )
 const TeachingAssignment = mongoose.model('TeachingAssignment', teachingAssignmentSchema);
 module.exports = TeachingAssignment;
+

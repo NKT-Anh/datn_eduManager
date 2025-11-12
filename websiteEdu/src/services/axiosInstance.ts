@@ -1,28 +1,3 @@
-// import axios from "axios";
-
-// const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-
-// // Tạo instance chung cho toàn hệ thống
-// const api = axios.create({
-//   baseURL: API_BASE_URL,
-// });
-
-// // Thêm interceptor để tự động đính kèm token Firebase
-// api.interceptors.request.use(
-//   (config) => {
-//     const backendUser = localStorage.getItem("backendUser");
-//     if (backendUser) {
-//       const { idToken } = JSON.parse(backendUser);
-//       if (idToken) {
-//         config.headers.Authorization = `Bearer ${idToken}`;
-//       }
-//     }
-//     return config;
-//   },
-//   (error) => Promise.reject(error)
-// );
-
-// export default api;
 
 import axios from "axios";
 

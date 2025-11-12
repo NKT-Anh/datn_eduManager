@@ -20,7 +20,8 @@ const mongoose = require('mongoose');
       semester: { type: String, enum: ['1', '2'], required: true },
 
       averages: { type: AveragesSchema, default: {} },
-      average: { type: Number }, // điểm TB kỳ
+      average: { type: Number }, // điểm TB kỳ (chỉ cho môn tính điểm trung bình)
+      result: { type: String }, // "D" (đạt), "K" (không đạt) hoặc null (chưa có điểm cho môn không tính TB)
       computedAt: { type: Date, default: Date.now },
       version: { type: String }, // optional nếu muốn tracking cấu hình tính
     },

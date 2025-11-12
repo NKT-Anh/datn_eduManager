@@ -8,4 +8,6 @@ router.post("/",authMiddleware, subjectController.createSubject);
 router.put("/:id",authMiddleware, subjectController.updateSubject);
 router.delete("/:id",authMiddleware, subjectController.deleteSubject);
 router.put('/:id/include-average', authMiddleware, subjectController.updateIncludeInAverage);
+router.patch("/:id/default-duration", subjectController.updateDefaultExamDuration);
+
 module.exports = router;
