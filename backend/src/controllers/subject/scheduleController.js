@@ -35,6 +35,22 @@ exports.createSchedule = async (req, res) => {
     if (!classId || !timetable || !year || !semester)
       return res.status(400).json({ message: "Thiếu dữ liệu bắt buộc." });
 
+    // 🔒 Ràng buộc: Không được tạo thời khóa biểu nếu chưa có năm học active
+    const SchoolYear = require('../../models/schoolYear');
+    const activeYear = await SchoolYear.findOne({ isActive: true });
+    if (!activeYear) {
+      return res.status(400).json({ 
+        message: "Không thể tạo thời khóa biểu. Vui lòng kích hoạt một năm học trước." 
+      });
+    }
+
+    // Kiểm tra năm học được chọn có phải là năm học active không
+    if (year !== activeYear.code) {
+      return res.status(400).json({ 
+        message: `Chỉ có thể tạo thời khóa biểu cho năm học đang hoạt động: ${activeYear.name} (${activeYear.code})` 
+      });
+    }
+
     // Lấy tên lớp để hiển thị (nếu có)
     const cls = await Class.findById(classId);
     const className = cls ? cls.className : undefined;

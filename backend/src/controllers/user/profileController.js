@@ -2,6 +2,7 @@ const User = require('../../models/user/user');
 const Account = require('../../models/user/account');
 const Student = require('../../models/user/student');
 const Teacher = require('../../models/user/teacher');
+const Setting = require('../../models/settings');
 const admin = require('../../config/firebaseAdmin');
 
 /* =========================================================
@@ -42,19 +43,33 @@ exports.getProfile = async (req, res) => {
       const teacher = await Teacher.findById(user._id)
         .populate('mainSubject', 'name code')
         .populate('subjects.subjectId', 'name code')
-        .populate('classIds', 'className classCode grade year')
         .populate('homeroomClassIds', 'className classCode grade year')
+        .populate('currentHomeroomClassId', 'className classCode grade year')
+        .populate('departmentId', 'name code')
         .lean();
 
       if (teacher) {
+        // ✅ Lấy danh sách lớp đang dạy từ TeachingAssignment
+        const TeachingAssignment = require('../../models/subject/teachingAssignment');
+        const currentYear = await Setting.findOne().select('currentSchoolYear').lean();
+        const assignments = await TeachingAssignment.find({
+          teacherId: teacher._id,
+          year: currentYear?.currentSchoolYear || new Date().getFullYear()
+        })
+          .populate('classId', 'className classCode grade year')
+          .lean();
+        
+        const teachingClasses = assignments.map(a => a.classId).filter(Boolean);
+
         profileData = {
           ...profileData,
           teacherId: teacher._id.toString(),
           teacherCode: teacher.teacherCode || null,
           mainSubject: teacher.mainSubject || null,
           subjects: teacher.subjects || [],
-          classIds: teacher.classIds || [],
+          classIds: teachingClasses, // ✅ Lấy từ TeachingAssignment thay vì Teacher.classIds
           homeroomClassIds: teacher.homeroomClassIds || [],
+          currentHomeroomClassId: teacher.currentHomeroomClassId || null,
           hireYear: teacher.hireYear || null,
           hireYearInField: teacher.hireYearInField || null,
           weeklyLessons: teacher.weeklyLessons || null,
@@ -68,7 +83,12 @@ exports.getProfile = async (req, res) => {
           notes: teacher.notes || null,
           avatarUrl: teacher.avatarUrl || null,
           maxClasses: teacher.maxClasses || null,
-
+          // Quyền mở rộng
+          isHomeroom: teacher.isHomeroom || false,
+          isDepartmentHead: teacher.isDepartmentHead || false,
+          isLeader: teacher.isLeader || false,
+          permissions: teacher.permissions || [],
+          departmentId: teacher.departmentId || null,
         };
       }
     }
@@ -279,19 +299,32 @@ if (maxClasses !== undefined) teacherUpdate.maxClasses = maxClasses;
       const teacher = await Teacher.findById(updatedUser._id)
         .populate('mainSubject', 'name code')
         .populate('subjects.subjectId', 'name code')
-        .populate('classIds', 'className classCode grade year')
         .populate('homeroomClassIds', 'className classCode grade year')
+        .populate('currentHomeroomClassId', 'className classCode grade year')
         .lean();
 
       if (teacher) {
+        // ✅ Lấy danh sách lớp đang dạy từ TeachingAssignment
+        const TeachingAssignment = require('../../models/subject/teachingAssignment');
+        const currentYear = await Setting.findOne().select('currentSchoolYear').lean();
+        const assignments = await TeachingAssignment.find({
+          teacherId: teacher._id,
+          year: currentYear?.currentSchoolYear || new Date().getFullYear()
+        })
+          .populate('classId', 'className classCode grade year')
+          .lean();
+        
+        const teachingClasses = assignments.map(a => a.classId).filter(Boolean);
+
         updatedProfile = {
           ...updatedProfile,
           teacherId: teacher._id.toString(),
           teacherCode: teacher.teacherCode || null,
           mainSubject: teacher.mainSubject || null,
           subjects: teacher.subjects || [],
-          classIds: teacher.classIds || [],
+          classIds: teachingClasses, // ✅ Lấy từ TeachingAssignment
           homeroomClassIds: teacher.homeroomClassIds || [],
+          currentHomeroomClassId: teacher.currentHomeroomClassId || null,
           qualification: teacher.qualification || null,
           specialization: teacher.specialization || null,
           teachingExperience: teacher.teachingExperience || null,

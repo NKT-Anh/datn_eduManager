@@ -1,5 +1,5 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useAuth } from '@/contexts/AuthContext11';
+import { useAuth } from '@/contexts/AuthContext';
 import { mockStudents, mockClasses, mockSubjects } from '@/data/mockData';
 import { 
   Users, 
@@ -13,10 +13,10 @@ import {
 } from 'lucide-react';
 
 const Dashboard = () => {
-  const { user } = useAuth();
+  const { backendUser } = useAuth();
 
   const getStats = () => {
-    switch (user?.role) {
+    switch (backendUser?.role) {
       case 'admin':
         return [
           {
@@ -128,11 +128,11 @@ const Dashboard = () => {
     else if (hour < 18) greeting = 'Chào buổi chiều';
     else greeting = 'Chào buổi tối';
 
-    return `${greeting}, ${user?.name}!`;
+    return `${greeting}, ${backendUser?.name}!`;
   };
 
   const getRoleTitle = () => {
-    switch (user?.role) {
+    switch (backendUser?.role) {
       case 'admin': return 'Quản trị viên';
       case 'teacher': return 'Giáo viên';
       case 'student': return 'Học sinh';

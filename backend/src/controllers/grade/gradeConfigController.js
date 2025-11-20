@@ -22,20 +22,32 @@ exports.getGradeConfig = async (req, res) => {
  */
 exports.upsertGradeConfig = async (req, res) => {
   try {
-    const { schoolYear, semester, weights, rounding } = req.body;
+    const { schoolYear, semester, weights, rounding, classification, requiredSubjects } = req.body;
 
     if (!schoolYear || !semester) {
       return res.status(400).json({ message: 'Thiếu schoolYear hoặc semester' });
     }
 
+    const updateData = {
+      weights,
+      rounding,
+      updatedBy: req.user?._id,
+    };
+
+    // ✅ Cập nhật classification nếu có
+    if (classification) {
+      updateData.classification = classification;
+    }
+
+    // ✅ Cập nhật requiredSubjects nếu có
+    if (requiredSubjects !== undefined) {
+      updateData.requiredSubjects = requiredSubjects;
+    }
+
     const config = await GradeConfig.findOneAndUpdate(
       { schoolYear, semester },
       {
-        $set: {
-          weights,
-          rounding,
-          updatedBy: req.user?._id,
-        },
+        $set: updateData,
       },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );

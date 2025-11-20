@@ -26,20 +26,7 @@ const activitySchema = new mongoose.Schema(
       enum: ['10', '11', '12'],
       default: [],
     },
-    dayOfWeek: {
-      type: String, // ví dụ: Monday, Friday
-    },
-    timeSlot: {
-      type: String, // ví dụ: "Tiết 1" hoặc "07:00 - 07:45"
-    },
-    startDate: {
-      type: Date, // ngày bắt đầu áp dụng (vd: 2025-09-01)
-      required: true,
-    },
-    endDate: {
-      type: Date, // ngày kết thúc áp dụng (vd: 2026-05-31)
-      required: true,
-    },
+    // ✅ Lưu ý: dayOfWeek, timeSlot, isPermanent, startDate, endDate được lưu trong ScheduleConfig.ActivitySlot, không lưu ở đây
     isActive: {
       type: Boolean,
       default: true,

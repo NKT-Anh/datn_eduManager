@@ -85,14 +85,25 @@ export interface Teacher {
     grade: '10' | '11' | '12';
     year?: string;
   }[];
+  currentHomeroomClassId?: {
+    _id: string;
+    classCode: string;
+    className: string;
+    grade: '10' | '11' | '12';
+    year?: string;
+  } | string | null;
 
   // Thông tin công tác
   hireYear?: number;           // năm về trường
   hireYearInField?: number;    // năm vào ngành
   weeklyLessons?: number;      // số tiết/tuần
+  optionalWeeklyLessons?: number; // ✅ Số tiết tự chọn bổ sung (admin/BGH có thể nhập)
+  effectiveWeeklyLessons?: number; // ✅ Tổng số tiết thực tế/tuần (tính từ weeklyLessons + optionalWeeklyLessons, có xét chức vụ)
   status?: 'active' | 'inactive';
   school?: string;
   position?: string;
+  // ✅ Số lớp tối đa cho từng khối (10, 11, 12)
+  maxClassPerGrade?: Record<'10' | '11' | '12', number> | Map<string, number>;
 
   // Thông tin chuyên môn
   qualification?: string;        // bằng cấp / trình độ
@@ -103,7 +114,22 @@ export interface Teacher {
   // Thông tin bổ sung
   notes?: string;
   avatarUrl?: string;
-   maxClasses?: number;
+  maxClasses?: number;
+  
+  // Lịch dạy
+  availableMatrix?: boolean[][]; // Ma trận lịch trống (6 ngày x 10 tiết)
+
+  // Tổ bộ môn
+  departmentId?: {
+    _id: string;
+    name: string;
+    code: string;
+  } | string | null;
+
+  // Các flags cho giáo viên
+  isHomeroom?: boolean;        // Giáo viên chủ nhiệm
+  isDepartmentHead?: boolean;  // Trưởng bộ môn (Tổ trưởng chuyên môn)
+  isLeader?: boolean;          // Ban giám hiệu
 
   createdAt?: string;
   updatedAt?: string;

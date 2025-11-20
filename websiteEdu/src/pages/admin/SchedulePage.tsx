@@ -16,9 +16,8 @@ import {
 } from "@/components/ui/tabs";
 import { BookOpen } from "lucide-react";
 
-import { subjectApi } from "@/services/subjectApi";
-import { classApi } from "@/services/classApi";
-import { assignmentApi } from "@/services/assignmentApi";
+// ✅ Sử dụng hooks thay vì API trực tiếp
+import { useSubjects, useClasses, useAssignments } from "@/hooks";
 import { scheduleApi } from "@/services/scheduleApi";
 import { getScheduleConfig } from "@/services/scheduleConfigApi";
 import { autoGenerateSchedule } from "@/services/smartSystem/autoGenerateSchedule";
@@ -45,9 +44,10 @@ const DAY_LABELS = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Th�
 
 export default function SchedulePage() {
   // --- STATE ---
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [classes, setClasses] = useState<ClassType[]>([]);
-  const [assignments, setAssignments] = useState<TeachingAssignment[]>([]);
+  // ✅ Sử dụng hooks
+  const { subjects } = useSubjects();
+  const { classes } = useClasses();
+  const { assignments } = useAssignments();
   const [scheduleConfig, setScheduleConfig] = useState<ScheduleConfig | null>(
     null
   );
@@ -61,32 +61,15 @@ export default function SchedulePage() {
   const [includeActivities, setIncludeActivities] = useState<boolean>(true);
 
 
-  // --- FETCH DỮ LIỆU CƠ BẢN ---
+  // ✅ Không cần fetch nữa vì đã dùng hooks
+  // Tự tính năm học hiện tại
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [subjectRes, classRes, assignmentRes] = await Promise.all([
-          subjectApi.getSubjects(),
-          classApi.getAll(),
-          assignmentApi.getAll(),
-        ]);
-
-        setSubjects(subjectRes);
-        setClasses(classRes);
-        setAssignments(assignmentRes);
-
-        // Tự tính năm học hiện tại
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth() + 1;
-        setSelectedYear(
-          month >= 8 ? `${year}-${year + 1}` : `${year - 1}-${year}`
-        );
-      } catch (err) {
-        console.error("Lỗi load data:", err);
-      }
-    };
-    fetchData();
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    setSelectedYear(
+      month >= 8 ? `${year}-${year + 1}` : `${year - 1}-${year}`
+    );
   }, []);
 
   // --- FETCH CẤU HÌNH TKB ---
@@ -304,8 +287,7 @@ export default function SchedulePage() {
   // --- HÀM TẢI LẠI DANH SÁCH LỚP ---
   const handleClassesCreated = async () => {
     try {
-      const classRes = await classApi.getAll();
-      setClasses(classRes);
+      // ✅ Không cần fetch nữa vì đã dùng hooks
     } catch (err) {
       console.error("Lỗi tải danh sách lớp:", err);
     }
@@ -444,7 +426,14 @@ export default function SchedulePage() {
             <GenerateScheduleDialog
               currentYear={selectedYear}
               currentSemester={selectedSemester}
+              onSuccess={async () => {
+                // ✅ Reload schedules sau khi tạo thành công
+                if (selectedYear && selectedSemester) {
+                  await loadSchedules(selectedYear, selectedSemester);
+                }
+              }}
               onGenerate={(grades, year, semester) => {
+                // ✅ Fallback: Nếu có callback cũ, vẫn hỗ trợ
                 setSelectedYear(year);
                 setSelectedSemester(semester);
                 handleGenerateSchedule(grades, year, semester);

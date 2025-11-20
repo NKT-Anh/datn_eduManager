@@ -14,10 +14,13 @@ const SmtpSchema = new mongoose.Schema({
 // Schema tổng thể Setting
 const SettingSchema = new mongoose.Schema({
   schoolName: { type: String, default: 'Trường THPT Chưa đặt tên' },
+  slogan: { type: String, default: '' },
+  description: { type: String, default: '' },
   address: { type: String, default: '' },
   phone: { type: String, default: '' },
   email: { type: String, default: '' },
   website: { type: String, default: '' },
+  facebook: { type: String, default: '' },
 
   currentSchoolYear: { type: String, default: '2025-2026' },
   termStart: { type: String, default: '' },
@@ -42,6 +45,9 @@ const SettingSchema = new mongoose.Schema({
 
   studentEmailDomain: { type: String, default: 'student.school.com' },
   teacherEmailDomain: { type: String, default: 'teacher.school.com' },
+  adminEmailDomain: { type: String, default: 'admin.school.com' },
+  bghEmailDomain: { type: String, default: 'bgh.school.com' },
+  qlbmEmailDomain: { type: String, default: 'qlbm.school.com' },
   defaultPassword: { type: String, default: "123456" },
 
   // ✅ Cấu hình thời gian nhập điểm

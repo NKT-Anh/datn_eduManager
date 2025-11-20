@@ -5,8 +5,8 @@ const examScheduleSchema = new Schema(
     // 🔗 Liên kết với kỳ thi
     exam: { type: Schema.Types.ObjectId, ref: "Exam", required: true },
 
-    // 🏫 Khối học (VD: 10, 11, 12)
-    grade: { type: Number, required: true },
+    // 🏫 Khối học (VD: '10', '11', '12')
+    grade: { type: String, required: true },
 
     // 📚 Môn thi
     subject: { type: Schema.Types.ObjectId, ref: "Subject", required: true },

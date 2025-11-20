@@ -1,35 +1,33 @@
-import axios from "axios";
+import api from "./axiosInstance";
 import { SchedulePayload } from "@/types/schedule";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 export const scheduleApi = {
   getAllSchedules: async () => {
-    const res = await axios.get(`${API_BASE}/schedules`);
+    const res = await api.get("/schedules");
     return res.data;
   },
 
   getScheduleByClass: async (classId: string, year: string, semester: string) => {
-    const res = await axios.get(`${API_BASE}/schedules/${classId}/${year}/${semester}`);
+    const res = await api.get(`/schedules/${classId}/${year}/${semester}`);
     return res.data;
   },
 
   saveSchedule: async (payload: SchedulePayload) => {
-    const res = await axios.post(`${API_BASE}/schedules`, payload);
+    const res = await api.post("/schedules", payload);
     return res.data;
   },
 
   updateSchedule: async (id: string, payload: Partial<SchedulePayload>) => {
-    const res = await axios.put(`${API_BASE}/schedules/${id}`, payload);
+    const res = await api.put(`/schedules/${id}`, payload);
     return res.data;
   },
 
   deleteSchedule: async (id: string) => {
-    const res = await axios.delete(`${API_BASE}/schedules/${id}`);
+    const res = await api.delete(`/schedules/${id}`);
     return res.data;
   },
    deleteByGradeYearSemester: async (year: string, semester: string, grade: string) => {
-  const res = await axios.post(`${API_BASE}/schedules/delete-by-grade-year-semester`, {
+  const res = await api.post("/schedules/delete-by-grade-year-semester", {
     year,
     semester,
     grade,
@@ -38,18 +36,18 @@ export const scheduleApi = {
   
 },
   getSchedulesByYearSemester: async (year: string, semester: string) => {
-    const res = await axios.get(`${API_BASE}/schedules/year/${year}/semester/${semester}`);
+    const res = await api.get(`/schedules/year/${year}/semester/${semester}`);
     return res.data;
   },
 
   // 🆕 🧩 Lấy theo Khối + Năm + Học kỳ
   getSchedulesByGrade: async (grade: string, year: string, semester: string) => {
-    const res = await axios.get(`${API_BASE}/schedules/grade/${grade}/year/${year}/semester/${semester}`);
+    const res = await api.get(`/schedules/grade/${grade}/year/${year}/semester/${semester}`);
     return res.data;
   },
   // 🆕 🧩 Lấy TKB theo giáo viên
   getScheduleByTeacher: async (teacherName: string, year: string, semester: string) => {
-    const res = await axios.get(`${API_BASE}/schedules/teacher/${encodeURIComponent(teacherName)}/${year}/${semester}`);
+    const res = await api.get(`/schedules/teacher/${encodeURIComponent(teacherName)}/${year}/${semester}`);
     return res.data;
   },
 saveOrUpdateSchedule: async (payload: SchedulePayload) => {

@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { teacherApi } from "@/services/teacherApi";
+import { useState, useEffect } from "react";
+// ✅ Sử dụng hooks thay vì API trực tiếp
+import { useTeachers, useUpdateTeacherAvailability, useTeacherAvailability } from "@/hooks";
 import { Teacher } from "@/types/auth";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,44 +29,34 @@ const slots = [
 
 export default function TeacherAvailabilityPage() {
   const { toast } = useToast();
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  // ✅ Sử dụng hooks
+  const { teachers } = useTeachers();
+  const updateAvailabilityMutation = useUpdateTeacherAvailability();
+  
   const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
   const [availability, setAvailability] = useState<boolean[][]>([]);
-  const [loading, setLoading] = useState(false);
-
-  // load danh sách giáo viên
+  
+  // ✅ Sử dụng hook để lấy availability
+  const { data: availabilityData, isLoading: loading } = useTeacherAvailability(selectedTeacher?._id);
+  
+  // ✅ Cập nhật availability khi data thay đổi
   useEffect(() => {
-    teacherApi
-      .getAll()
-      .then(setTeachers)
-      .catch(() => {
-        toast({
-          title: "Lỗi",
-          description: "Không tải được danh sách giáo viên",
-        });
-      });
-  }, []);
+    if (availabilityData && availabilityData.length > 0) {
+      setAvailability(availabilityData);
+    } else if (selectedTeacher) {
+      setAvailability(
+        Array(days.length)
+          .fill(null)
+          .map(() => Array(slots.length).fill(false))
+      );
+    }
+  }, [availabilityData, selectedTeacher]);
 
   // load lịch khi chọn giáo viên
-  const handleSelectTeacher = async (id: string) => {
+  const handleSelectTeacher = (id: string) => {
     const teacher = teachers.find((t) => t._id === id) || null;
     setSelectedTeacher(teacher);
-    if (!teacher) return;
-
-    setLoading(true);
-    try {
-      const data = await teacherApi.getAvailability(id);
-      if (data && data.length > 0)
-        setAvailability(data);
-      else
-        setAvailability(
-          Array(days.length)
-            .fill(null)
-            .map(() => Array(slots.length).fill(false))
-        );
-    } finally {
-      setLoading(false);
-    }
+    // ✅ Hook sẽ tự động load availability khi selectedTeacher thay đổi
   };
 
   // toggle 1 ô
@@ -90,7 +81,10 @@ export default function TeacherAvailabilityPage() {
     console.log("Các tiết rảnh của giáo viên:", freeSlots);
 
     try {
-      await teacherApi.updateAvailability(selectedTeacher._id!, availability);
+      await updateAvailabilityMutation.mutateAsync({
+        id: selectedTeacher._id!,
+        availableMatrix: availability,
+      });
       toast({ title: "Thành công", description: "Đã lưu lịch rảnh" });
     } catch {
       toast({ title: "Lỗi", description: "Không thể lưu lịch rảnh" });

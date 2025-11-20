@@ -13,6 +13,32 @@ const GradeConfigSchema = new mongoose.Schema(
       final: { type: Number, default: 3 },
     },
     rounding: { type: String, enum: ['half-up', 'none'], default: 'half-up' },
+    // ✅ Cấu hình xếp loại học tập
+    classification: {
+      excellent: {
+        minAverage: { type: Number, default: 8.0 }, // Điểm TB năm tối thiểu
+        minSubjectScore: { type: Number, default: 6.5 }, // Điểm TB từng môn tối thiểu
+      },
+      good: {
+        minAverage: { type: Number, default: 6.5 }, // Điểm TB năm tối thiểu
+        minSubjectScore: { type: Number, default: 5.0 }, // Điểm TB từng môn tối thiểu
+      },
+      average: {
+        minAverage: { type: Number, default: 5.0 }, // Điểm TB năm tối thiểu
+        minSubjectScore: { type: Number, default: 3.5 }, // Điểm TB từng môn tối thiểu (> 3.5)
+      },
+      weak: {
+        maxAverage: { type: Number, default: 5.0 }, // Điểm TB năm tối đa (dưới 5.0)
+        maxSubjectScore: { type: Number, default: 3.5 }, // Điểm TB từng môn tối đa (< 3.5)
+      },
+    },
+    // ✅ Môn bắt buộc phải đạt điểm tối thiểu
+    requiredSubjects: [{
+      subjectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Subject', required: true },
+      minScore: { type: Number, required: true, min: 0, max: 10 },
+      groupId: { type: String }, // Nhóm các môn (ví dụ: "group1" cho Toán và Văn)
+      requireAll: { type: Boolean, default: false }, // true: tất cả môn trong nhóm phải đạt, false: chỉ cần 1 trong nhóm
+    }],
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true }

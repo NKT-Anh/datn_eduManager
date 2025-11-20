@@ -10,9 +10,12 @@ const studentRoutes = require('./user/student');
 const accountRoute = require('./user/account');
 const subjectRoute = require('./subject/subject');
 const activityRoute = require('./subject/activity');
+const departmentRoute = require('./subject/department');
 const classRoute = require('./classes/class');
+const classPeriodsRoute = require('./class/classPeriods');
 const teacherRoutes = require('./user/teacher');
 const teachingAssignment = require('./subject/teachingAssignment');
+const teachingAssignmentProposal = require('./subject/teachingAssignmentProposal');
 const scheduleConfig = require('./subject/scheduleConfig');
 const schedule = require('./subject/schedule');
 const autoSchedule = require('./subject/autoSchedule');
@@ -32,17 +35,27 @@ const examGradeRoutes = require('./exam/examGradeRoutes');
 const roomAssignmentRoutes = require('./exam/roomAssignmentRoutes');
 const roomRoutes = require('./roomRoutes');
 const studentExamRoutes = require('./exam/studentExamRoutes');
+const teacherExamRoutes = require('./exam/teacherExamRoutes');
+const incidentRoutes = require('./incident/incidentRoutes');
+const notificationRoutes = require('./notification/notificationRoutes');
+const replyRoutes = require('./notification/replyRoutes');
+const conductRoutes = require('./conduct/conductRoutes');
+const schoolYearRoutes = require('./schoolYearRoutes');
+const aiChatRoutes = require('./aiChatRoutes');
 
 // Tạo mảng routers với group name và mô tả
 const routers = [
   { group: 'subjects', router: subjectRoute, description: 'Quản lý môn học' },
+  { group: 'departments', router: departmentRoute, description: 'Quản lý tổ bộ môn' },
   { group: 'activities', router: activityRoute, description: 'Hoạt động môn học' },
   { group: 'students', router: studentRoutes, description: 'Quản lý học sinh' },
   { group: 'teachers', router: teacherRoutes, description: 'Quản lý giáo viên' },
   { group: 'accounts', router: accountRoute, description: 'Quản lý tài khoản' },
   { group: 'register', router: registerRoutes, description: 'Đăng ký tài khoản' },
   { group: 'class', router: classRoute, description: 'Quản lý lớp học' },
+  { group: 'classPeriods', router: classPeriodsRoute, description: 'Phân bổ số tiết theo lớp' },
   { group: 'teachingAssignments', router: teachingAssignment, description: 'Phân công giảng dạy' },
+  { group: 'teachingAssignmentProposals', router: teachingAssignmentProposal, description: 'Đề xuất phân công giảng dạy' },
   { group: 'scheduleConfig', router: scheduleConfig, description: 'Cấu hình thời khóa biểu' },
   { group: 'schedules', router: schedule, description: 'Thời khóa biểu' },
   { group: 'auto-schedule', router: autoSchedule, description: 'Tự động sắp thời khóa biểu' },
@@ -66,6 +79,13 @@ const routers = [
   { group: 'exam/grades', router: examGradeRoutes, description: 'Quản lý điểm thi' },
     { group: 'exam', router: examRoutes, description: 'Quản lý lịch thi' },
     { group: 'student-exams', router: studentExamRoutes, description: 'Học sinh xem thông tin kỳ thi' },
+    { group: 'teacher-exams', router: teacherExamRoutes, description: 'Giáo viên xem thông tin kỳ thi' },
+    { group: 'incidents', router: incidentRoutes, description: 'Quản lý sự cố' },
+    { group: 'notifications', router: notificationRoutes, description: 'Quản lý thông báo' },
+    { group: 'notifications/replies', router: replyRoutes, description: 'Phản hồi thông báo' },
+    { group: 'conducts', router: conductRoutes, description: 'Quản lý hạnh kiểm' },
+    { group: 'school-years', router: schoolYearRoutes, description: 'Quản lý năm học' },
+    { group: 'ai-chat', router: aiChatRoutes, description: 'AI Chat hỗ trợ' },
 
 ];  
 

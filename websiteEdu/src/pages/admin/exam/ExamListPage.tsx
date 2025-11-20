@@ -62,6 +62,9 @@ import { examApi } from "@/services/exams/examApi";
 import type { Exam } from "@/services/exams/examApi";
 import ExamForm from "./ExamForm";
 import schoolConfigApi from "@/services/schoolConfigApi";
+import { schoolYearApi } from "@/services/schoolYearApi";
+import { useAuth } from "@/contexts/AuthContext";
+import { isAdminOrBGH } from "@/utils/permissions";
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -123,6 +126,10 @@ function ExamStatsModal({ exam, onClose }: { exam: Exam; onClose: () => void }) 
    🧩 Trang danh sách kỳ thi
 ========================================================= */
 export default function ExamListPage() {
+  const { backendUser } = useAuth();
+  // ✅ Admin và BGH có quyền tất cả
+  const hasPermission = (perm: string) => isAdminOrBGH(backendUser);
+  const PERMISSIONS = {} as any; // Không cần dùng nữa nhưng giữ để không lỗi
   const navigate = useNavigate();
   const [exams, setExams] = useState<Exam[]>([]);
   const [loading, setLoading] = useState(false);
@@ -192,12 +199,13 @@ const fetchExams = async (page = pagination.current, limit = pagination.pageSize
   useEffect(() => {
     const fetchConfigs = async () => {
       try {
-        const [yRes, sRes, gRes] = await Promise.all([
-          schoolConfigApi.getSchoolYears(),
+        const [yearsData, sRes, gRes] = await Promise.all([
+          schoolYearApi.getAll(),
           schoolConfigApi.getSemesters(),
           schoolConfigApi.getGrades(),
         ]);
-        setSchoolYears(yRes.data || []);
+        // Map SchoolYear[] sang format { code, name }
+        setSchoolYears(yearsData.map(y => ({ code: y.code, name: y.name })));
         setSemesters(sRes.data || []);
         setGrades(gRes.data || []);
       } catch {
@@ -612,7 +620,17 @@ try {
                       ? "bg-accent/70 text-primary font-semibold"
                       : "hover:bg-accent/50"
                   }`}
-                  onClick={() => changeStatus(r._id!, key)}
+                  onClick={() => {
+                    if (hasPermission(PERMISSIONS.EXAM_UPDATE)) {
+                      changeStatus(r._id!, key);
+                    } else {
+                      message.warning("Bạn không có quyền thay đổi trạng thái kỳ thi");
+                    }
+                  }}
+                  style={{ 
+                    cursor: hasPermission(PERMISSIONS.EXAM_UPDATE) ? 'pointer' : 'not-allowed',
+                    opacity: hasPermission(PERMISSIONS.EXAM_UPDATE) ? 1 : 0.6
+                  }}
                 >
                   <div className="flex items-center gap-2">
                     {icon}
@@ -637,20 +655,24 @@ try {
       width: 280,
       render: (_, r) => (
         <Space wrap>
-          <Button size="small"  icon={<BarChart3 size={16} />}  onClick={() => setStatsExam(r)}>
- 
+          <Button size="small" icon={<BarChart3 size={16} />} onClick={() => setStatsExam(r)}>
+            Thống kê
           </Button>
-          <Button size="small" icon={<Eye size={16} />}  onClick={() => navigate(`/admin/exam/${r._id}`)}>
-       
+          <Button size="small" icon={<Eye size={16} />} onClick={() => navigate(`/admin/exam/${r._id}`)}>
+            Xem
           </Button>
-          <Button size="small" type="primary" ghost icon={<Edit  size={16} />}  onClick={() => openModal(r._id)}>
-          
-          </Button>
-          <Popconfirm title="Xóa kỳ thi này?" onConfirm={() => deleteExam(r._id!)} okText="Xóa" cancelText="Hủy">
-            <Button size="small" danger icon={<Trash2  size={16} />}  loading={busyAction === r._id}>
-              
+          {hasPermission(PERMISSIONS.EXAM_UPDATE) && (
+            <Button size="small" type="primary" ghost icon={<Edit size={16} />} onClick={() => openModal(r._id)}>
+              Sửa
             </Button>
-          </Popconfirm>
+          )}
+          {hasPermission(PERMISSIONS.EXAM_DELETE) && (
+            <Popconfirm title="Xóa kỳ thi này?" onConfirm={() => deleteExam(r._id!)} okText="Xóa" cancelText="Hủy">
+              <Button size="small" danger icon={<Trash2 size={16} />} loading={busyAction === r._id}>
+                Xóa
+              </Button>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
@@ -662,15 +684,17 @@ try {
         <Col><Title level={3}>Quản lý Kỳ thi</Title></Col>
         <Col>
           <Space>
-            <Button icon={<FileSpreadsheet size={16} />} onClick={() => console.log("Excel")} style={{ background: "#28a745", color: "#fff" }}>
+            <Button icon={<FileSpreadsheet size={16} />} onClick={exportToExcel} style={{ background: "#28a745", color: "#fff" }}>
               Xuất Excel
             </Button>
-            <Button icon={<FileText size={16} />} onClick={() => console.log("PDF")} style={{ background: "#d35400", color: "#fff" }}>
+            <Button icon={<FileText size={16} />} onClick={exportToPDF} style={{ background: "#d35400", color: "#fff" }}>
               Xuất PDF
             </Button>
-            <Button type="primary" icon={<Plus size={16} />} onClick={() => openModal()} style={{ borderRadius: 8 }}>
-              Tạo kỳ thi mới
-            </Button>
+            {hasPermission(PERMISSIONS.EXAM_CREATE) && (
+              <Button type="primary" icon={<Plus size={16} />} onClick={() => openModal()} style={{ borderRadius: 8 }}>
+                Tạo kỳ thi mới
+              </Button>
+            )}
           </Space>
         </Col>
       </Row>

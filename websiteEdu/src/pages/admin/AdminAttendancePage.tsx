@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,9 +29,9 @@ import {
 } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import attendanceApi from '@/services/attendanceApi';
-import { classApi } from '@/services/classApi';
+// ✅ Sử dụng hooks thay vì API trực tiếp
+import { useClasses, useSubjects, useSchoolYears } from '@/hooks';
 import schoolConfigApi from '@/services/schoolConfigApi';
-import { subjectApi } from '@/services/subjectApi';
 import {
   ClipboardList,
   Search,
@@ -97,8 +97,14 @@ interface Subject {
 const AdminAttendancePage = () => {
   const { toast } = useToast();
   const [attendances, setAttendances] = useState<AttendanceRecord[]>([]);
-  const [classes, setClasses] = useState<Class[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
+  // ✅ Sử dụng hooks
+  const { classes } = useClasses();
+  const { subjects } = useSubjects();
+  const { schoolYears: allSchoolYears } = useSchoolYears();
+  const schoolYears = useMemo(() => 
+    allSchoolYears.map(y => ({ code: y.code, name: y.name })),
+    [allSchoolYears]
+  );
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -119,53 +125,18 @@ const AdminAttendancePage = () => {
   const [editNotes, setEditNotes] = useState<string>('');
   const [saving, setSaving] = useState(false);
 
-  // Lấy năm học
+  // ✅ Lấy năm học từ hooks
   useEffect(() => {
-    const fetchSchoolYears = async () => {
-      try {
-        const res = await schoolConfigApi.getSchoolYears();
-        if (res.data && res.data.length > 0) {
-          setSchoolYear(res.data[res.data.length - 1].code);
-        } else {
-          const now = new Date();
-          const year = now.getFullYear();
-          const month = now.getMonth() + 1;
-          const currentYear = month >= 8 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
-          setSchoolYear(currentYear);
-        }
-      } catch (err) {
-        console.error('Error fetching school years:', err);
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth() + 1;
-        const currentYear = month >= 8 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
-        setSchoolYear(currentYear);
-      }
-    };
-    fetchSchoolYears();
-  }, []);
-
-  // Lấy danh sách lớp và môn
-  useEffect(() => {
-    const fetchClassesAndSubjects = async () => {
-      try {
-        const [classesRes, subjectsRes] = await Promise.all([
-          classApi.getAll(),
-          subjectApi.getSubjects(),
-        ]);
-        setClasses(Array.isArray(classesRes) ? classesRes : []);
-        setSubjects(Array.isArray(subjectsRes) ? subjectsRes : []);
-      } catch (err) {
-        console.error('Error fetching classes/subjects:', err);
-        toast({
-          title: 'Lỗi',
-          description: 'Không thể tải danh sách lớp/môn học',
-          variant: 'destructive',
-        });
-      }
-    };
-    fetchClassesAndSubjects();
-  }, []);
+    if (schoolYears.length > 0) {
+      setSchoolYear(schoolYears[schoolYears.length - 1].code);
+    } else {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+      const currentYear = month >= 8 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+      setSchoolYear(currentYear);
+    }
+  }, [schoolYears]);
 
   // Lấy điểm danh
   const fetchAttendance = async () => {

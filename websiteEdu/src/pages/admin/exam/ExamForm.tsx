@@ -19,6 +19,8 @@ import {
 import dayjs from "dayjs";
 import { examApi } from "@/services/exams/examApi";
 import schoolConfigApi from "@/services/schoolConfigApi";
+// ✅ Sử dụng hooks thay vì API trực tiếp
+import { useSchoolYears } from "@/hooks";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -58,16 +60,17 @@ export default function ExamForm({ id, onSuccess }: ExamFormProps) {
   const [grades, setGrades] = useState<{ code: string; name: string }[]>([]);
   const [currentStatus, setCurrentStatus] = useState<string>("draft");
 
-  // 🏫 Load cấu hình trường học
+  // ✅ Lấy danh sách năm học từ hooks
+  const { schoolYears: allSchoolYears } = useSchoolYears();
+  
+  // 🏫 Load cấu hình trường học (semesters và grades)
   useEffect(() => {
     const fetchConfig = async () => {
       try {
-        const [yRes, sRes, gRes] = await Promise.all([
-          schoolConfigApi.getSchoolYears(),
+        const [sRes, gRes] = await Promise.all([
           schoolConfigApi.getSemesters(),
           schoolConfigApi.getGrades(),
         ]);
-        setYears(yRes?.data || []);
         setSemesters(sRes?.data || []);
         setGrades(gRes?.data || []);
       } catch (err: any) {
@@ -77,6 +80,11 @@ export default function ExamForm({ id, onSuccess }: ExamFormProps) {
     };
     fetchConfig();
   }, []);
+
+  // ✅ Set years từ hooks
+  useEffect(() => {
+    setYears(allSchoolYears.map(y => ({ code: y.code, name: y.name })));
+  }, [allSchoolYears]);
 
   // 📘 Nếu có ID thì load dữ liệu kỳ thi
   useEffect(() => {
@@ -111,7 +119,7 @@ export default function ExamForm({ id, onSuccess }: ExamFormProps) {
       semester: values.semester,
       type: values.type || "regular",
       status: values.status,
-       grades: (values.grades || []).map((g: string | number) => Number(g)),
+       grades: (values.grades || []).map((g: string | number) => String(g)),
       startDate: values.dateRange?.[0]?.toISOString(),
       endDate: values.dateRange?.[1]?.toISOString(),
     };

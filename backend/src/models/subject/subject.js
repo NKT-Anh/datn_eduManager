@@ -37,6 +37,18 @@ const subjectSchema = new mongoose.Schema({
     max: 180
   }, // 🕒 Thời lượng thi mặc định (phút)
 
+  isActive: {
+    type: Boolean,
+    default: true
+  }, // ✅ Trạng thái hoạt động của môn học (mặc định là active)
+
+  // Tổ bộ môn
+  departmentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Department',
+    default: null
+  }, // Tổ bộ môn mà môn học này thuộc về
+
   createdAt: { 
     type: Date, 
     default: Date.now 

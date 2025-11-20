@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,45 +10,37 @@ import { SubjectForm } from "@/components/forms/SubjectForm";
 import { DeleteConfirmDialog } from "@/components/dialogs/DeleteConfirmDialog";
 import { Subject } from "@/types/class";
 import { useToast } from "@/hooks/use-toast";
-import { subjectApi } from "@/services/subjectApi";
-import { Search, Plus, Edit, Trash2, Eye, BookOpen, Code, Settings2,Clock  } from "lucide-react";
+// ✅ Sử dụng hooks thay vì API trực tiếp
+import { useSubjects, useDepartments } from "@/hooks";
+import { Department } from "@/types/department";
+import { Search, Plus, Edit, Trash2, Eye, BookOpen, Code, Settings2,Clock, Users  } from "lucide-react";
 
 const SubjectsPage = () => {
   const { backendUser } = useAuth();
   const { toast } = useToast();
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [loading, setLoading] = useState(false);
+  // ✅ Sử dụng hooks
+  const {
+    subjects,
+    isLoading: loading,
+    create: createSubject,
+    update: updateSubject,
+    remove: removeSubject,
+    updateIncludeInAverage,
+    updateDefaultExamDuration,
+  } = useSubjects();
+  const { departments } = useDepartments();
 
+  const [searchTerm, setSearchTerm] = useState("");
   const [selectedSubject, setSelectedSubject] = useState<Subject | undefined>();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [detailSubjectId, setDetailSubjectId] = useState<string | undefined>();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingSubject, setDeletingSubject] = useState<Subject | undefined>();
-const [editingValues, setEditingValues] = useState<Record<string, number>>({});
+  const [editingValues, setEditingValues] = useState<Record<string, number>>({});
 
-  // Fetch subjects
-  const fetchSubjects = async () => {
-    setLoading(true);
-    try {
-      const data = await subjectApi.getSubjects();
-      setSubjects(data);
-    } catch (error) {
-      toast({
-        title: "Lỗi tải môn học",
-        description: "Không thể tải danh sách môn học",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchSubjects();
-  }, []);
+  // ✅ Không cần fetch departments nữa vì đã dùng hooks
 
   // Filter subjects
   const filteredSubjects = subjects.filter(
@@ -60,9 +52,9 @@ const [editingValues, setEditingValues] = useState<Record<string, number>>({});
   // CRUD Handlers
   const handleCreateSubject = async (data: any) => {
     try {
-      const newSubject = await subjectApi.create(data);
-      setSubjects([...subjects, newSubject]);
+      await createSubject(data);
       toast({ title: "Thành công", description: "Đã thêm môn học mới" });
+      setIsFormOpen(false);
     } catch {
       toast({
         title: "Lỗi",
@@ -75,13 +67,9 @@ const [editingValues, setEditingValues] = useState<Record<string, number>>({});
   const handleEditSubject = async (data: any) => {
     if (!selectedSubject) return;
     try {
-      const updatedSubject = await subjectApi.update(selectedSubject._id, data);
-      setSubjects(
-        subjects.map((s) =>
-          s._id === selectedSubject._id ? updatedSubject : s
-        )
-      );
+      await updateSubject({ id: selectedSubject._id, data });
       setSelectedSubject(undefined);
+      setIsFormOpen(false);
       toast({ title: "Cập nhật thành công" });
     } catch {
       toast({
@@ -96,8 +84,7 @@ const [editingValues, setEditingValues] = useState<Record<string, number>>({});
   const handleDeleteSubject = async () => {
     if (!deletingSubject) return;
     try {
-      await subjectApi.delete(deletingSubject._id);
-      setSubjects(subjects.filter((s) => s._id !== deletingSubject._id));
+      await removeSubject(deletingSubject._id);
       toast({
         title: "Xóa thành công",
         description: `Môn học ${deletingSubject.name} đã được xóa.`,
@@ -124,16 +111,8 @@ const [editingValues, setEditingValues] = useState<Record<string, number>>({});
     return;
   }
 
-  console.log("🟦 Gọi API updateDefaultExamDuration:", subject._id, newValue);
-
   try {
-    const updated = await subjectApi.updateDefaultExamDuration(subject._id, newValue);
-    console.log("✅ API trả về:", updated);
-
-    setSubjects((prev) =>
-      prev.map((s) => (s._id === subject._id ? updated : s))
-    );
-
+    await updateDefaultExamDuration({ id: subject._id, defaultExamDuration: newValue });
     toast({
       title: "✅ Cập nhật thành công",
       description: `Thời lượng thi được đặt thành ${newValue} phút.`,
@@ -155,12 +134,7 @@ const [editingValues, setEditingValues] = useState<Record<string, number>>({});
     currentValue: boolean
   ) => {
     try {
-      await subjectApi.updateIncludeInAverage(subjectId, !currentValue);
-      setSubjects(
-        subjects.map((s) =>
-          s._id === subjectId ? { ...s, includeInAverage: !currentValue } : s
-        )
-      );
+      await updateIncludeInAverage({ id: subjectId, includeInAverage: !currentValue });
       toast({
         title: "Cập nhật cấu hình",
         description: `Đã ${
@@ -271,10 +245,31 @@ const [editingValues, setEditingValues] = useState<Record<string, number>>({});
                       <CardTitle className="text-lg leading-tight">
                         {subject.name}
                       </CardTitle>
-                      <div className="flex items-center space-x-1 mt-1">
+                      <div className="flex items-center space-x-1 mt-1 flex-wrap gap-1">
                         <Code className="h-3 w-3 text-muted-foreground" />
                         <Badge variant="outline" className="text-xs">
                           {subject.code}
+                        </Badge>
+                        {(() => {
+                          const departmentId = typeof subject.departmentId === 'object' 
+                            ? subject.departmentId?._id 
+                            : subject.departmentId;
+                          const department = departmentId 
+                            ? departments.find(d => d._id === departmentId)
+                            : null;
+                          return department ? (
+                            <Badge variant="secondary" className="text-xs">
+                              <Users className="h-3 w-3 mr-1" />
+                              {department.name}
+                            </Badge>
+                          ) : null;
+                        })()}
+                        {/* ✅ Hiển thị trạng thái hoạt động */}
+                        <Badge 
+                          variant={subject.isActive !== false ? "default" : "secondary"}
+                          className="text-xs"
+                        >
+                          {subject.isActive !== false ? "Đang dạy" : "Ngừng dạy"}
                         </Badge>
                       </div>
                     </div>
@@ -331,12 +326,12 @@ const [editingValues, setEditingValues] = useState<Record<string, number>>({});
     }));
   }}
   onChange={(e) => {
+    // ✅ Không cần update local state nữa, React Query sẽ tự động refetch
     const value = parseInt(e.target.value) || 0;
-    setSubjects((prev) =>
-      prev.map((s) =>
-        s._id === subject._id ? { ...s, defaultExamDuration: value } : s
-      )
-    );
+    setEditingValues({
+      ...editingValues,
+      [subject._id]: value,
+    });
   }}
   onBlur={async (e) => {
     const newValue = parseInt(e.target.value);

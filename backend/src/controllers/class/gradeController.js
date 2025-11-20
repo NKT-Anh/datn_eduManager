@@ -63,3 +63,80 @@ exports.deleteGrade = async (req, res) => {
     res.status(400).json({ message: "Không thể xóa khối" });
   }
 };
+
+// 🔄 Khởi tạo các khối cố định (Khối 10, 11, 12)
+exports.initDefaultGrades = async (req, res) => {
+  try {
+    const defaultGrades = [
+      {
+        name: '10',
+        code: 'GRADE10',
+        level: 'high',
+        order: 1,
+        description: 'Khối 10'
+      },
+      {
+        name: '11',
+        code: 'GRADE11',
+        level: 'high',
+        order: 2,
+        description: 'Khối 11'
+      },
+      {
+        name: '12',
+        code: 'GRADE12',
+        level: 'high',
+        order: 3,
+        description: 'Khối 12'
+      }
+    ];
+
+    let created = 0;
+    let skipped = 0;
+    const results = [];
+
+    for (const gradeData of defaultGrades) {
+      // Kiểm tra xem khối đã tồn tại chưa
+      const existing = await Grade.findOne({ 
+        $or: [
+          { name: gradeData.name }, 
+          { code: gradeData.code }
+        ] 
+      });
+
+      if (existing) {
+        results.push({
+          name: gradeData.name,
+          status: 'skipped',
+          message: 'Đã tồn tại'
+        });
+        skipped++;
+      } else {
+        const grade = await Grade.create(gradeData);
+        results.push({
+          name: grade.name,
+          status: 'created',
+          message: 'Đã tạo thành công',
+          data: grade
+        });
+        created++;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Đã khởi tạo ${created} khối mới, bỏ qua ${skipped} khối đã tồn tại`,
+      data: {
+        created,
+        skipped,
+        results
+      }
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi khởi tạo khối",
+      error: err.message
+    });
+  }
+};

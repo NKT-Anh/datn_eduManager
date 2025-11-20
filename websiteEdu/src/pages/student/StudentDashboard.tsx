@@ -1,6 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { useAuth } from '@/contexts/AuthContext11';
+import { useAuth } from '@/contexts/AuthContext';
 import { mockStudents, mockClasses, mockSchedule, mockSubjects, mockGrades, mockAttendance } from '@/data/mockData';
 import { 
   Calendar, 
@@ -12,13 +12,13 @@ import {
 } from 'lucide-react';
 
 const StudentDashboard = () => {
-  const { user } = useAuth();
+  const { backendUser } = useAuth();
   
   // Get student data
-  const studentData = mockStudents.find(s => s.id === user?.id);
+  const studentData = mockStudents.find(s => s.id === backendUser?.studentId || backendUser?._id);
   const studentClass = mockClasses.find(c => c.id === studentData?.classId);
-  const studentGrades = mockGrades.filter(g => g.studentId === user?.id);
-  const studentAttendance = mockAttendance.filter(a => a.studentId === user?.id);
+  const studentGrades = mockGrades.filter(g => g.studentId === backendUser?.studentId || backendUser?._id);
+  const studentAttendance = mockAttendance.filter(a => a.studentId === backendUser?.studentId || backendUser?._id);
   
   // Get today's schedule
   const today = new Date().getDay();
@@ -43,7 +43,7 @@ const StudentDashboard = () => {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Dashboard Học sinh</h1>
-        <p className="text-muted-foreground">Xin chào, {user?.name}!</p>
+        <p className="text-muted-foreground">Xin chào, {backendUser?.name}!</p>
         {studentClass && (
           <Badge variant="outline" className="mt-2">
             Lớp {studentClass.name}

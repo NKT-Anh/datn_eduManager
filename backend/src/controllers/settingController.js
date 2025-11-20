@@ -1,7 +1,7 @@
 const Setting = require('../models/settings');
 const nodemailer = require('nodemailer');
 
-// Lấy cấu hình hiện tại
+// Lấy cấu hình hiện tại (có thể public hoặc cần auth)
 exports.getSettings = async (req, res) => {
   try {
     let setting = await Setting.findOne();
@@ -12,6 +12,31 @@ exports.getSettings = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Lỗi khi tải cấu hình' });
+  }
+};
+
+// Lấy thông tin công khai của trường (public, không cần auth)
+exports.getPublicSchoolInfo = async (req, res) => {
+  try {
+    let setting = await Setting.findOne();
+    if (!setting) {
+      setting = await Setting.create({}); // tạo mới mặc định nếu chưa có
+    }
+    
+    // Chỉ trả về thông tin công khai
+    res.json({
+      schoolName: setting.schoolName || 'Trường THPT Chưa đặt tên',
+      slogan: setting.slogan || '',
+      description: setting.description || '',
+      address: setting.address || '',
+      phone: setting.phone || '',
+      email: setting.email || '',
+      website: setting.website || '',
+      facebook: setting.facebook || '',
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Lỗi khi tải thông tin trường' });
   }
 };
 

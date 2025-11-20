@@ -25,7 +25,8 @@ import {
   CalendarDays,
 } from "lucide-react";
 import { examScheduleApi } from "@/services/exams/examScheduleApi";
-import { subjectApi } from "@/services/subjectApi";
+// ✅ Sử dụng hooks thay vì API trực tiếp
+import { useSubjects } from "@/hooks";
 
 interface ExamSchedulePageProps {
   examId: string;
@@ -38,7 +39,8 @@ export default function ExamSchedulePage({ examId }: ExamSchedulePageProps) {
   const [schedules, setSchedules] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
-  const [subjects, setSubjects] = useState<any[]>([]);
+  // ✅ Sử dụng hooks
+  const { subjects } = useSubjects();
   const [form] = Form.useForm();
   const [editing, setEditing] = useState<any>(null);
   const [selectedGrade, setSelectedGrade] = useState<number>(10);
@@ -58,23 +60,10 @@ export default function ExamSchedulePage({ examId }: ExamSchedulePageProps) {
     }
   };
 
-  /* =========================================================
-     📚 Lấy danh sách môn học
-  ========================================================= */
-const fetchSubjects = async () => {
-  try {
-    const list = await subjectApi.getSubjects();
-    setSubjects(list);
-  } catch (err) {
-    console.error("❌ Lỗi tải môn học:", err);
-    message.error("Không thể tải danh sách môn học.");
-  }
-};
-
+  // ✅ Không cần fetchSubjects nữa vì đã dùng hooks
 
   useEffect(() => {
     if (examId) fetchSchedules();
-    fetchSubjects();
   }, [examId]);
 
   /* =========================================================

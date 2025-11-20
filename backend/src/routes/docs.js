@@ -84,7 +84,19 @@ routers.forEach((r) => {
 });
 
 // 📄 Swagger UI route (public, có nút Authorize)
-router.use('/', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+const swaggerUiOptions = {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'Smart School API Documentation',
+  swaggerOptions: {
+    persistAuthorization: true, // ✅ Lưu token khi refresh
+    displayRequestDuration: true,
+    filter: true,
+    tryItOutEnabled: true,
+  },
+};
+
+router.use('/', swaggerUi.serve);
+router.get('/', swaggerUi.setup(swaggerSpec, swaggerUiOptions));
 
 // 📜 JSON route để xem API list
 router.get('/list', (req, res) => {
@@ -102,8 +114,48 @@ router.get('/list', (req, res) => {
 });
 
 // 📄 Optional: route test token
-router.get('/me', authMiddleware , (req, res) => {
-  res.json({ message: 'Token hợp lệ', user: req.user });
+router.get('/me', authMiddleware, (req, res) => {
+  res.json({ 
+    message: 'Token hợp lệ', 
+    user: {
+      accountId: req.user.accountId,
+      email: req.user.email,
+      role: req.user.role,
+      teacherFlags: req.user.teacherFlags,
+    }
+  });
+});
+
+// 📄 Route để test token (không cần auth, chỉ để xem format)
+router.get('/test-token', (req, res) => {
+  const authHeader = req.headers.authorization;
+  let tokenInfo = {
+    hasHeader: !!authHeader,
+    format: 'Bearer <your-token>',
+    example: 'Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6Ij...',
+    note: 'Token sẽ được lưu tự động khi bạn nhập vào Swagger UI',
+    instructions: [
+      '1. Click nút "Authorize" ở góc trên bên phải',
+      '2. Nhập token của bạn (có thể có hoặc không có prefix "Bearer")',
+      '3. Click "Authorize" để lưu token',
+      '4. Token sẽ được tự động gửi kèm mọi request',
+      '5. Để lấy token từ frontend: localStorage.getItem("token") hoặc từ backendUser?.idToken'
+    ]
+  };
+
+  if (authHeader) {
+    if (authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      tokenInfo.tokenLength = token?.length || 0;
+      tokenInfo.isValidFormat = true;
+      tokenInfo.preview = token ? token.substring(0, 20) + '...' : 'Empty';
+    } else {
+      tokenInfo.isValidFormat = false;
+      tokenInfo.error = 'Token phải có format: Bearer <token>';
+    }
+  }
+
+  res.json(tokenInfo);
 });
 
 module.exports = router;

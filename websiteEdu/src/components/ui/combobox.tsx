@@ -21,6 +21,11 @@ interface ComboboxProps {
 export function Combobox({ options, value, onChange }: ComboboxProps) {
   const [open, setOpen] = React.useState(false)
 
+  // ✅ Lấy labels từ value (IDs)
+  const selectedLabels = value
+    .map((id) => options.find((opt) => opt.value === id)?.label)
+    .filter(Boolean) as string[];
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -30,7 +35,7 @@ export function Combobox({ options, value, onChange }: ComboboxProps) {
           aria-expanded={open}
           className="w-full justify-between"
         >
-          {value.length > 0 ? value.join(", ") : "Chọn lớp..."}
+          {selectedLabels.length > 0 ? selectedLabels.join(", ") : "Chọn lớp..."}
           <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
         </Button>
       </PopoverTrigger>
@@ -40,22 +45,24 @@ export function Combobox({ options, value, onChange }: ComboboxProps) {
           <CommandList>
             <CommandEmpty>Không tìm thấy lớp nào.</CommandEmpty>
             <CommandGroup>
-              {options.map((opt) => (
-                <CommandItem
-                  key={opt.value}
-                  value={opt.value}
-                  onSelect={() => {
-                    const isSelected = value.includes(opt.label)
-                    const newValue = isSelected
-                      ? value.filter((v) => v !== opt.label)
-                      : [...value, opt.label]
-                    onChange(newValue)
-                  }}
-                >
-                  {opt.label}
-                  <Check className={cn("ml-auto", value.includes(opt.label) ? "opacity-100" : "opacity-0")} />
-                </CommandItem>
-              ))}
+              {options.map((opt) => {
+                const isSelected = value.includes(opt.value);
+                return (
+                  <CommandItem
+                    key={opt.value}
+                    value={opt.value}
+                    onSelect={() => {
+                      const newValue = isSelected
+                        ? value.filter((v) => v !== opt.value)
+                        : [...value, opt.value]
+                      onChange(newValue)
+                    }}
+                  >
+                    {opt.label}
+                    <Check className={cn("ml-auto", isSelected ? "opacity-100" : "opacity-0")} />
+                  </CommandItem>
+                );
+              })}
             </CommandGroup>
           </CommandList>
         </Command>

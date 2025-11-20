@@ -50,8 +50,13 @@ export interface Subject {
   description?: string;
   createdAt?: string; // ISO string từ backend
   includeInAverage?: boolean; // Mặc định true
-    defaultExamDuration?: number; // 🕒 thêm trường này
-
+  defaultExamDuration?: number; // 🕒 thời lượng thi mặc định
+  isActive?: boolean; // ✅ Trạng thái hoạt động (mặc định true)
+  departmentId?: {
+    _id: string;
+    name: string;
+    code: string;
+  } | string | null; // Tổ bộ môn
 }
 
 // Data gửi khi tạo mới hoặc update

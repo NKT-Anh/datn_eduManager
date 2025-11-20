@@ -15,7 +15,7 @@ examId: {
   type: { type: String, enum: ['regular', 'mock', 'graduation'], default: 'regular' },
   startDate: { type: Date, required: true },
   endDate: { type: Date, required: true },
-  grades: { type: [Number], enum: [10, 11, 12], required: true },
+  grades: { type: [String], enum: ['10', '11', '12'], required: true },
   status: { type: String, enum: ['draft', 'published', 'locked', 'archived'], default: 'draft' },
   description: String,
   note: String,
@@ -33,36 +33,6 @@ examSchema.pre('save', function(next) {
     return next(new Error('startDate phải nhỏ hơn endDate'));
   }
   next();
-});
-examSchema.post('findOneAndUpdate', async function (doc) {
-  try {
-    if (!doc) return;
-
-    const updatedFields = this.getUpdate();
-    if (!updatedFields?.status) return; // ✅ chỉ chạy nếu status thay đổi
-
-    const newStatus = updatedFields.status;
-    console.log(`🔄 Đồng bộ trạng thái "${newStatus}" cho các lịch thi của kỳ ${doc.name}`);
-
-    // Cập nhật toàn bộ ExamSchedule có exam = doc._id
-    const updateMap = {
-      draft: "draft",
-      published: "confirmed",
-      locked: "completed",
-      archived: "completed"
-    };
-
-    const mappedStatus = updateMap[newStatus] || "draft";
-
-    await ExamSchedule.updateMany(
-      { exam: doc._id },
-      { $set: { status: mappedStatus } }
-    );
-
-    console.log(`✅ Đã cập nhật trạng thái lịch thi sang "${mappedStatus}" cho kỳ ${doc.name}`);
-  } catch (err) {
-    console.error("❌ Lỗi đồng bộ trạng thái ExamSchedule:", err);
-  }
 });
 examSchema.post("findOneAndUpdate", async function (doc) {
   if (!doc) return;

@@ -78,16 +78,85 @@ export const examRoomApi = {
     return res.data;
   },
 
+  /** 📊 Lấy số phòng khả dụng (available + normal) */
+  async getAvailableRoomsCount() {
+    const res = await api.get(`/exam/rooms/available-count`);
+    return res.data;
+  },
+
   /** 🧾 Xuất PDF danh sách phòng thi (hỗ trợ token tải file trực tiếp) */
   async exportPdf(roomId: string) {
     const token = localStorage.getItem("firebaseToken"); // 🔐 token xác thực
     const url = `/api/exam/rooms/${roomId}/export/pdf${token ? `?token=${token}` : ""}`;
     window.open(url, "_blank");
   },
-  /** 🤖 Tự động gán giám thị */
-async autoAssignInvigilators(data: { examId: string; scheduleId: string }) {
-  const res = await api.post("/exam/rooms/auto-assign-invigilators", data);
-  return res.data;
-},
+  /** 🤖 Tự động gán giám thị cho 1 schedule */
+  async autoAssignInvigilators(data: { examId: string; scheduleId: string }) {
+    const res = await api.post("/exam/rooms/auto-assign-invigilators", data);
+    return res.data;
+  },
 
+  /** 🤖 Tự động gán giám thị cho toàn bộ kỳ thi */
+  async autoAssignInvigilatorsForExam(data: { examId: string }) {
+    const res = await api.post("/exam/rooms/auto-assign-invigilators-for-exam", data);
+    return res.data;
+  },
+
+  /** 🗑️ Xóa toàn bộ giám thị đã gán trong kỳ thi */
+  async removeAllInvigilators(data: { examId: string }) {
+    const res = await api.post("/exam/rooms/remove-all-invigilators", data);
+    return res.data;
+  },
+
+  /** 📋 Lấy danh sách phòng học khả dụng (chưa được dùng trong kỳ thi) */
+  async getAvailableRooms(examId: string) {
+    const res = await api.get(`/exam/rooms/exam/${examId}/available`);
+    return res.data;
+  },
+
+  /** 🏫 Lấy danh sách phòng cố định (FixedExamRoom) */
+  async getFixedRooms(params?: { examId?: string; grade?: string }) {
+    const res = await api.get("/exam/rooms/fixed-rooms", { params });
+    return res.data;
+  },
+
+  /** 🎯 Phân học sinh vào phòng cố định (FixedExamRoom) */
+  async assignStudentsToFixedRooms(data: { 
+    examId: string; 
+    grade: string; 
+    fixedRoomId?: string;
+    maxStudentsPerRoom?: number;
+    maxRooms?: number;
+  }) {
+    const res = await api.post("/exam/rooms/assign-to-fixed-rooms", data);
+    return res.data;
+  },
+
+  /** 🏫 Phân phòng cố định vào phòng thi (ExamRoom) */
+  async assignFixedRoomsToExamRooms(data: {
+    examId: string;
+    scheduleId: string;
+    roomMappings: Array<{ fixedRoomId: string; roomId: string }>;
+  }) {
+    const res = await api.post("/exam/rooms/assign-fixed-to-exam-rooms", data);
+    return res.data;
+  },
+
+  /** 🏫 Phân phòng nhóm vào tất cả phòng thi (tự động) */
+  async assignFixedRoomsToAllSchedules(data: { examId: string }) {
+    const res = await api.post("/exam/rooms/assign-fixed-to-all-schedules", data);
+    return res.data;
+  },
+
+  /** ✏️ Cập nhật phòng cố định */
+  async updateFixedRoom(fixedRoomId: string, data: { students?: string[]; capacity?: number }) {
+    const res = await api.put(`/exam/rooms/fixed-rooms/${fixedRoomId}`, data);
+    return res.data;
+  },
+
+  /** 🔄 Di chuyển FixedExamRoom từ phòng này sang phòng khác */
+  async moveFixedRoom(data: { examRoomId: string; newRoomId: string }) {
+    const res = await api.post("/exam/rooms/move-fixed-room", data);
+    return res.data;
+  },
 };

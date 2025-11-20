@@ -229,7 +229,7 @@ export default function RoomListPage() {
         onOk={() => form.submit()}
         okText="Lưu"
         cancelText="Hủy"
-        destroyOnClose
+        destroyOnHidden
       >
         <Form layout="vertical" form={form} onFinish={onFinish}>
           <Form.Item

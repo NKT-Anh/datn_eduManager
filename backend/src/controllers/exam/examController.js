@@ -1,5 +1,6 @@
 // controllers/exam/examController.js
-const { Exam, ExamClass, ExamSchedule, ExamRoom, ExamGrade } = require('../../models/exam/examIndex');
+const { Exam, ExamClass, ExamSchedule, ExamRoom, ExamGrade, ExamStudent, FixedExamRoom, RoomAssignment } = require('../../models/exam/examIndex');
+const Student = require('../../models/user/student');
 const mongoose = require('mongoose');
 
 /* =========================================================
@@ -16,13 +17,29 @@ exports.createExam = async (req, res) => {
         .json({ error: "Thiếu thông tin bắt buộc (name, year, semester, grades)." });
     }
 
+    // 🔒 Ràng buộc: Không được tạo kỳ thi nếu chưa có năm học active
+    const SchoolYear = require('../../models/schoolYear');
+    const activeYear = await SchoolYear.findOne({ isActive: true });
+    if (!activeYear) {
+      return res.status(400).json({ 
+        error: "Không thể tạo kỳ thi. Vui lòng kích hoạt một năm học trước." 
+      });
+    }
+
+    // Kiểm tra năm học được chọn có phải là năm học active không
+    if (year !== activeYear.code) {
+      return res.status(400).json({ 
+        error: `Chỉ có thể tạo kỳ thi cho năm học đang hoạt động: ${activeYear.name} (${activeYear.code})` 
+      });
+    }
+
     // ✅ Kiểm tra ngày hợp lệ
     if (new Date(startDate) >= new Date(endDate)) {
       return res.status(400).json({ error: "Ngày bắt đầu phải nhỏ hơn ngày kết thúc." });
     }
 
-    // ✅ Ép kiểu khối học về Number
-    const numericGrades = grades.map((g) => Number(g));
+    // ✅ Đảm bảo grades là String
+    const stringGrades = grades.map((g) => String(g));
 
     // ✅ Kiểm tra trùng logic (năm + học kỳ + loại + tên)
     const exists = await Exam.findOne({
@@ -56,13 +73,60 @@ exports.createExam = async (req, res) => {
       type,
       startDate,
       endDate,
-      grades: numericGrades,
+      grades: stringGrades,
       createdBy: req.user?.uid || "admin",
     });
 
+    // 🎓 TỰ ĐỘNG THÊM HỌC SINH VÀO KỲ THI
+    // Lấy học sinh theo:
+    // - Năm học (currentYear): trùng với year của kỳ thi (VD: "2025-2026")
+    // - Khối (grade): trong danh sách grades của kỳ thi (VD: ["10", "11", "12"])
+    // - Trạng thái: active
+    // Lưu ý: Học kỳ (semester) không ảnh hưởng đến việc lấy học sinh, 
+    // vì học sinh sẽ tham gia tất cả các kỳ thi trong năm học đó
+    let studentsAdded = 0;
+    try {
+      const students = await Student.find({
+        status: "active",
+        currentYear: year, // ✅ Lọc theo năm học (VD: "2025-2026")
+        grade: { $in: stringGrades }, // ✅ Lọc theo khối (VD: ["10", "11", "12"])
+      })
+        .populate("classId", "_id")
+        .select("_id classId grade")
+        .lean();
+
+      if (students.length > 0) {
+        // ✅ Lọc bỏ học sinh chưa có lớp (vì ExamStudent.class là required)
+        const studentsWithClass = students.filter((s) => s.classId?._id);
+        if (studentsWithClass.length < students.length) {
+          const withoutClass = students.length - studentsWithClass.length;
+          console.warn(`⚠️ Có ${withoutClass} học sinh chưa được gán vào lớp, sẽ bỏ qua.`);
+        }
+
+        if (studentsWithClass.length > 0) {
+          const examStudents = studentsWithClass.map((s, i) => ({
+            exam: exam._id,
+            student: s._id,
+            class: s.classId._id, // ✅ Lấy từ student.classId, đảm bảo không null
+            grade: String(s.grade),
+            sbd: `${String(s.grade)}${String(i + 1).padStart(4, "0")}`,
+            status: "active",
+          }));
+
+          await ExamStudent.insertMany(examStudents, { ordered: false });
+          studentsAdded = examStudents.length;
+          console.log(`✅ Đã tự động thêm ${studentsAdded} học sinh vào kỳ thi ${exam.name}`);
+        }
+      }
+    } catch (studentErr) {
+      console.error("⚠️ Lỗi khi tự động thêm học sinh:", studentErr);
+      // Không throw error, chỉ log để không làm gián đoạn việc tạo kỳ thi
+    }
+
     res.status(201).json({
-      message: "✅ Tạo kỳ thi thành công",
+      message: `✅ Tạo kỳ thi thành công${studentsAdded > 0 ? ` và đã thêm ${studentsAdded} học sinh` : ""}`,
       exam,
+      studentsAdded,
     });
   } catch (err) {
     console.error("❌ Lỗi tạo kỳ thi:", err);
@@ -103,13 +167,13 @@ exports.getExams = async (req, res) => {
 
       if (Array.isArray(grade)) {
         // Trường hợp: ?grade=10&grade=11
-        gradesArray = grade.map(g => Number(g)).filter(n => !isNaN(n));
+        gradesArray = grade.map(g => String(g)).filter(g => ['10', '11', '12'].includes(g));
       } else if (typeof grade === "string") {
         // Trường hợp: ?grade=10 hoặc ?grade=10,11
         gradesArray = grade
           .split(",")
-          .map(g => Number(g.trim()))
-          .filter(n => !isNaN(n));
+          .map(g => String(g.trim()))
+          .filter(g => ['10', '11', '12'].includes(g));
       }
 
       if (gradesArray.length > 0) {
@@ -168,8 +232,13 @@ exports.updateExam = async (req, res) => {
   try {
     const exam = await Exam.findById(req.params.id);
     if (!exam) return res.status(404).json({ error: 'Không tìm thấy kỳ thi để cập nhật.' });
-    if (exam.status === 'locked') {
-      return res.status(403).json({ error: 'Kỳ thi đã bị khóa, không thể chỉnh sửa.' });
+    if (exam.status === 'locked' || exam.status === 'archived') {
+      return res.status(403).json({ error: 'Kỳ thi đã bị khóa hoặc lưu trữ, không thể chỉnh sửa.' });
+    }
+
+    // ✅ Đảm bảo grades là String nếu có
+    if (req.body.grades && Array.isArray(req.body.grades)) {
+      req.body.grades = req.body.grades.map((g) => String(g));
     }
 
     const updated = await Exam.findByIdAndUpdate(req.params.id, req.body, { new: true });
@@ -187,11 +256,15 @@ exports.deleteExam = async (req, res) => {
     const deleted = await Exam.findByIdAndDelete(req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Không tìm thấy kỳ thi để xóa.' });
 
-        await Promise.all([
+    // ✅ Xóa tất cả dữ liệu liên quan đến kỳ thi
+    await Promise.all([
       ExamClass.deleteMany({ exam: req.params.id }),
       ExamSchedule.deleteMany({ exam: req.params.id }),
       ExamRoom.deleteMany({ exam: req.params.id }),
       ExamGrade.deleteMany({ exam: req.params.id }),
+      ExamStudent.deleteMany({ exam: req.params.id }),
+      FixedExamRoom.deleteMany({ exam: req.params.id }),
+      RoomAssignment.deleteMany({ exam: req.params.id }),
     ]);
     res.json({ message: '🗑️ Đã xóa kỳ thi thành công.' });
   } catch (err) {
@@ -218,7 +291,12 @@ exports.lockExam = async (req, res) => {
 exports.archiveExam = async (req, res) => {
   try {
     const { isArchived = true } = req.body;
-    const updated = await Exam.findByIdAndUpdate(req.params.id, { isArchived }, { new: true });
+    // ✅ Sử dụng status: 'archived' thay vì isArchived (field đã bị comment trong model)
+    const updated = await Exam.findByIdAndUpdate(
+      req.params.id, 
+      { status: isArchived ? 'archived' : 'draft' }, 
+      { new: true }
+    );
     if (!updated) return res.status(404).json({ error: 'Không tìm thấy kỳ thi để lưu trữ.' });
     res.json({
       message: isArchived ? '📦 Đã lưu trữ kỳ thi.' : '📂 Đã mở lại kỳ thi.',
@@ -237,14 +315,16 @@ exports.cloneExam = async (req, res) => {
     const oldExam = await Exam.findById(req.params.id);
     if (!oldExam) return res.status(404).json({ error: 'Kỳ thi không tồn tại.' });
 
+    const examData = oldExam.toObject();
+    delete examData._id;
+    delete examData.createdAt;
+    delete examData.updatedAt;
+    
     const newExam = await Exam.create({
-      ...oldExam.toObject(),
-      _id: undefined,
-      examId: `${oldExam.examId}_copy`,
+      ...examData,
+      examId: `${oldExam.examId}_copy_${Date.now()}`,
       name: `${oldExam.name} (Bản sao)`,
       status: 'draft',
-      isArchived: false,
-      createdAt: new Date(),
     });
 
     res.json({ message: '✅ Nhân bản kỳ thi thành công.', exam: newExam });
@@ -263,14 +343,16 @@ exports.getExamStats = async (req, res) => {
       return res.status(400).json({ error: 'ID kỳ thi không hợp lệ.' });
     }
 
-    const [classes, schedules, rooms, grades] = await Promise.all([
+    const [classes, schedules, rooms, grades, students, fixedRooms] = await Promise.all([
       ExamClass.countDocuments({ exam: examId }),
       ExamSchedule.countDocuments({ exam: examId }),
       ExamRoom.countDocuments({ exam: examId }),
       ExamGrade.countDocuments({ exam: examId }),
+      ExamStudent.countDocuments({ exam: examId }),
+      FixedExamRoom.countDocuments({ exam: examId }),
     ]);
 
-    res.json({ classes, schedules, rooms, grades });
+    res.json({ classes, schedules, rooms, grades, students, fixedRooms });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

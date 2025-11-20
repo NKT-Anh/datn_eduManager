@@ -14,7 +14,7 @@ module.exports = (role) =>{
             next();
         }
         catch(error){
-            console.error('[Lỗi kiểm tra vai trò]', err);
+            console.error('[Lỗi kiểm tra vai trò]', error);
             return res.status(500).json({message:'Lỗi server'})
         }
     }

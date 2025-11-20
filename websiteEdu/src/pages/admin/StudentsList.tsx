@@ -38,7 +38,8 @@ import {
 import { useNavigate } from "react-router-dom";
 import { debounce } from "lodash";
 import { useStudents } from "@/hooks/auth/useStudents";
-import schoolConfigApi from "@/services/schoolConfigApi";
+// ✅ Sử dụng hooks thay vì API trực tiếp
+import { useSchoolYears } from "@/hooks";
 import { classApi } from "@/services/classApi";
 import { StudentCreatePayload } from "@/services/studentApi";
 import { Student } from "@/types/auth";
@@ -59,7 +60,12 @@ export default function StudentsList() {
   // ⚙️ State
   // ===============================
   const [searchTerm, setSearchTerm] = useState<string>("");
-  const [schoolYears, setSchoolYears] = useState<{ code: string; name: string }[]>([]);
+  // ✅ Sử dụng hooks
+  const { schoolYears: allSchoolYears } = useSchoolYears();
+  const schoolYears = useMemo(() => 
+    allSchoolYears.map(y => ({ code: y.code, name: y.name })),
+    [allSchoolYears]
+  );
   const [groupedClasses, setGroupedClasses] = useState<GroupedClass[]>([]);
   const [selectedYear, setSelectedYear] = useState<string>("");
   const [selectedGrade, setSelectedGrade] = useState<string>("");
@@ -84,18 +90,7 @@ export default function StudentsList() {
   // ===============================
   // ⚙️ Tải cấu hình trường học + lớp
   // ===============================
-  const fetchSchoolConfigs = useCallback(async () => {
-    try {
-      const res = await schoolConfigApi.getSchoolYears();
-      setSchoolYears(res.data || res || []);
-    } catch {
-      toast({
-        title: "Lỗi tải dữ liệu",
-        description: "Không thể tải danh sách niên khóa.",
-        variant: "destructive",
-      });
-    }
-  }, [toast]);
+  // ✅ schoolYears đã được load từ hook useSchoolYears
 
   const fetchGroupedClasses = useCallback(async (year?: string) => {
     if (!year) return setGroupedClasses([]);
@@ -111,9 +106,7 @@ export default function StudentsList() {
     }
   }, [toast]);
 
-  useEffect(() => {
-    fetchSchoolConfigs();
-  }, [fetchSchoolConfigs]);
+  // ✅ Không cần fetchSchoolConfigs nữa vì đã dùng hook
 
   useEffect(() => {
     if (selectedYear) fetchGroupedClasses(selectedYear);

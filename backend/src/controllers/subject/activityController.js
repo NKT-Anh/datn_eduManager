@@ -29,14 +29,24 @@ exports.getActivityById = async (req, res) => {
 // 📌 Tạo mới hoạt động
 exports.createActivity = async (req, res) => {
   try {
-    const { name, startDate, endDate } = req.body;
+    const { name } = req.body;
 
     // ✅ Kiểm tra bắt buộc
-    if (!name || !startDate || !endDate) {
-      return res.status(400).json({ message: 'Thiếu thông tin bắt buộc (name, startDate, endDate).' });
+    if (!name) {
+      return res.status(400).json({ message: 'Tên hoạt động là bắt buộc.' });
     }
 
-    const activity = new Activity(req.body);
+    // ✅ Loại bỏ các trường không thuộc Activity model (dayOfWeek, timeSlot, isPermanent, startDate, endDate được lưu trong ScheduleConfig)
+    const activityData = {
+      name: req.body.name,
+      type: req.body.type,
+      description: req.body.description,
+      grades: req.body.grades,
+      code: req.body.code,
+      isActive: req.body.isActive !== undefined ? req.body.isActive : true,
+    };
+
+    const activity = new Activity(activityData);
     await activity.save();
     res.status(201).json(activity);
   } catch (err) {
@@ -48,7 +58,24 @@ exports.createActivity = async (req, res) => {
 // 📌 Cập nhật hoạt động
 exports.updateActivity = async (req, res) => {
   try {
-    const activity = await Activity.findByIdAndUpdate(req.params.id, req.body, {
+    // ✅ Chỉ cập nhật các trường thuộc Activity model (loại bỏ dayOfWeek, timeSlot, isPermanent, startDate, endDate)
+    const updateData = {
+      name: req.body.name,
+      type: req.body.type,
+      description: req.body.description,
+      grades: req.body.grades,
+      code: req.body.code,
+      isActive: req.body.isActive,
+    };
+
+    // ✅ Loại bỏ các trường undefined
+    Object.keys(updateData).forEach(key => {
+      if (updateData[key] === undefined) {
+        delete updateData[key];
+      }
+    });
+
+    const activity = await Activity.findByIdAndUpdate(req.params.id, updateData, {
       new: true,
       runValidators: true, // ✅ để mongoose kiểm tra schema khi update
     });

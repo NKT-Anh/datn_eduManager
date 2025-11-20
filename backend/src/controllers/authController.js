@@ -35,6 +35,7 @@ exports.login = async (req, res) => {
       uid: user.uid,
       jwt: token, // token này chỉ dùng để gọi API backend (nếu cần)
     });
+    console.log("JWT_SECRET =", process.env.JWT_SECRET);
 
   } catch (error) {
     console.error('[Login Error]', error);

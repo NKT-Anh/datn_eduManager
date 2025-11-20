@@ -138,7 +138,7 @@ exports.getSubject = async (req, res) => {
 ========================================================= */
 exports.createSubject = async (req, res) => {
   try {
-    const { name, code, grades, description, includeInAverage, defaultExamDuration } = req.body;
+    const { name, code, grades, description, includeInAverage, defaultExamDuration, isActive } = req.body;
 
     if (!name || !grades || !Array.isArray(grades) || grades.length === 0) {
       return res.status(400).json({ error: "Name and at least one grade are required" });
@@ -154,7 +154,8 @@ exports.createSubject = async (req, res) => {
       grades: normalizeGrades,
       description,
       includeInAverage,
-      defaultExamDuration
+      defaultExamDuration,
+      isActive: isActive !== undefined ? isActive : true // ✅ Mặc định là true
     });
 
     const saved = await newSubject.save();
@@ -169,7 +170,7 @@ exports.createSubject = async (req, res) => {
 ========================================================= */
 exports.updateSubject = async (req, res) => {
   try {
-    const { name, code, grades, description, includeInAverage, defaultExamDuration } = req.body;
+    const { name, code, grades, description, includeInAverage, defaultExamDuration, isActive } = req.body;
     let normalizeGrades;
 
     if (grades && Array.isArray(grades)) {
@@ -177,16 +178,23 @@ exports.updateSubject = async (req, res) => {
       normalizeGrades = [...new Set(grades.map(String))].sort((a, b) => a.localeCompare(b));
     }
 
+    const updateData = {
+      name,
+      code,
+      grades: normalizeGrades,
+      description,
+      includeInAverage,
+      defaultExamDuration
+    };
+
+    // ✅ Chỉ cập nhật isActive nếu có trong request
+    if (isActive !== undefined) {
+      updateData.isActive = isActive;
+    }
+
     const updated = await Subject.findByIdAndUpdate(
       req.params.id,
-      {
-        name,
-        code,
-        grades: normalizeGrades,
-        description,
-        includeInAverage,
-        defaultExamDuration
-      },
+      updateData,
       { new: true, runValidators: true }
     );
 

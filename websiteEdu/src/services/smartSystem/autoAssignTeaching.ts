@@ -1,224 +1,55 @@
-// import { Subject, ClassType, TeachingAssignmentPayload, TeachingAssignment } from "@/types/class";
-// import { Teacher } from "@/types/auth";
-
-// /**
-//  * Hàm tự động phân công giảng dạy cho các lớp và môn học
-//  * @param classes Danh sách lớp
-//  * @param subjects Danh sách môn học
-//  * @param teachers Danh sách giáo viên
-//  * @param existingAssignments Phân công hiện tại (để tránh trùng)
-//  * @param year Năm học
-//  * @param semester Học kỳ
-//  * @returns Danh sách phân công mới (TeachingAssignmentPayload[])
-//  */
-// export function autoAssignTeaching(
-//   classes: ClassType[],
-//   subjects: Subject[],
-//   teachers: Teacher[],
-//   existingAssignments: TeachingAssignment[],
-//   year: string,
-//   semester: "1" | "2"
-// ): TeachingAssignmentPayload[] {
-//   // 1. Map đếm số phân công của giáo viên
-//   const teacherLoadMap = new Map<string, number>();
-//   teachers.forEach(t => teacherLoadMap.set(t._id, 0));
-//   existingAssignments.forEach(a => {
-//     if (a.teacherId?._id) {
-//       teacherLoadMap.set(
-//         a.teacherId._id,
-//         (teacherLoadMap.get(a.teacherId._id) || 0) + 1
-//       );
-//     }
-//   });
-
-//   // 2. Map để tránh phân công trùng môn cho cùng lớp
-//   const assignedMap = new Map<string, Set<string>>(); // key = classId, value = set subjectId
-//   existingAssignments.forEach(a => {
-//     if (!assignedMap.has(a.classId._id)) {
-//       assignedMap.set(a.classId._id, new Set());
-//     }
-//     assignedMap.get(a.classId._id)!.add(a.subjectId._id);
-//   });
-
-//   const newAssignments: TeachingAssignmentPayload[] = [];
-//   const unassigned: { className: string; subjectName: string }[] = [];
-
-//   // 3. Duyệt từng lớp
-//   for (const cls of classes) {
-//     // Lấy môn phù hợp với lớp (theo grade của lớp)
-//     const classSubjects = subjects.filter(s =>
-//       s.grades.includes(cls.grade as any)
-//     );
-
-//     for (const subj of classSubjects) {
-//       // Nếu lớp đã có môn này thì bỏ qua
-//       if (assignedMap.get(cls._id)?.has(subj._id)) continue;
-
-//       // Tìm giáo viên có thể dạy môn này (phải có subjectId = subj._id và đúng khối)
-//       const candidateTeachers = teachers
-//         .filter(t =>
-//           t.subjects?.some(
-//             s =>
-//               s.subjectId._id === subj._id &&
-//               s.grades.includes(cls.grade as any)
-//           )
-//         )
-//         .sort(
-//           (a, b) =>
-//             (teacherLoadMap.get(a._id) || 0) -
-//             (teacherLoadMap.get(b._id) || 0)
-//         );
-
-//       if (candidateTeachers.length === 0) {
-//         unassigned.push({ className: cls.className, subjectName: subj.name });
-//         console.warn(
-//           `⚠️ Không có giáo viên dạy môn ${subj.name} cho lớp ${cls.className}`
-//         );
-//         continue;
-//       }
-
-//       const MAX_CLASS_PER_TEACHER = 5;
-//       const selectedTeacher = candidateTeachers.find(
-//         t => (teacherLoadMap.get(t._id) || 0) < MAX_CLASS_PER_TEACHER
-//       );
-
-//       if (!selectedTeacher) {
-//         console.warn(
-//           `⚠️ Tất cả giáo viên dạy môn ${subj.name} đều đã đủ số lớp (max ${MAX_CLASS_PER_TEACHER})`
-//         );
-//         continue;
-//       }
-
-//       // Tạo phân công mới
-//       const assignment: TeachingAssignmentPayload = {
-//         teacherId: selectedTeacher._id,
-//         subjectId: subj._id,
-//         classId: cls._id,
-//         year,
-//         semester,
-//       };
-
-//       newAssignments.push(assignment);
-
-//       // Cập nhật map và load giáo viên
-//       if (!assignedMap.has(cls._id)) assignedMap.set(cls._id, new Set());
-//       assignedMap.get(cls._id)!.add(subj._id);
-//       teacherLoadMap.set(
-//         selectedTeacher._id,
-//         (teacherLoadMap.get(selectedTeacher._id) || 0) + 1
-//       );
-//     }
-//   }
-
-//   return newAssignments;
-// }
-
-// export function autoAssignTeaching(
-//   classes: ClassType[],
-//   subjects: Subject[],
-//   teachers: Teacher[],
-//   existingAssignments: TeachingAssignment[],
-//   year: string,
-//   semester: "1" | "2"
-// ): TeachingAssignmentPayload[] {
-//   const teacherLoadMap = new Map<string, number>();
-//   teachers.forEach(t => teacherLoadMap.set(t._id, 0));
-
-//   existingAssignments.forEach(a => {
-//     if (a.teacherId?._id) {
-//       teacherLoadMap.set(
-//         a.teacherId._id,
-//         (teacherLoadMap.get(a.teacherId._id) || 0) + 1
-//       );
-//     }
-//   });
-
-//   // Map để tránh phân công trùng môn trong cùng lớp
-//   const assignedMap = new Map<string, Set<string>>();
-//   existingAssignments.forEach(a => {
-//     if (!assignedMap.has(a.classId._id)) {
-//       assignedMap.set(a.classId._id, new Set());
-//     }
-//     assignedMap.get(a.classId._id)!.add(a.subjectId._id);
-//   });
-
-//   const newAssignments: TeachingAssignmentPayload[] = [];
-//   const unassigned: { className: string; subjectName: string }[] = [];
-
-//   for (const cls of classes) {
-//     const classSubjects = subjects.filter(s => s.grades.includes(cls.grade as any));
-
-//     for (const subj of classSubjects) {
-//       // Nếu đã có phân công cho lớp + môn + kỳ này thì bỏ
-//       if (assignedMap.get(cls._id)?.has(subj._id)) continue;
-
-//       let selectedTeacher: Teacher | undefined;
-
-//       // 🔹 Nếu là học kỳ 2 → ưu tiên giáo viên đã dạy môn này cho lớp ở học kỳ 1
-//       if (semester === "2") {
-//         const prev = existingAssignments.find(
-//           a =>
-//             a.classId._id === cls._id &&
-//             a.subjectId._id === subj._id &&
-//             a.year === year &&
-//             a.semester === "1"
-//         );
-//         if (prev && teachers.some(t => t._id === prev.teacherId._id)) {
-//           selectedTeacher = teachers.find(t => t._id === prev.teacherId._id);
-//         }
-//       }
-
-//       // 🔹 Nếu chưa có teacher (học kỳ 1 hoặc hk2 mà ko tìm thấy) → chọn theo load
-//       if (!selectedTeacher) {
-//         const candidateTeachers = teachers
-//           .filter(t =>
-//             t.subjects?.some(
-//               s =>
-//                 s.subjectId._id === subj._id &&
-//                 s.grades.includes(cls.grade as any)
-//             )
-//           )
-//           .sort(
-//             (a, b) =>
-//               (teacherLoadMap.get(a._id) || 0) -
-//               (teacherLoadMap.get(b._id) || 0)
-//           );
-
-//         const MAX_CLASS_PER_TEACHER = 5;
-//         selectedTeacher = candidateTeachers.find(
-//           t => (teacherLoadMap.get(t._id) || 0) < MAX_CLASS_PER_TEACHER
-//         );
-//       }
-
-//       if (!selectedTeacher) {
-//         unassigned.push({ className: cls.className, subjectName: subj.name });
-//         console.warn(`⚠️ Không tìm thấy giáo viên cho môn ${subj.name} lớp ${cls.className}`);
-//         continue;
-//       }
-
-//       const assignment: TeachingAssignmentPayload = {
-//         teacherId: selectedTeacher._id,
-//         subjectId: subj._id,
-//         classId: cls._id,
-//         year,
-//         semester,
-//       };
-
-//       newAssignments.push(assignment);
-
-//       if (!assignedMap.has(cls._id)) assignedMap.set(cls._id, new Set());
-//       assignedMap.get(cls._id)!.add(subj._id);
-//       teacherLoadMap.set(
-//         selectedTeacher._id,
-//         (teacherLoadMap.get(selectedTeacher._id) || 0) + 1
-//       );
-//     }
-//   }
-
-//   return newAssignments;
-// }
 import { Subject, ClassType, TeachingAssignmentPayload, TeachingAssignment } from "@/types/class";
 import { Teacher } from "@/types/auth";
+
+/**
+ * ✅ Helper: Lấy số tiết/tuần của môn học theo khối
+ * Nếu không có thông tin, dùng giá trị mặc định dựa trên tên môn
+ */
+function getSubjectPeriodsPerWeek(
+  subjectId: string,
+  grade: string,
+  subjects?: Subject[],
+  defaultPeriods: number = 2
+): number {
+  // ✅ Tìm môn học trong danh sách để lấy tên
+  const subject = subjects?.find(s => s._id === subjectId);
+  if (!subject) return defaultPeriods;
+  
+  const subjectName = subject.name.toLowerCase();
+  
+  // ✅ Map số tiết/tuần mặc định cho các môn học phổ biến
+  const defaultPeriodsMap: Record<string, number> = {
+    'toán': 4,
+    'ngữ văn': 4,
+    'văn': 4,
+    'tiếng anh': 3,
+    'anh': 3,
+    'vật lý': 2,
+    'hóa học': 2,
+    'hóa': 2,
+    'sinh học': 2,
+    'sinh': 2,
+    'lịch sử': 2,
+    'địa lý': 2,
+    'địa': 2,
+    'giáo dục công dân': 1,
+    'gdcd': 1,
+    'thể dục': 2,
+    'công nghệ': 1,
+    'tin học': 1,
+    'tin': 1,
+  };
+  
+  // ✅ Tìm số tiết/tuần từ map
+  for (const [key, periods] of Object.entries(defaultPeriodsMap)) {
+    if (subjectName.includes(key)) {
+      return periods;
+    }
+  }
+  
+  // ✅ Mặc định: 2 tiết/tuần cho các môn khác
+  return defaultPeriods;
+}
 
 /**
  * Hàm tự động phân công giảng dạy thông minh
@@ -227,27 +58,43 @@ import { Teacher } from "@/types/auth";
  * - Reset toàn bộ mỗi năm học
  */
 // 🔹 Tính MAX_CLASS_PER_TEACHER dựa trên số lớp cần phân công và số giáo viên đủ điều kiện
+// ✅ Tối ưu: Tính một lần cho tất cả các khối và môn học
 function calculateMaxClassPerTeacher(
   classes: ClassType[],
   subjects: Subject[],
   teachers: Teacher[],
-  grade: string
-) {
-  let maxPerTeacherMap = new Map<string, number>();
+  grades: string[]
+): Map<string, number> {
+  const maxPerTeacherMap = new Map<string, number>();
 
-  for (const subj of subjects.filter(s => s.grades.includes(grade as any))) {
-    // Số lớp cần phân công môn này
-    const numClasses = classes.filter(c => c.grade === grade).length;
+  // Tính cho từng khối
+  for (const grade of grades) {
+    const gradeClasses = classes.filter(c => String(c.grade) === grade);
+    const gradeSubjects = subjects.filter(s => s.grades.includes(grade as "10" | "11" | "12"));
 
-    // Giáo viên có thể dạy môn này
-    const eligibleTeachers = teachers.filter(t =>
-      t.subjects?.some(
-        s => s.subjectId._id === subj._id && s.grades.includes(grade as any)
-      )
-    );
+    for (const subj of gradeSubjects) {
+      // Số lớp cần phân công môn này
+      const numClasses = gradeClasses.length;
 
-    const maxPerTeacher = Math.ceil(numClasses / eligibleTeachers.length);
-    eligibleTeachers.forEach(t => maxPerTeacherMap.set(`${t._id}-${subj._id}`, maxPerTeacher));
+      // Giáo viên có thể dạy môn này (loại bỏ BGH)
+      const eligibleTeachers = teachers.filter(t =>
+        !t.isLeader && // ✅ Loại bỏ giáo viên BGH
+        t.subjects?.some(
+          s => s.subjectId._id === subj._id && s.grades.includes(grade as "10" | "11" | "12")
+        )
+      );
+
+      // ✅ Tránh chia cho 0
+      if (eligibleTeachers.length === 0) {
+        // Nếu không có giáo viên, set max = 0 (sẽ không phân công được)
+        continue;
+      }
+
+      const maxPerTeacher = Math.ceil(numClasses / eligibleTeachers.length);
+      eligibleTeachers.forEach(t => {
+        maxPerTeacherMap.set(`${t._id}-${subj._id}`, maxPerTeacher);
+      });
+    }
   }
 
   return maxPerTeacherMap;
@@ -265,16 +112,35 @@ export function autoAssignTeaching(
   // 🔹 Chỉ lấy phân công của cùng năm học (để reset mỗi năm)
   const currentYearAssignments = existingAssignments.filter(a => a.year === year);
 
-  // 🔹 Tạo map tải giảng viên (chỉ tính trong học kỳ hiện tại)
+  // 🔹 Tạo map tải giảng viên theo số lớp (chỉ tính trong học kỳ hiện tại)
   const teacherLoadMap = new Map<string, number>();
   teachers.forEach(t => teacherLoadMap.set(t._id, 0));
+  
+  // ✅ Tạo map số tiết/tuần của giáo viên (tính tổng số tiết từ các phân công)
+  const teacherWeeklyLessonsMap = new Map<string, number>();
+  teachers.forEach(t => {
+    // ✅ Sử dụng effectiveWeeklyLessons (đã áp dụng cap limit từ weeklyLessons)
+    // effectiveWeeklyLessons = base (17) - reduction + optional, và đã bị cap bởi weeklyLessons
+    const maxWeeklyLessons = t.effectiveWeeklyLessons || 17;
+    teacherWeeklyLessonsMap.set(t._id, 0); // Số tiết hiện tại
+  });
   
   const currentSemesterAssignments = currentYearAssignments.filter(a => a.semester === semester);
   currentSemesterAssignments.forEach(a => {
     if (a.teacherId?._id) {
+      // Cập nhật số lớp
       teacherLoadMap.set(
         a.teacherId._id,
         (teacherLoadMap.get(a.teacherId._id) || 0) + 1
+      );
+      
+      // ✅ Cập nhật số tiết/tuần
+      // Lấy số tiết/tuần của môn học theo khối lớp
+      const classGrade = a.classId?.grade || '10';
+      const periodsPerWeek = getSubjectPeriodsPerWeek(a.subjectId._id, classGrade, subjects);
+      teacherWeeklyLessonsMap.set(
+        a.teacherId._id,
+        (teacherWeeklyLessonsMap.get(a.teacherId._id) || 0) + periodsPerWeek
       );
     }
   });
@@ -292,9 +158,12 @@ export function autoAssignTeaching(
   // 🔹 Lọc lớp theo khối được chọn
   const targetClasses = classes.filter(c => grades.includes(String(c.grade)));
 
+  // ✅ Tối ưu: Tính maxClassMap một lần cho tất cả các khối (thay vì tính lại trong vòng lặp)
+  const maxClassMap = calculateMaxClassPerTeacher(targetClasses, subjects, teachers, grades);
+
   // 🔹 Bắt đầu phân công
   for (const cls of targetClasses) {
-    const classSubjects = subjects.filter(s => s.grades.includes(cls.grade as any));
+    const classSubjects = subjects.filter(s => s.grades.includes(String(cls.grade) as "10" | "11" | "12"));
 
     for (const subj of classSubjects) {
       // Nếu đã có phân công môn này trong học kỳ hiện tại thì bỏ
@@ -302,7 +171,7 @@ export function autoAssignTeaching(
 
       let selectedTeacher: Teacher | undefined;
 
-      // ✅ Nếu là học kỳ 2 → ưu tiên giáo viên đã dạy môn đó ở học kỳ 1 cùng năm học
+      // ✅ Nếu là học kỳ 2 → ưu tiên giáo viên đã dạy môn đó ở học kỳ 1 cùng năm học (loại bỏ BGH)
       if (semester === "2") {
         const prev = currentYearAssignments.find(
           a =>
@@ -310,8 +179,12 @@ export function autoAssignTeaching(
             a.subjectId._id === subj._id &&
             a.semester === "1"
         );
-        if (prev && teachers.some(t => t._id === prev.teacherId._id)) {
-          selectedTeacher = teachers.find(t => t._id === prev.teacherId._id);
+        if (prev?.teacherId?._id) {
+          const prevTeacher = teachers.find(t => t._id === prev.teacherId._id);
+          // ✅ Chỉ ưu tiên nếu giáo viên cũ không phải BGH
+          if (prevTeacher && !prevTeacher.isLeader) {
+            selectedTeacher = prevTeacher;
+          }
         }
       }
 
@@ -319,21 +192,80 @@ export function autoAssignTeaching(
       if (!selectedTeacher) {
         const candidateTeachers = teachers
           .filter(t =>
+            !t.isLeader && // ✅ Loại bỏ giáo viên BGH
             t.subjects?.some(
               s =>
                 s.subjectId._id === subj._id &&
-                s.grades.includes(cls.grade as any)
+                s.grades.includes(String(cls.grade) as "10" | "11" | "12")
             )
           )
-          .sort(
-            (a, b) =>
-              (teacherLoadMap.get(a._id) || 0) - (teacherLoadMap.get(b._id) || 0)
-          );
-          const maxClassMap = calculateMaxClassPerTeacher(targetClasses, subjects, teachers, cls.grade as string);
+          .sort((a, b) => {
+            // ✅ Ưu tiên giáo viên có mainSubject trùng với môn học
+            const aMainSubject = typeof a.mainSubject === 'object' && a.mainSubject !== null 
+              ? a.mainSubject._id 
+              : a.mainSubject;
+            const bMainSubject = typeof b.mainSubject === 'object' && b.mainSubject !== null 
+              ? b.mainSubject._id 
+              : b.mainSubject;
+            
+            const aIsMainSubject = aMainSubject === subj._id;
+            const bIsMainSubject = bMainSubject === subj._id;
+            
+            // Ưu tiên giáo viên có mainSubject trùng với môn học
+            if (aIsMainSubject && !bIsMainSubject) return -1;
+            if (!aIsMainSubject && bIsMainSubject) return 1;
+            
+            // Nếu cùng ưu tiên, sắp xếp theo tải hiện tại
+            return (teacherLoadMap.get(a._id) || 0) - (teacherLoadMap.get(b._id) || 0);
+          });
 
-          selectedTeacher = candidateTeachers.find(t => {
-          const maxClass = maxClassMap.get(`${t._id}-${subj._id}`) || 5;
-          return (teacherLoadMap.get(t._id) || 0) < maxClass;
+        // ✅ Ưu tiên kiểm tra số tiết/tuần (từ cấu hình thời khóa biểu)
+        // Tính số tiết/tuần của môn học cho lớp này
+        const periodsPerWeek = getSubjectPeriodsPerWeek(subj._id, String(cls.grade), subjects);
+        
+        // ✅ Tìm giáo viên phù hợp: ưu tiên kiểm tra số tiết trước
+        selectedTeacher = candidateTeachers.find(t => {
+          // ✅ Kiểm tra số tiết/tuần (ưu tiên hàng đầu)
+          const currentWeeklyLessons = teacherWeeklyLessonsMap.get(t._id) || 0;
+          // ✅ Sử dụng effectiveWeeklyLessons (đã áp dụng cap limit từ weeklyLessons)
+          // effectiveWeeklyLessons = base (17) - reduction + optional, và đã bị cap bởi weeklyLessons
+          const maxWeeklyLessons = t.effectiveWeeklyLessons || 17;
+          const newWeeklyLessons = currentWeeklyLessons + periodsPerWeek;
+          
+          // ✅ Tính số lớp tối đa dựa trên số tiết: nếu max tiết là 19, môn có 6 tiết/tuần → chỉ phân được 3 lớp (3 x 6 = 18 <= 19)
+          const maxClassesByLessons = Math.floor(maxWeeklyLessons / periodsPerWeek);
+          
+          // ✅ Kiểm tra số tiết/tuần
+          const withinWeeklyLessonsLimit = newWeeklyLessons <= maxWeeklyLessons;
+          
+          // ✅ Kiểm tra số lớp dựa trên số tiết
+          const currentLoad = teacherLoadMap.get(t._id) || 0;
+          const withinClassLimitByLessons = currentLoad < maxClassesByLessons;
+          
+          // ✅ Kiểm tra số lớp tối đa của giáo viên theo khối (sử dụng maxClassPerGrade)
+          // Lấy maxClassPerGrade cho khối hiện tại
+          let maxClassPerGradeForThisGrade = 0;
+          if (t.maxClassPerGrade) {
+            if (t.maxClassPerGrade instanceof Map) {
+              maxClassPerGradeForThisGrade = t.maxClassPerGrade.get(String(cls.grade)) || 0;
+            } else if (typeof t.maxClassPerGrade === 'object') {
+              maxClassPerGradeForThisGrade = t.maxClassPerGrade[String(cls.grade)] || 0;
+            }
+          }
+          
+          // Nếu không có maxClassPerGrade, fallback về tính toán dựa trên maxClasses
+          const calculatedMax = maxClassMap.get(`${t._id}-${subj._id}`) || 5;
+          const teacherMaxClasses = t.maxClasses || calculatedMax;
+          
+          // ✅ Ưu tiên sử dụng maxClassPerGrade theo khối, nếu không có thì dùng calculatedMax
+          const effectiveMaxClasses = maxClassPerGradeForThisGrade > 0 
+            ? maxClassPerGradeForThisGrade 
+            : Math.min(calculatedMax, teacherMaxClasses);
+          
+          const withinClassLimit = currentLoad < effectiveMaxClasses;
+          
+          // ✅ Phải thỏa mãn cả số tiết và số lớp (ưu tiên số tiết)
+          return withinWeeklyLessonsLimit && withinClassLimitByLessons && withinClassLimit;
         });
       }
 
@@ -355,12 +287,19 @@ export function autoAssignTeaching(
 
       newAssignments.push(assignment);
 
-      // Cập nhật tải giảng viên và map
+      // ✅ Cập nhật tải giảng viên (số lớp) và số tiết/tuần
       if (!assignedMap.has(cls._id)) assignedMap.set(cls._id, new Set());
       assignedMap.get(cls._id)!.add(subj._id);
       teacherLoadMap.set(
         selectedTeacher._id,
         (teacherLoadMap.get(selectedTeacher._id) || 0) + 1
+      );
+      
+      // ✅ Cập nhật số tiết/tuần
+      const periodsPerWeek = getSubjectPeriodsPerWeek(subj._id, String(cls.grade), subjects);
+      teacherWeeklyLessonsMap.set(
+        selectedTeacher._id,
+        (teacherWeeklyLessonsMap.get(selectedTeacher._id) || 0) + periodsPerWeek
       );
     }
   }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Tabs, Card, Typography, Space, Spin, Tag, message, Divider } from "antd";
+import { Tabs, Card, Typography, Space, Spin, Tag, message, Divider, Button, Popconfirm } from "antd";
 import { useParams } from "react-router-dom";
 import {
   CalendarDays,
@@ -8,18 +8,24 @@ import {
   BarChart3,
   FileText,
 } from "lucide-react"; // ✅ icon từ lucide-react
+import { UserAddOutlined } from "@ant-design/icons";
 import ExamSchedulePage from "./examDetail/ExamSchedulePage";
 import ExamRoomPage from "./examDetail/ExamRoomPage";
 import ExamStudentPage from "./examDetail/ExamStudentPage";
 import ExamGradePage from "./examDetail/ExamGradePage";
+import FixedExamRoomPage from "./examDetail/FixedExamRoomPage";
 import { examApi } from "@/services/exams/examApi";
+import { examStudentApi } from "@/services/exams/examStudentApi";
+import { usePermissions } from "@/hooks/usePermissions";
 
 const { Title, Text } = Typography;
 
 export default function ExamDetailPage() {
+  const { hasPermission, PERMISSIONS } = usePermissions();
   const { examId } = useParams<{ examId: string }>();
   const [exam, setExam] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [addingStudents, setAddingStudents] = useState(false);
 
   /** 🧠 Lấy thông tin kỳ thi */
   const fetchExam = async () => {
@@ -39,6 +45,23 @@ export default function ExamDetailPage() {
   useEffect(() => {
     fetchExam();
   }, [examId]);
+
+  /** ➕ Thêm tất cả học sinh theo khối tham gia */
+  const handleAddAllStudents = async () => {
+    if (!examId) return;
+    try {
+      setAddingStudents(true);
+      const res = await examStudentApi.addAllStudentsByGrades(examId);
+      message.success(res.message || `✅ Đã thêm ${res.added || 0} học sinh mới`);
+      fetchExam(); // Refresh để cập nhật thông tin
+    } catch (err: any) {
+      console.error("Lỗi thêm học sinh:", err);
+      message.error(err?.response?.data?.error || "❌ Lỗi khi thêm học sinh");
+    } finally {
+      setAddingStudents(false);
+    }
+  };
+
 
   const typeMap: Record<string, { label: string; color: string }> = {
     regular: { label: "Chính thức", color: "green" },
@@ -77,8 +100,8 @@ export default function ExamDetailPage() {
               <b>{exam.semester}</b>
               <Space>     |
           {exam.grades?.length
-            ? exam.grades.map((g: number) => (
-                <Tag color="blue" key={g}>
+            ? exam.grades.map((g: string | number) => (
+                <Tag color="blue" key={String(g)}>
                   Khối {g}
                 </Tag>
               ))
@@ -95,6 +118,39 @@ export default function ExamDetailPage() {
               </Tag>
             </Space>
           </Space>
+
+          {/* 🎯 Nút thêm tất cả học sinh và phòng thi */}
+          {exam.status !== "locked" && exam.status !== "archived" && hasPermission(PERMISSIONS.EXAM_UPDATE) && (
+            <Card
+              style={{
+                marginBottom: 16,
+                background: "#f0f9ff",
+                borderColor: "#91d5ff",
+              }}
+            >
+              <Space direction="vertical" style={{ width: "100%" }} size="middle">
+                <Text strong>⚡ Thao tác nhanh:</Text>
+                <Space wrap>
+                  <Popconfirm
+                    title="Thêm tất cả học sinh?"
+                    description={`Hệ thống sẽ tự động thêm tất cả học sinh khối ${exam.grades?.join(", ") || ""} của niên khóa ${exam.year} vào kỳ thi. Chỉ thêm những học sinh chưa có.`}
+                    onConfirm={handleAddAllStudents}
+                    okText="Xác nhận"
+                    cancelText="Hủy"
+                  >
+                    <Button
+                      type="primary"
+                      icon={<UserAddOutlined />}
+                      loading={addingStudents}
+                      size="large"
+                    >
+                      ➕ Thêm tất cả học sinh theo khối
+                    </Button>
+                  </Popconfirm>
+                </Space>
+              </Space>
+            </Card>
+          )}
 
           <Divider />
 {exam.status === "locked" || exam.status === "archived" ? (
@@ -132,11 +188,19 @@ export default function ExamDetailPage() {
                 key: "rooms",
                 label: (
                   <span className="flex items-center gap-2">
-                    <School className="w-4 h-4" /> Phòng thi
+                    <School className="w-4 h-4" /> Danh sách phòng
                   </span>
                 ),
-children: <ExamRoomPage examId={examId!} exam={exam} />,
-
+                children: <ExamRoomPage examId={examId!} exam={exam} />,
+              },
+              {
+                key: "fixed-rooms",
+                label: (
+                  <span className="flex items-center gap-2">
+                    <School className="w-4 h-4" /> Phòng nhóm
+                  </span>
+                ),
+                children: <FixedExamRoomPage examId={examId!} exam={exam} />,
               },
               {
                 key: "students",
@@ -145,7 +209,7 @@ children: <ExamRoomPage examId={examId!} exam={exam} />,
                     <Users className="w-4 h-4" /> Học sinh
                   </span>
                 ),
-                children: <ExamStudentPage examId={examId!} />,
+                children: <ExamStudentPage examId={examId!} exam={exam} />,
               },
               {
                 key: "grades",
@@ -154,7 +218,7 @@ children: <ExamRoomPage examId={examId!} exam={exam} />,
                     <BarChart3 className="w-4 h-4" /> Điểm thi
                   </span>
                 ),
-                children: <ExamGradePage examId={examId!} />,
+                children: <ExamGradePage examId={examId!} exam={exam} />,
               },
             ]}
           />

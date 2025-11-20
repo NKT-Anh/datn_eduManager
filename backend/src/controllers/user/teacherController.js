@@ -5,8 +5,9 @@ const populatedTeacher = (query) => {
   return query
     .populate('subjects.subjectId', 'name code')
     .populate('mainSubject', 'name code')
-    .populate('classIds', 'className classCode grade year')
-    .populate('homeroomClassIds', 'className classCode grade year');
+    .populate('homeroomClassIds', 'className classCode grade year')
+    .populate('currentHomeroomClassId', 'className classCode grade year')
+    .populate('departmentId', 'name code');
 };
 
 
@@ -17,7 +18,12 @@ exports.getAllTeachers = async (req, res) => {
 
     res.json(teachers);
   } catch (error) {
-    res.status(500).json({ message: 'Lỗi khi lấy danh sách giáo viên', error });
+    console.error('❌ Lỗi khi lấy danh sách giáo viên:', error);
+    res.status(500).json({ 
+      message: 'Lỗi khi lấy danh sách giáo viên', 
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 };
 
@@ -31,7 +37,12 @@ exports.getTeacher = async (req, res) => {
 
     res.json(teacher);
   } catch (error) {
-    res.status(500).json({ message: 'Lỗi khi xem 1 giáo viên', error });
+    console.error('❌ Lỗi khi lấy giáo viên:', error);
+    res.status(500).json({ 
+      message: 'Lỗi khi xem 1 giáo viên', 
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 };
 
@@ -50,8 +61,12 @@ exports.createTeacher = async (req, res) => {
 
     res.status(201).json(teacherPopulated);
   } catch (error) {
-    console.error(error);
-    res.status(400).json({ message: 'Không thể tạo giáo viên', error });
+    console.error('❌ Lỗi khi tạo giáo viên:', error);
+    res.status(400).json({ 
+      message: 'Không thể tạo giáo viên', 
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 };
 
@@ -129,9 +144,10 @@ exports.filterTeachers = async (req, res) => {
       query['subjects.grades'] = grade; // kiểm tra trong mảng grades
     }
 
-    if (classId) {
-      query.classIds = classId; // các lớp phụ trách
-    }
+    // ✅ classIds đã bị loại bỏ, thông tin phân công lớp được quản lý qua TeachingAssignment
+    // if (classId) {
+    //   query.classIds = classId; // các lớp phụ trách
+    // }
 
     const teachers = await populatedTeacher(Teacher.find(query));
 
@@ -264,5 +280,379 @@ exports.getMaxClasses = async (req, res) => {
     res.json({ maxClasses: teacher.maxClasses });
   } catch (err) {
     res.status(500).json({ message: "Lỗi server", error: err.message });
+  }
+};
+
+const normalizeMaxClassPerGrade = (map = {}) => {
+  if (!map) return {};
+  if (typeof map.toObject === 'function') return map.toObject();
+  if (map instanceof Map) return Object.fromEntries(map);
+  return map;
+};
+
+exports.updateMaxClassPerGrade = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { maxClassPerGrade } = req.body || {};
+
+    if (!maxClassPerGrade || typeof maxClassPerGrade !== 'object') {
+      return res.status(400).json({ message: "maxClassPerGrade phải là một object hợp lệ" });
+    }
+
+    const teacher = await Teacher.findById(id);
+    if (!teacher) {
+      return res.status(404).json({ message: "Không tìm thấy giáo viên" });
+    }
+
+    if (req.user.role === 'teacher') {
+      const currentTeacher = await Teacher.findOne({ accountId: req.user.accountId })
+        .select('isDepartmentHead departmentId')
+        .lean();
+      if (!currentTeacher || !currentTeacher.isDepartmentHead) {
+        return res.status(403).json({ message: "Chỉ trưởng bộ môn mới được cập nhật giới hạn lớp" });
+      }
+      if (!teacher.departmentId || teacher.departmentId.toString() !== currentTeacher.departmentId?.toString()) {
+        return res.status(403).json({ message: "Chỉ được cập nhật giáo viên thuộc tổ bộ môn của bạn" });
+      }
+    }
+
+    if (!teacher.maxClassPerGrade || !(teacher.maxClassPerGrade instanceof Map)) {
+      teacher.maxClassPerGrade = new Map();
+    }
+
+    for (const [grade, value] of Object.entries(maxClassPerGrade)) {
+      if (!['10', '11', '12'].includes(grade)) continue;
+      const numericValue = Number(value);
+      if (!Number.isFinite(numericValue) || numericValue < 0) {
+        return res.status(400).json({ message: `Giá trị không hợp lệ cho khối ${grade}` });
+      }
+      teacher.maxClassPerGrade.set(grade, numericValue);
+    }
+
+    await teacher.save();
+
+    const updatedTeacher = await Teacher.findById(id)
+      .select('name teacherCode maxClassPerGrade departmentId')
+      .populate('departmentId', 'name code')
+      .lean();
+
+    res.json({
+      message: "Đã cập nhật giới hạn số lớp theo khối",
+      teacher: {
+        ...updatedTeacher,
+        maxClassPerGrade: normalizeMaxClassPerGrade(updatedTeacher?.maxClassPerGrade),
+      },
+    });
+  } catch (error) {
+    console.error("❌ Lỗi khi cập nhật maxClassPerGrade:", error);
+    res.status(500).json({ message: "Không thể cập nhật giới hạn số lớp theo khối", error: error.message });
+  }
+};
+
+/**
+ * ✅ API: Kiểm tra tự động tình trạng giáo viên
+ * - Check đủ giáo viên hay không
+ * - Gợi ý cần tuyển thêm bao nhiêu giáo viên
+ * - Báo giáo viên nào quá tải
+ * - Tự tính tổng tiết / giáo viên / tuần
+ * 
+ * Query params: year (optional, mặc định lấy từ settings)
+ */
+exports.checkTeacherStatus = async (req, res) => {
+  try {
+    const Setting = require('../../models/settings');
+    const TeachingAssignment = require('../../models/subject/teachingAssignment');
+    const ClassPeriods = require('../../models/class/classPeriods');
+    const Class = require('../../models/class/class');
+    
+    // ✅ Lấy năm học & học kỳ từ query hoặc settings
+    const { year, semester } = req.query;
+    const settings = await Setting.findOne().lean();
+    const currentYear = year || settings?.currentSchoolYear || new Date().getFullYear().toString();
+    const currentSemester = semester || settings?.currentSemester || null;
+    
+    let departmentFilter = null;
+    if (req.user?.role === 'teacher' && req.user.accountId) {
+      const currentTeacher = await Teacher.findOne({ accountId: req.user.accountId })
+        .select('isDepartmentHead departmentId')
+        .lean();
+      if (currentTeacher?.isDepartmentHead && currentTeacher.departmentId) {
+        departmentFilter = currentTeacher.departmentId.toString();
+      }
+    }
+
+    // ✅ Lấy tất cả giáo viên active
+    let teachers = await Teacher.find({ status: 'active' })
+      .populate('subjects.subjectId', 'name code')
+      .populate('mainSubject', 'name code')
+      .lean();
+    if (departmentFilter) {
+      teachers = teachers.filter(teacher => {
+        const deptId = teacher.departmentId?._id || teacher.departmentId;
+        return deptId && deptId.toString() === departmentFilter;
+      });
+    }
+    
+    // ✅ Lấy tất cả phân công giảng dạy cho năm học (và học kỳ nếu có)
+    const assignmentQuery = { year: currentYear };
+    if (currentSemester) assignmentQuery.semester = currentSemester;
+    
+    let assignments = await TeachingAssignment.find(assignmentQuery)
+      .populate('subjectId', 'name code')
+      .populate('classId', 'className classCode grade')
+      .populate('teacherId', 'name teacherCode')
+      .lean();
+    if (departmentFilter) {
+      const teacherIdsInDepartment = new Set(teachers.map(t => t._id.toString()));
+      assignments = assignments.filter(assignment => {
+        const teacherId = assignment.teacherId?._id?.toString() || assignment.teacherId?.toString();
+        return teacherIdsInDepartment.has(teacherId);
+      });
+    }
+    
+    // ✅ Lấy ClassPeriods để tính số tiết cần thiết
+    const classPeriodsQuery = { year: currentYear };
+    if (currentSemester) classPeriodsQuery.semester = currentSemester;
+    
+    const classPeriods = await ClassPeriods.find(classPeriodsQuery)
+      .populate('subjectId', 'name code')
+      .lean();
+    
+    // ✅ Tính số tiết mỗi giáo viên đang dạy
+    const teacherWeeklyLessonsMap = new Map(); // teacherId -> số tiết/tuần
+    const teacherAssignmentsMap = new Map(); // teacherId -> [assignments]
+    
+    assignments.forEach(assignment => {
+      if (!assignment.teacherId || !assignment.classId || !assignment.subjectId) return;
+      
+      const teacherId = assignment.teacherId._id?.toString() || assignment.teacherId.toString();
+      const classGrade = assignment.classId.grade;
+      
+      // Tìm số tiết/tuần của môn học trong khối này
+      const classPeriod = classPeriods.find(cp => 
+        cp.grade === classGrade && 
+        cp.subjectId && 
+        (cp.subjectId._id?.toString() === assignment.subjectId._id?.toString() || 
+         cp.subjectId.toString() === assignment.subjectId._id?.toString())
+      );
+      
+      const periodsPerWeek = classPeriod?.periodsPerWeek || 2; // Default 2 tiết/tuần
+      
+      // Cập nhật số tiết của giáo viên
+      const currentLessons = teacherWeeklyLessonsMap.get(teacherId) || 0;
+      teacherWeeklyLessonsMap.set(teacherId, currentLessons + periodsPerWeek);
+      
+      // Lưu assignment
+      if (!teacherAssignmentsMap.has(teacherId)) {
+        teacherAssignmentsMap.set(teacherId, []);
+      }
+      teacherAssignmentsMap.get(teacherId).push(assignment);
+    });
+    
+    // ✅ Phân tích từng giáo viên
+    const teacherAnalysis = teachers.map(teacher => {
+      const teacherId = teacher._id.toString();
+      const currentWeeklyLessons = teacherWeeklyLessonsMap.get(teacherId) || 0;
+      
+      // ✅ Tính effectiveWeeklyLessons (base 17 - reduction + optional, bị cap bởi weeklyLessons)
+      const baseWeeklyLessons = 17;
+      let reduction = 0;
+      
+      if (teacher.isHomeroom || teacher.currentHomeroomClassId) {
+        reduction = Math.max(reduction, 3);
+      }
+      
+      if (teacher.isDepartmentHead) {
+        reduction = Math.max(reduction, 3);
+      }
+      
+      const baseAfterReduction = Math.max(0, baseWeeklyLessons - reduction);
+      const optionalLessons = teacher.optionalWeeklyLessons || 0;
+      const calculatedEffective = baseAfterReduction + optionalLessons;
+      const capLimit = teacher.weeklyLessons || null;
+      const effectiveWeeklyLessons = capLimit !== null 
+        ? Math.min(calculatedEffective, capLimit) 
+        : calculatedEffective;
+      const remainingWeeklyLessons = Math.max(0, effectiveWeeklyLessons - currentWeeklyLessons);
+      
+      // ✅ Kiểm tra quá tải
+      const isOverloaded = currentWeeklyLessons > effectiveWeeklyLessons;
+      const overloadPercentage = effectiveWeeklyLessons > 0 
+        ? ((currentWeeklyLessons / effectiveWeeklyLessons) * 100).toFixed(1)
+        : 0;
+      
+      const assignments = teacherAssignmentsMap.get(teacherId) || [];
+      
+      return {
+        teacherId: teacher._id,
+        name: teacher.name,
+        teacherCode: teacher.teacherCode,
+        currentWeeklyLessons,
+        effectiveWeeklyLessons,
+        weeklyLessons: teacher.weeklyLessons || 17,
+        optionalWeeklyLessons: teacher.optionalWeeklyLessons || 0,
+        isOverloaded,
+        overloadPercentage: parseFloat(overloadPercentage),
+        remainingWeeklyLessons,
+        assignmentsCount: assignments.length,
+        assignments: assignments.map(a => ({
+          subject: a.subjectId?.name || 'N/A',
+          class: a.classId?.className || 'N/A',
+          grade: a.classId?.grade || 'N/A'
+        }))
+      };
+    });
+    
+    // ✅ Tính số giáo viên cần thiết dựa trên ClassPeriods
+    const subjectGradeNeeds = new Map(); // "subjectId-grade" -> { totalPeriods, classesCount }
+    
+    // Lấy tất cả lớp trong năm học
+    const classes = await Class.find({ year: currentYear }).lean();
+    
+    classPeriods.forEach(cp => {
+      if (!cp.subjectId || !cp.grade) return;
+      
+      const subjectId = cp.subjectId._id?.toString() || cp.subjectId.toString();
+      const key = `${subjectId}-${cp.grade}`;
+      const periodsPerWeek = cp.periodsPerWeek || 2;
+      
+      // Đếm số lớp trong khối này
+      const classesInGrade = classes.filter(c => c.grade === cp.grade).length;
+      const totalPeriodsNeeded = periodsPerWeek * classesInGrade;
+      
+      if (!subjectGradeNeeds.has(key)) {
+        subjectGradeNeeds.set(key, {
+          subjectId,
+          subjectName: cp.subjectId?.name || 'N/A',
+          grade: cp.grade,
+          periodsPerWeek,
+          classesCount: classesInGrade,
+          totalPeriodsNeeded: 0,
+          assignedPeriods: 0
+        });
+      }
+      
+      const need = subjectGradeNeeds.get(key);
+      need.totalPeriodsNeeded += totalPeriodsNeeded;
+    });
+    
+    // ✅ Tính số tiết đã được phân công
+    assignments.forEach(assignment => {
+      if (!assignment.subjectId || !assignment.classId) return;
+      
+      const subjectId = assignment.subjectId._id?.toString() || assignment.subjectId.toString();
+      const grade = assignment.classId.grade;
+      const key = `${subjectId}-${grade}`;
+      
+      const classPeriod = classPeriods.find(cp => 
+        cp.grade === grade && 
+        cp.subjectId && 
+        (cp.subjectId._id?.toString() === subjectId || cp.subjectId.toString() === subjectId)
+      );
+      
+      const periodsPerWeek = classPeriod?.periodsPerWeek || 2;
+      
+      if (subjectGradeNeeds.has(key)) {
+        const need = subjectGradeNeeds.get(key);
+        need.assignedPeriods += periodsPerWeek;
+      }
+    });
+    
+    // ✅ Tính số giáo viên cần thiết cho mỗi môn-khối
+    const subjectGradeTeacherNeeds = Array.from(subjectGradeNeeds.values()).map(need => {
+      // Tìm giáo viên dạy môn này
+      const teachersForSubject = teachers.filter(t => {
+        const teachesSubject = t.subjects?.some(s => {
+          const subId = s.subjectId?._id?.toString() || s.subjectId?.toString();
+          return subId === need.subjectId;
+        }) || t.mainSubject?.toString() === need.subjectId;
+        
+        const teachesGrade = t.subjects?.some(s => {
+          const subId = s.subjectId?._id?.toString() || s.subjectId?.toString();
+          return subId === need.subjectId && s.grades?.includes(need.grade);
+        });
+        
+        return teachesSubject && teachesGrade;
+      });
+      
+      // Tính tổng số tiết mà các giáo viên này có thể dạy
+      let totalAvailableLessons = 0;
+      teachersForSubject.forEach(t => {
+        const teacherId = t._id.toString();
+        const currentLessons = teacherWeeklyLessonsMap.get(teacherId) || 0;
+        
+        // Tính effectiveWeeklyLessons
+        const baseWeeklyLessons = 17;
+        let reduction = 0;
+        if (t.isHomeroom || t.currentHomeroomClassId) reduction = Math.max(reduction, 3);
+        if (t.isDepartmentHead) reduction = Math.max(reduction, 3);
+        const baseAfterReduction = Math.max(0, baseWeeklyLessons - reduction);
+        const optionalLessons = t.optionalWeeklyLessons || 0;
+        const calculatedEffective = baseAfterReduction + optionalLessons;
+        const capLimit = t.weeklyLessons || null;
+        const effectiveWeeklyLessons = capLimit !== null 
+          ? Math.min(calculatedEffective, capLimit) 
+          : calculatedEffective;
+        
+        const availableLessons = Math.max(0, effectiveWeeklyLessons - currentLessons);
+        totalAvailableLessons += availableLessons;
+      });
+      
+      const missingPeriods = Math.max(0, need.totalPeriodsNeeded - need.assignedPeriods);
+      const estimatedTeachersNeeded = totalAvailableLessons > 0 && teachersForSubject.length > 0
+        ? Math.ceil(missingPeriods / (totalAvailableLessons / teachersForSubject.length))
+        : Math.ceil(missingPeriods / 17); // Fallback: giả sử mỗi giáo viên dạy 17 tiết/tuần
+      
+      return {
+        ...need,
+        teachersCount: teachersForSubject.length,
+        totalAvailableLessons,
+        missingPeriods,
+        estimatedTeachersNeeded: Math.max(0, estimatedTeachersNeeded - teachersForSubject.length)
+      };
+    });
+    
+    // ✅ Tổng hợp kết quả
+    const overloadedTeachers = teacherAnalysis.filter(t => t.isOverloaded);
+    const totalTeachersNeeded = subjectGradeTeacherNeeds.reduce((sum, need) => sum + need.estimatedTeachersNeeded, 0);
+    const isSufficient = totalTeachersNeeded === 0 && overloadedTeachers.length === 0;
+    
+    res.json({
+      filters: {
+        year: currentYear,
+        semester: currentSemester || 'all',
+        departmentId: departmentFilter,
+      },
+      summary: {
+        year: currentYear,
+        semester: currentSemester || 'all',
+        departmentId: departmentFilter,
+        totalTeachers: teachers.length,
+        totalAssignments: assignments.length,
+        overloadedTeachersCount: overloadedTeachers.length,
+        estimatedTeachersNeeded: totalTeachersNeeded,
+        isSufficient
+      },
+      teacherAnalysis,
+      overloadedTeachers,
+      subjectGradeNeeds: subjectGradeTeacherNeeds.filter(need => need.missingPeriods > 0 || need.estimatedTeachersNeeded > 0),
+      recommendations: [
+        ...(overloadedTeachers.length > 0 ? [
+          `Có ${overloadedTeachers.length} giáo viên đang quá tải. Cần giảm tải hoặc tuyển thêm giáo viên.`
+        ] : []),
+        ...(totalTeachersNeeded > 0 ? [
+          `Ước tính cần tuyển thêm khoảng ${totalTeachersNeeded} giáo viên để đáp ứng đủ nhu cầu giảng dạy.`
+        ] : []),
+        ...(isSufficient ? [
+          'Hệ thống có đủ giáo viên và không có giáo viên nào quá tải.'
+        ] : [])
+      ]
+    });
+  } catch (error) {
+    console.error('❌ Lỗi khi kiểm tra tình trạng giáo viên:', error);
+    res.status(500).json({ 
+      message: 'Không thể kiểm tra tình trạng giáo viên', 
+      error: error.message 
+    });
   }
 };

@@ -26,9 +26,24 @@ const settingApi = {
   },
 
   sendTestEmail: async (email: string) => {
-  const res = await axiosClient.post('/settings/send-test-email', { to: email });
-  return res.data;
-},
+    const res = await axiosClient.post('/settings/send-test-email', { to: email });
+    return res.data;
+  },
+
+  // ✅ Lấy thông tin công khai của trường (public, không cần auth)
+  getPublicSchoolInfo: async (): Promise<{
+    schoolName: string;
+    slogan: string;
+    description: string;
+    address: string;
+    phone: string;
+    email: string;
+    website: string;
+    facebook: string;
+  }> => {
+    const res = await axiosClient.get('/settings/public');
+    return res.data;
+  },
 };
 
 export default settingApi;

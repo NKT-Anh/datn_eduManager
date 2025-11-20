@@ -16,9 +16,36 @@ exports.addOrUpdateGrade = async (req, res) => {
     if (gradeValue != null && (gradeValue < 0 || gradeValue > 10))
       return res.status(400).json({ error: "Giá trị điểm phải nằm trong khoảng 0–10." });
 
+    // ✅ Kiểm tra exam tồn tại và có year
+    const Exam = require("../../models/exam/exam");
+    const examData = await Exam.findById(exam).select("year");
+    if (!examData) {
+      return res.status(404).json({ error: "Không tìm thấy kỳ thi." });
+    }
+    if (!examData.year) {
+      return res.status(400).json({ error: "Kỳ thi chưa có năm học." });
+    }
+
     // Lấy thông tin học sinh từ ExamStudent (để cache vào bản điểm)
     const es = await ExamStudent.findById(examStudent).populate("class").lean();
     if (!es) return res.status(404).json({ error: "Không tìm thấy học sinh dự thi." });
+
+    // ✅ Kiểm tra examStudent thuộc về exam này
+    if (String(es.exam) !== String(exam)) {
+      return res.status(400).json({ error: "Học sinh dự thi không thuộc về kỳ thi này." });
+    }
+
+    // ✅ Nếu có examSchedule, kiểm tra schedule thuộc về exam này
+    if (examSchedule) {
+      const ExamSchedule = require("../../models/exam/examSchedule");
+      const scheduleData = await ExamSchedule.findById(examSchedule).select("exam");
+      if (!scheduleData) {
+        return res.status(404).json({ error: "Không tìm thấy lịch thi." });
+      }
+      if (String(scheduleData.exam) !== String(exam)) {
+        return res.status(400).json({ error: "Lịch thi không thuộc về kỳ thi này." });
+      }
+    }
 
     const grade = await ExamGrade.findOneAndUpdate(
       { exam, examStudent, subject },
@@ -49,11 +76,22 @@ exports.getGradesByExam = async (req, res) => {
     const { examId } = req.params;
     const { subjectId, classId, teacherId, page = 1, limit = 50 } = req.query;
 
+    // ✅ Kiểm tra exam tồn tại và có year
+    const Exam = require("../../models/exam/exam");
+    const exam = await Exam.findById(examId).select("year");
+    if (!exam) {
+      return res.status(404).json({ error: "Không tìm thấy kỳ thi." });
+    }
+    if (!exam.year) {
+      return res.status(400).json({ error: "Kỳ thi chưa có năm học." });
+    }
+
     const filter = { exam: examId };
     if (subjectId) filter.subject = subjectId;
     if (teacherId) filter.teacher = teacherId;
 
     const data = await ExamGrade.find(filter)
+      .populate("exam", "name year semester") // ✅ Populate exam để có year
       .populate({
         path: "examStudent",
         populate: {
@@ -77,6 +115,7 @@ exports.getGradesByExam = async (req, res) => {
       totalPages: Math.ceil(total / limit),
       page: parseInt(page),
       data,
+      examYear: exam.year, // ✅ Trả về năm học
     });
   } catch (err) {
     console.error("❌ Lỗi getGradesByExam:", err);

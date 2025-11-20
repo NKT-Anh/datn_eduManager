@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-// import { ActivityDetailDialog } from "@/components/dialogs/ActivityDetailDialog";
+import { ActivityDetailDialog } from "@/components/dialogs/ActivityDetailDialog";
 import { ActivityForm } from "@/components/forms/ActivityForm";
 import { DeleteConfirmDialog } from "@/components/dialogs/DeleteConfirmDialog";
 import { useAuth } from "@/contexts/AuthContext";
@@ -20,7 +20,7 @@ const ActivitiesPage = () => {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const [selectedActivity, setSelectedActivity] = useState<Activity | undefined>();
+  const [selectedActivityId, setSelectedActivityId] = useState<string | undefined>();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [detailActivityId, setDetailActivityId] = useState<string | undefined>();
@@ -71,15 +71,15 @@ const ActivitiesPage = () => {
   };
 
   const handleEditActivity = async (data: any) => {
-    if (!selectedActivity) return;
+    if (!selectedActivityId) return;
     try {
-      const updated = await activityApi.update(selectedActivity._id, data);
+      const updated = await activityApi.update(selectedActivityId, data);
       setActivities(
         activities.map((a) =>
-          a._id === selectedActivity._id ? updated : a
+          a._id === selectedActivityId ? updated : a
         )
       );
-      setSelectedActivity(undefined);
+      setSelectedActivityId(undefined);
       toast({ title: "Cập nhật thành công" });
     } catch {
       toast({
@@ -113,7 +113,7 @@ const ActivitiesPage = () => {
 
   // 🔹 Dialog handlers
   const openEditForm = (activity: Activity) => {
-    setSelectedActivity(activity);
+    setSelectedActivityId(activity._id);
     setIsFormOpen(true);
   };
 
@@ -152,7 +152,7 @@ const ActivitiesPage = () => {
         <Button
           className="bg-gradient-primary hover:bg-primary-hover"
           onClick={() => {
-            setSelectedActivity(undefined);
+            setSelectedActivityId(undefined);
             setIsFormOpen(true);
           }}
         >
@@ -248,22 +248,17 @@ const ActivitiesPage = () => {
                 <p className="text-sm text-muted-foreground line-clamp-2">
                   {activity.description || "Không có mô tả."}
                 </p>
-                <div className="flex space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => {
-                      setDetailActivityId(activity._id);
-                      setIsDetailOpen(true);
-                    }}
-                  >
-                    Chi tiết
-                  </Button>
-                  <Button variant="outline" size="sm" className="flex-1">
-                    Tham gia
-                  </Button>
-                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => {
+                    setDetailActivityId(activity._id);
+                    setIsDetailOpen(true);
+                  }}
+                >
+                  Chi tiết
+                </Button>
               </CardContent>
             </Card>
           ))}
@@ -297,16 +292,19 @@ const ActivitiesPage = () => {
       {/* Form & Dialogs */}
       <ActivityForm
         open={isFormOpen}
-        onOpenChange={setIsFormOpen}
-        // activityData={selectedActivity}
-        onSubmit={selectedActivity ? handleEditActivity : handleCreateActivity}
+        onOpenChange={(open) => {
+          setIsFormOpen(open);
+          if (!open) setSelectedActivityId(undefined);
+        }}
+        activityId={selectedActivityId}
+        onSubmit={selectedActivityId ? handleEditActivity : handleCreateActivity}
       />
 
-      {/* <ActivityDetailDialog
+      <ActivityDetailDialog
         open={isDetailOpen}
         onOpenChange={setIsDetailOpen}
         activityId={detailActivityId}
-      /> */}
+      />
 
       <DeleteConfirmDialog
         open={isDeleteDialogOpen}

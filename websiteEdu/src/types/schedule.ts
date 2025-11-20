@@ -105,20 +105,53 @@ export interface DailySchedule {
   afternoonPeriods?: number;  // Tự tính = total - morning
 }
 
+// ✅ Slot cố định cho hoạt động (thứ + tiết)
+export interface FixedSlot {
+  day: string; // "Monday", "Tuesday", etc.
+  periods: number[]; // [1, 2] = tiết 1 và 2
+}
+
+// ✅ Cấu hình theo khối cho Activity
+export interface ActivityGradeConfig {
+  maxPeriodsPerDay?: number;
+  allowConsecutive?: boolean;
+  // ✅ Ngày trong tuần theo từng khối (ví dụ: Monday, Friday)
+  dayOfWeek?: string;
+  // ✅ Tiết học / Khung giờ theo từng khối (ví dụ: "Tiết 1" hoặc "07:00 - 07:45")
+  timeSlot?: string;
+}
+
 export interface ActivitySlot {
   activityId: string | Activity;          // ObjectId của Activity
-  periodsPerWeek: number;                
-   session: "main" | "extra";// Buổi
+  periodsPerWeek: number | Record<"10" | "11" | "12", number>;                
+  session: "main" | "extra";// Buổi
+  // ✅ Cho phép set cứng thứ + tiết
+  fixedSlots?: FixedSlot[]; // [{ day: "Monday", periods: [1, 2] }]
+  // ✅ Hoạt động vĩnh viễn
+  isPermanent?: boolean;
+  // ✅ Ngày bắt đầu và kết thúc
+  startDate?: string | null;
+  endDate?: string | null;
+  // ✅ Cấu hình theo khối: maxPeriodsPerDay, allowConsecutive, dayOfWeek, timeSlot có thể khác nhau theo khối
+  gradeConfigs?: Record<"10" | "11" | "12", ActivityGradeConfig>;
 }
 export interface GradeSessionRule {
   grade: "10" | "11" | "12"; // Khối
   session: "morning" | "afternoon" | "both"; // Buổi học chính
 }
 export interface SubjectHour {
-  periodsPerWeek: number;    // Số tiết / tuần
+  // ✅ Số tiết/tuần theo từng khối (10, 11, 12)
+  periodsPerWeek: number | Record<"10" | "11" | "12", number>; // Có thể là số chung hoặc object theo khối
   maxPeriodsPerDay: number;  // Tối đa tiết / ngày
   allowConsecutive: boolean; // Cho phép tiết liên tiếp
   session: "main" | "extra"; // Buổi chính / phụ
+}
+
+// ✅ Cấu hình theo từng khối
+export interface ScheduleGradeConfig {
+  subjects: Record<string, SubjectHour>; // Map<subjectId, SubjectHour>
+  activities: ActivitySlot[]; // Array<ActivitySlot>
+  rules: GradeSessionRule | null; // Quy tắc phân buổi cho khối này
 }
 
 export interface ScheduleConfig {
@@ -127,7 +160,6 @@ export interface ScheduleConfig {
   defaultStartTimeAfternoon: string; // "13:00"
   minutesPerPeriod: number;          // 45 phút / tiết
   defaultBreakMinutes: number;       // Nghỉ giữa tiết (ngắn)
-  activities: ActivitySlot[];        // Các slot hoạt động đặc biệt
   
   specialBreaks: {
     period: number;                  // Tiết áp dụng
@@ -136,12 +168,15 @@ export interface ScheduleConfig {
   }[];
 
   // --- Cấu hình theo ngày ---
-  days: Record<string, DailySchedule>; // key = "2"..."7"
- gradeSessionRules: GradeSessionRule[];
-  // --- Số tiết / tuần & config cho từng môn ---
-  subjectHours: Record<string, SubjectHour>; // VD: { "Toán": {...}, "Văn": {...} }
+  days: Record<string, DailySchedule>; // key = "Monday", "Tuesday", etc.
 
-  // --- Môn học đặc thù học buổi chiều ---
+  // --- Cấu hình theo từng khối: grade → subjects & activities & rules ---
+  gradeConfigs?: Record<"10" | "11" | "12", ScheduleGradeConfig>;
+
+  // ✅ Legacy fields (backward compatibility)
+  activities?: ActivitySlot[];        // Các slot hoạt động đặc biệt (legacy)
+  gradeSessionRules?: GradeSessionRule[]; // Legacy
+  subjectHours?: Record<string, SubjectHour>; // VD: { "Toán": {...}, "Văn": {...} } (legacy)
 
   createdAt?: string;
   updatedAt?: string;

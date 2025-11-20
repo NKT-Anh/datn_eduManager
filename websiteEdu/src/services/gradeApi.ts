@@ -1,13 +1,10 @@
-import axios from "axios";
-
-const BASE_URL = import.meta.env.VITE_API_BASE_URL;
-const API_URL = `${BASE_URL}/grade`;
+import api from "./axiosInstance";
 
 export const gradeApi = {
   // 🔹 Lấy danh sách khối
   async getAll() {
     try {
-      const res = await axios.get(API_URL);
+      const res = await api.get("/grade");
       return res.data;
     } catch (err) {
       console.error("Lỗi khi lấy danh sách khối:", err);
@@ -18,7 +15,7 @@ export const gradeApi = {
   // 🔹 Thêm mới khối
   async create(data) {
     try {
-      const res = await axios.post(API_URL, data);
+      const res = await api.post("/grade", data);
       return res.data;
     } catch (err) {
       console.error("Lỗi khi thêm khối:", err);
@@ -29,7 +26,7 @@ export const gradeApi = {
   // 🔹 Cập nhật khối
   async update(id, data) {
     try {
-      const res = await axios.put(`${API_URL}/${id}`, data);
+      const res = await api.put(`/grade/${id}`, data);
       return res.data;
     } catch (err) {
       console.error("Lỗi khi cập nhật khối:", err);
@@ -40,7 +37,7 @@ export const gradeApi = {
   // 🔹 Xóa khối
   async delete(id) {
     try {
-      const res = await axios.delete(`${API_URL}/${id}`);
+      const res = await api.delete(`/grade/${id}`);
       return res.data;
     } catch (err) {
       console.error("Lỗi khi xóa khối:", err);

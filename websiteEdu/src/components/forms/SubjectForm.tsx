@@ -23,11 +23,13 @@ import { Button } from '@/components/ui/button';
 import { Subject } from '@/types/class';
 import { useToast } from '@/hooks/use-toast';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 
 const subjectSchema = z.object({
   name: z.string().min(1, 'Tên môn học là bắt buộc'),
   code: z.string().min(1, 'Mã môn học là bắt buộc').max(10, 'Mã môn học tối đa 10 ký tự'),
   grades: z.array(z.enum(['10', '11', '12'])).nonempty('Chọn ít nhất 1 khối'),
+  isActive: z.boolean().default(true),
 });
 
 type SubjectFormData = z.infer<typeof subjectSchema>;
@@ -49,6 +51,7 @@ export const SubjectForm = ({ open, onOpenChange, subjectData, onSubmit }: Subje
       name: subjectData?.name || '',
       code: subjectData?.code || '',
       grades: subjectData?.grades || [],
+      isActive: subjectData?.isActive !== undefined ? subjectData.isActive : true,
     },
   });
    useEffect(() => {
@@ -57,12 +60,14 @@ export const SubjectForm = ({ open, onOpenChange, subjectData, onSubmit }: Subje
         name: subjectData.name,
         code: subjectData.code,
         grades: subjectData.grades || [],
+        isActive: subjectData.isActive !== undefined ? subjectData.isActive : true,
       });
     } else {
       form.reset({
         name: '',
         code: '',
         grades: [],
+        isActive: true,
       });
     }
   }, [subjectData, form]);
@@ -172,6 +177,28 @@ export const SubjectForm = ({ open, onOpenChange, subjectData, onSubmit }: Subje
                     ))}
                   </div>
                   <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Trạng thái hoạt động */}
+            <FormField
+              control={form.control}
+              name="isActive"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                  <div className="space-y-0.5">
+                    <FormLabel className="text-base">Trạng thái hoạt động</FormLabel>
+                    <div className="text-sm text-muted-foreground">
+                      Môn học {field.value ? 'đang được dạy' : 'đã ngừng dạy'}
+                    </div>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
                 </FormItem>
               )}
             />

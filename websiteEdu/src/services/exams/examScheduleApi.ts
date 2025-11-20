@@ -59,10 +59,18 @@ getByExam: async (examId: string, grade?: number) => {
   },
 
   /* =========================================================
+     🗑️ XÓA HÀNG LOẠT LỊCH THI
+  ========================================================= */
+  async deleteMultiple(ids: string[]) {
+    const res = await api.post(`/exam/schedules/delete-multiple`, { ids });
+    return res.data;
+  },
+
+  /* =========================================================
      ⚡ TỰ ĐỘNG TẠO LỊCH THI
   ========================================================= */
-  async autoGenerate(examId: string, grade: number) {
-    const res = await api.post(`/exam/schedules/auto-generate`, { examId, grade });
+  async autoGenerate(examId: string, grade: number, examType: string = "midterm") {
+    const res = await api.post(`/exam/schedules/auto-generate`, { examId, grade, examType });
     return res.data;
   },
   updateDateTime: async (id: string, data: { date: string; startTime: string }) => {

@@ -43,4 +43,13 @@ export const roomAssignmentApi = {
     });
     return res.data;
   },
+
+  /** 🛠️ Gán thủ công học sinh vào phòng thi */
+  async manualAssign(roomId: string, studentIds: string[]) {
+    const res = await api.post("/room-assignments/manual", {
+      roomId,
+      studentIds,
+    });
+    return res.data;
+  },
 };

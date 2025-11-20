@@ -1,6 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { useAuth } from '@/contexts/AuthContext11';
+import { useAuth } from '@/contexts/AuthContext';
+import { usePermissions } from '@/hooks/usePermissions';
+import { PERMISSIONS } from '@/utils/permissions';
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { mockClasses, mockStudents, mockSubjects } from '@/data/mockData';
 import { 
   School,
@@ -13,10 +16,18 @@ import {
   ClipboardList
 } from 'lucide-react';
 
-const MyClassesPage = () => {
-  const { user } = useAuth();
+const MyClassesPageContent = () => {
+  const { backendUser } = useAuth();
+  const { hasAnyPermission } = usePermissions();
 
-  if (user?.role !== 'teacher') {
+  // Kiểm tra quyền xem lớp (chủ nhiệm hoặc đang dạy)
+  const canViewClasses = hasAnyPermission([
+    PERMISSIONS.CLASS_VIEW_HOMEROOM,
+    PERMISSIONS.CLASS_VIEW_TEACHING,
+    PERMISSIONS.CLASS_VIEW
+  ]);
+
+  if (!canViewClasses) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -28,7 +39,8 @@ const MyClassesPage = () => {
   }
 
   // Get classes where this teacher is the homeroom teacher
-  const homeroomClasses = mockClasses.filter(cls => cls.teacherId === user.id);
+  // TODO: Replace with actual API call
+  const homeroomClasses = mockClasses.filter(cls => cls.teacherId === backendUser?._id);
   
   // Get all classes where this teacher teaches (based on subjects)
   const teachingClasses = mockClasses.filter(cls => 
@@ -40,7 +52,8 @@ const MyClassesPage = () => {
   };
 
   const getTeachingSubjects = () => {
-    return mockSubjects.filter(subject => user.subjectIds?.includes(subject.id));
+    // TODO: Replace with actual API call to get teacher's subjects
+    return mockSubjects.filter(subject => backendUser?.subjects?.some((s: any) => s === subject.id));
   };
 
   const teachingSubjects = getTeachingSubjects();
@@ -238,6 +251,20 @@ const MyClassesPage = () => {
         </Card>
       </div>
     </div>
+  );
+};
+
+const MyClassesPage = () => {
+  return (
+    <ProtectedRoute
+      requiredPermission={[
+        PERMISSIONS.CLASS_VIEW_HOMEROOM,
+        PERMISSIONS.CLASS_VIEW_TEACHING,
+        PERMISSIONS.CLASS_VIEW
+      ]}
+    >
+      <MyClassesPageContent />
+    </ProtectedRoute>
   );
 };
 

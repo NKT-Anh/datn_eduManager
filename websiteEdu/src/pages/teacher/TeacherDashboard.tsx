@@ -1,6 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { useAuth } from '@/contexts/AuthContext11';
+import { useAuth } from '@/contexts/AuthContext';
 import { mockStudents, mockClasses, mockSchedule, mockSubjects } from '@/data/mockData';
 import { 
   Users, 
@@ -11,10 +11,10 @@ import {
 } from 'lucide-react';
 
 const TeacherDashboard = () => {
-  const { user } = useAuth();
+  const { backendUser } = useAuth();
   
   // Get teacher's classes
-  const teacherClasses = mockClasses.filter(c => c.teacherId === user?.id);
+  const teacherClasses = mockClasses.filter(c => c.teacherId === backendUser?.teacherId || backendUser?._id);
   const totalStudents = teacherClasses.reduce((sum, cls) => {
     return sum + mockStudents.filter(s => s.classId === cls.id).length;
   }, 0);
@@ -22,7 +22,7 @@ const TeacherDashboard = () => {
   // Get today's schedule for teacher
   const today = new Date().getDay(); // 0 = Sunday, 1 = Monday, etc.
   const todaySchedule = mockSchedule.filter(s => 
-    s.teacherId === user?.id && s.dayOfWeek === (today === 0 ? 7 : today + 1)
+    s.teacherId === (backendUser?.teacherId || backendUser?._id) && s.dayOfWeek === (today === 0 ? 7 : today + 1)
   );
 
   const getSubjectName = (subjectId: string) => {
@@ -37,7 +37,7 @@ const TeacherDashboard = () => {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Dashboard Giáo viên</h1>
-        <p className="text-muted-foreground">Xin chào, {user?.name}!</p>
+        <p className="text-muted-foreground">Xin chào, {backendUser?.name}!</p>
       </div>
 
       {/* Stats Cards */}

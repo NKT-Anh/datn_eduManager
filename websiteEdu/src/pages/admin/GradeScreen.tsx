@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -10,7 +10,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { Trash2, Pencil } from "lucide-react";
-import { gradeApi } from "@/services/gradeApi";
+// ✅ Sử dụng hooks thay vì API trực tiếp
+import { useGrades } from "@/hooks";
 import {
   Select,
   SelectContent,
@@ -22,7 +23,9 @@ import type { Grade, GradeInput } from "@/types/class"; // ✅ Import type
 
 export default function GradeScreen() {
   const { toast } = useToast();
-  const [grades, setGrades] = useState<Grade[]>([]);
+  // ✅ Sử dụng hooks
+  const { grades, create: createGrade, update: updateGrade, remove: removeGrade } = useGrades();
+  
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<GradeInput>({
     name: "",
@@ -30,24 +33,6 @@ export default function GradeScreen() {
     description: "",
   });
   const [editId, setEditId] = useState<string | null>(null);
-
-  // 🔹 Lấy danh sách khối
-  const fetchGrades = async () => {
-    try {
-      const data = await gradeApi.getAll();
-      setGrades(data);
-    } catch (error: any) {
-      toast({
-        title: "Lỗi tải dữ liệu",
-        description: String(error.message || error),
-        variant: "destructive",
-      });
-    }
-  };
-
-  useEffect(() => {
-    fetchGrades();
-  }, []);
 
   // 🔹 Tạo hoặc cập nhật
   const handleSubmit = async () => {
@@ -62,16 +47,15 @@ export default function GradeScreen() {
 
     try {
       if (editId) {
-        await gradeApi.update(editId, form);
+        await updateGrade({ id: editId, data: form });
         toast({ title: "Đã cập nhật thành công" });
       } else {
-        await gradeApi.create(form);
+        await createGrade(form);
         toast({ title: "Đã thêm mới khối" });
       }
       setOpen(false);
       setForm({ name: "", level: "high", description: "" });
       setEditId(null);
-      fetchGrades();
     } catch (error: any) {
       toast({
         title: "Lỗi thao tác",
@@ -85,9 +69,8 @@ export default function GradeScreen() {
   const handleDelete = async (id: string) => {
     if (!confirm("Bạn có chắc muốn xóa khối này?")) return;
     try {
-      await gradeApi.delete(id);
+      await removeGrade(id);
       toast({ title: "Đã xóa thành công" });
-      fetchGrades();
     } catch (error: any) {
       toast({
         title: "Lỗi khi xóa",

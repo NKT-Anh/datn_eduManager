@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { useAuth } from '@/contexts/AuthContext11';
+import { useAuth } from '@/contexts/AuthContext';
 import { mockStudents, mockClasses } from '@/data/mockData';
 import { StudentForm } from '@/components/forms/StudentForm';
 import { DeleteConfirmDialog } from '@/components/dialogs/DeleteConfirmDialog';
@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 
 const StudentsPage = () => {
-  const { user } = useAuth();
+  const { backendUser } = useAuth();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [students, setStudents] = useState(mockStudents);
@@ -98,7 +98,7 @@ const StudentsPage = () => {
     return classInfo?.name || 'Unknown';
   };
 
-  if (user?.role !== 'admin') {
+  if (backendUser?.role !== 'admin') {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">

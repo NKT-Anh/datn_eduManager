@@ -30,6 +30,7 @@ import {
 import { useStudent } from "@/hooks/auth/useStudents";
 import { useStudentGrades } from "@/hooks/grades/useStudentGrades";
 import settingApi from "@/services/settingApi";
+import gradeConfigApi from "@/services/gradeConfigApi";
 
 /* =========================================================
    📘 COMPONENT
@@ -43,6 +44,7 @@ const StudentDetail = () => {
 
   const [selectedYear, setSelectedYear] = useState<string | null>(null);
   const [currentYear, setCurrentYear] = useState<string>("");
+  const [classificationConfig, setClassificationConfig] = useState<any>(null);
 
   // 🧩 Lấy niên khóa hiện tại
   useEffect(() => {
@@ -77,39 +79,92 @@ const StudentDetail = () => {
     }
   }, [groupedGrades, currentYear, selectedYear]);
 
+  // ✅ Lấy cấu hình xếp loại từ backend
+  useEffect(() => {
+    const fetchClassificationConfig = async () => {
+      if (!selectedYear) return;
+      try {
+        // Lấy cấu hình từ học kỳ 2 (học kỳ cuối của năm học)
+        const config = await gradeConfigApi.getConfig({ schoolYear: selectedYear, semester: '2' });
+        if (config?.classification) {
+          setClassificationConfig(config.classification);
+        } else {
+          // Dùng mặc định nếu không có cấu hình
+          setClassificationConfig({
+            excellent: { minAverage: 8.0, minSubjectScore: 6.5 },
+            good: { minAverage: 6.5, minSubjectScore: 5.0 },
+            average: { minAverage: 5.0 },
+            weak: { maxAverage: 5.0 },
+          });
+        }
+      } catch (err) {
+        console.error('Lỗi lấy cấu hình xếp loại:', err);
+        // Dùng mặc định nếu lỗi
+        setClassificationConfig({
+          excellent: { minAverage: 8.0, minSubjectScore: 6.5 },
+          good: { minAverage: 6.5, minSubjectScore: 5.0 },
+          average: { minAverage: 5.0 },
+          weak: { maxAverage: 5.0 },
+        });
+      }
+    };
+    fetchClassificationConfig();
+  }, [selectedYear]);
+
   // 🔢 Hàm tính điểm TB năm & xếp loại
-const calcYearSummary = (gradesForYear: any[]) => {
-  const allSubjects = gradesForYear.filter((g) => g.subject?.includeInAverage);
-  if (allSubjects.length === 0) return { avgYear: "-", rank: "—" };
+  const calcYearSummary = (gradesForYear: any[]) => {
+    const allSubjects = gradesForYear.filter((g) => g.subject?.includeInAverage);
+    if (allSubjects.length === 0) return { avgYear: "-", rank: "—" };
 
-  const avg1 =
-    allSubjects
-      .filter((g) => g.semester === "1")
-      .reduce((sum, g) => sum + (g.average || 0), 0) /
-    Math.max(1, allSubjects.filter((g) => g.semester === "1").length);
+    const avg1 =
+      allSubjects
+        .filter((g) => g.semester === "1")
+        .reduce((sum, g) => sum + (g.average || 0), 0) /
+      Math.max(1, allSubjects.filter((g) => g.semester === "1").length);
 
-  const avg2 =
-    allSubjects
-      .filter((g) => g.semester === "2")
-      .reduce((sum, g) => sum + (g.average || 0), 0) /
-    Math.max(1, allSubjects.filter((g) => g.semester === "2").length);
+    const avg2 =
+      allSubjects
+        .filter((g) => g.semester === "2")
+        .reduce((sum, g) => sum + (g.average || 0), 0) /
+      Math.max(1, allSubjects.filter((g) => g.semester === "2").length);
 
-  // ✅ Ép kiểu số để tránh lỗi TypeScript
-  const rawAvgYear = (avg1 + avg2 * 2) / 3;
-  const avgYear = parseFloat(rawAvgYear.toFixed(1)); // number
+    // ✅ Ép kiểu số để tránh lỗi TypeScript
+    const rawAvgYear = (avg1 + avg2 * 2) / 3;
+    const avgYear = parseFloat(rawAvgYear.toFixed(1)); // number
 
-  // 🎓 Xếp loại học lực
-  const rank =
-    avgYear >= 8 && allSubjects.every((s) => s.average >= 6.5)
-      ? "Giỏi"
-      : avgYear >= 6.5 && allSubjects.every((s) => s.average >= 5)
-      ? "Khá"
-      : avgYear >= 5
-      ? "Trung bình"
-      : "Yếu";
+    // 🎓 Xếp loại học lực - sử dụng cấu hình từ backend
+    const config = classificationConfig || {
+      excellent: { minAverage: 8.0, minSubjectScore: 6.5 },
+      good: { minAverage: 6.5, minSubjectScore: 5.0 },
+      average: { minAverage: 5.0, minSubjectScore: 3.5 },
+      weak: { maxAverage: 5.0, maxSubjectScore: 3.5 },
+    };
 
-  return { avgYear, rank };
-};
+    let rank = "—";
+    
+    // Kiểm tra Giỏi: Điểm TB năm ≥ minAverage và tất cả môn ≥ minSubjectScore
+    if (avgYear >= (config.excellent?.minAverage || 8.0) && 
+        allSubjects.every((s) => (s.average || 0) >= (config.excellent?.minSubjectScore || 6.5))) {
+      rank = "Giỏi";
+    } 
+    // Kiểm tra Khá: Điểm TB năm ≥ minAverage và tất cả môn ≥ minSubjectScore
+    else if (avgYear >= (config.good?.minAverage || 6.5) && 
+             allSubjects.every((s) => (s.average || 0) >= (config.good?.minSubjectScore || 5.0))) {
+      rank = "Khá";
+    } 
+    // Kiểm tra Trung bình: Điểm TB năm ≥ minAverage và tất cả môn > minSubjectScore
+    else if (avgYear >= (config.average?.minAverage || 5.0) && 
+             allSubjects.every((s) => (s.average || 0) > (config.average?.minSubjectScore || 3.5))) {
+      rank = "Trung bình";
+    } 
+    // Kiểm tra Yếu: Điểm TB năm < maxAverage hoặc có môn < maxSubjectScore
+    else if (avgYear < (config.weak?.maxAverage || 5.0) || 
+             allSubjects.some((s) => (s.average || 0) < (config.weak?.maxSubjectScore || 3.5))) {
+      rank = "Yếu";
+    }
+
+    return { avgYear, rank };
+  };
 
 
   if (loadingStudent) {

@@ -5,20 +5,6 @@ import { ClassType } from "../types/class";
 const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 /* =========================================================
-   ⚙️ HÀM LẤY INSTANCE AXIOS CÓ TOKEN
-========================================================= */
-const getAxiosInstance = () => {
-  const token = localStorage.getItem("token");
-  return axios.create({
-    baseURL: API_BASE,
-    headers: {
-      Authorization: token ? `Bearer ${token}` : "",
-      "Content-Type": "application/json",
-    },
-  });
-};
-
-/* =========================================================
    🏫 API QUẢN LÝ LỚP (YÊU CẦU ĐĂNG NHẬP)
 ========================================================= */
 export const classApi = {
@@ -26,7 +12,7 @@ export const classApi = {
      📋 LẤY DANH SÁCH LỚP
   ========================================================= */
   async getAll(params?: any): Promise<ClassType[]> {
-    const res = await getAxiosInstance().get("/class", { params });
+    const res = await api.get("/class", { params });
     return res.data;
   },
 
@@ -34,7 +20,7 @@ export const classApi = {
      🔍 LẤY CHI TIẾT LỚP
   ========================================================= */
   async getById(id: string): Promise<ClassType> {
-    const res = await getAxiosInstance().get(`/class/${id}`);
+    const res = await api.get(`/class/${id}`);
     return res.data;
   },
 
@@ -74,7 +60,7 @@ export const classApi = {
     data: Omit<ClassType, "_id" | "teacherId" | "students" | "classCode">
   ): Promise<ClassType> {
     try {
-      const res = await getAxiosInstance().post("/class", data);
+      const res = await api.post("/class", data);
       return res.data;
     } catch (err: any) {
       console.error("❌ Create class error:", err.response?.data || err.message);
@@ -87,7 +73,7 @@ export const classApi = {
   ========================================================= */
   async update(id: string, data: any): Promise<ClassType> {
     try {
-      const res = await getAxiosInstance().put(`/class/${id}`, data);
+      const res = await api.put(`/class/${id}`, data);
       return res.data;
     } catch (err: any) {
       console.error("❌ Update class error:", err.response?.data || err.message);
@@ -100,7 +86,7 @@ export const classApi = {
   ========================================================= */
   async remove(id: string): Promise<{ message: string }> {
     try {
-      const res = await getAxiosInstance().delete(`/class/${id}`);
+      const res = await api.delete(`/class/${id}`);
       return res.data;
     } catch (err: any) {
       console.error("❌ Delete class error:", err.response?.data || err.message);
@@ -116,7 +102,7 @@ export const classApi = {
     grade?: string;
     minScore?: number;
   }): Promise<ClassType[]> {
-    const res = await getAxiosInstance().get("/class/auto-assign", { params });
+    const res = await api.get("/class/auto-assign", { params });
     return res.data;
   },
 
@@ -126,7 +112,7 @@ export const classApi = {
     count?: number;
     capacity?: number;
   }): Promise<ClassType[]> {
-    const res = await getAxiosInstance().post("/class/setup-year", data);
+    const res = await api.post("/class/setup-year", data);
     return res.data;
   },
 
@@ -134,8 +120,84 @@ export const classApi = {
      👩‍🏫 GIA NHẬP LỚP
   ========================================================= */
   async joinClass(data: { userId: string; classCode: string }): Promise<ClassType[]> {
-    const res = await getAxiosInstance().post("/class/join-class", data);
+    const res = await api.post("/class/join-class", data);
     return res.data;
+  },
+
+  /* =========================================================
+     🏫 GẮN PHÒNG CHO LỚP
+  ========================================================= */
+  async assignRoom(classId: string, roomId: string | null): Promise<ClassType> {
+    try {
+      const res = await api.put(`/class/${classId}/room`, { roomId });
+      return res.data.data;
+    } catch (err: any) {
+      console.error("❌ Assign room error:", err.response?.data || err.message);
+      throw err;
+    }
+  },
+
+  /* =========================================================
+     🏫 TỰ ĐỘNG GÁN PHÒNG CHO CÁC LỚP
+  ========================================================= */
+  async autoAssignRooms(year?: string, reassignAll?: boolean): Promise<{
+    message: string;
+    assigned: number;
+    skipped: number;
+    failed: number;
+    details: Array<{
+      className: string;
+      status: 'assigned' | 'skipped' | 'failed';
+      roomCode?: string;
+      reason?: string;
+    }>;
+  }> {
+    try {
+      const params: any = {};
+      if (year && year !== 'Tất cả') {
+        params.year = year;
+      }
+      if (reassignAll) {
+        params.reassignAll = 'true';
+      }
+      const res = await api.post('/class/auto-assign-rooms', {}, { params });
+      return res.data;
+    } catch (err: any) {
+      console.error("❌ Auto assign rooms error:", err.response?.data || err.message);
+      throw err;
+    }
+  },
+
+  /* =========================================================
+     👩‍🏫 TỰ ĐỘNG GÁN GIÁO VIÊN CHỦ NHIỆM CHO CÁC LỚP
+  ========================================================= */
+  async autoAssignHomeroomTeachers(year?: string, reassignAll?: boolean): Promise<{
+    message: string;
+    assigned: number;
+    skipped: number;
+    failed: number;
+    details: Array<{
+      className: string;
+      status: 'assigned' | 'skipped' | 'failed';
+      teacherName?: string;
+      teacherCode?: string;
+      reason?: string;
+    }>;
+  }> {
+    try {
+      const params: any = {};
+      if (year && year !== 'Tất cả') {
+        params.year = year;
+      }
+      if (reassignAll) {
+        params.reassignAll = 'true';
+      }
+      const res = await api.post('/class/auto-assign-homeroom-teachers', {}, { params });
+      return res.data;
+    } catch (err: any) {
+      console.error("❌ Auto assign homeroom teachers error:", err.response?.data || err.message);
+      throw err;
+    }
   },
 };
 

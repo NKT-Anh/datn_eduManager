@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import gradesApi from "@/services/gradesApi";
 import schoolConfigApi from "@/services/schoolConfigApi";
+// ✅ Sử dụng hooks thay vì API trực tiếp
+import { useSchoolYears } from "@/hooks";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -27,21 +29,23 @@ const TeacherEnterGradesPage: React.FC = () => {
 
   
 
-  // 🔹 Lấy danh sách năm học & học kỳ
+  // ✅ Lấy danh sách năm học từ hooks
+  const { schoolYears: allSchoolYears } = useSchoolYears();
   useEffect(() => {
-    const fetchConfig = async () => {
+    setSchoolYears(allSchoolYears.map(y => ({ code: y.code, name: y.name })));
+  }, [allSchoolYears]);
+
+  // 🔹 Lấy danh sách học kỳ
+  useEffect(() => {
+    const fetchSemesters = async () => {
       try {
-        const [yearsRes, semestersRes] = await Promise.all([
-          schoolConfigApi.getSchoolYears(),
-          schoolConfigApi.getSemesters(),
-        ]);
-        setSchoolYears(yearsRes.data);
+        const semestersRes = await schoolConfigApi.getSemesters();
         setSemesters(semestersRes.data);
       } catch (err) {
-        console.error("Load school config failed", err);
+        console.error("Load semesters failed", err);
       }
     };
-    fetchConfig();
+    fetchSemesters();
   }, []);
 
   // 🔹 Lấy danh sách lớp & môn theo teacher + năm học + học kỳ

@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { useAuth } from '@/contexts/AuthContext11';
+import { useAuth } from '@/contexts/AuthContext';
 import { mockGrades, mockStudents, mockSubjects, mockClasses } from '@/data/mockData';
 import { 
   BarChart3,
@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 
 const GradesPage = () => {
-  const { user } = useAuth();
+  const { backendUser } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('all');
   const [selectedSemester, setSelectedSemester] = useState('1');
@@ -32,10 +32,10 @@ const GradesPage = () => {
     const matchesSubject = selectedSubject === 'all' || grade.subjectId === selectedSubject;
     const matchesSemester = grade.semester.toString() === selectedSemester;
 
-    if (user?.role === 'student') {
-      return grade.studentId === user.id && matchesSubject && matchesSemester;
-    } else if (user?.role === 'teacher') {
-      return user.subjectIds?.includes(grade.subjectId) && matchesSearch && matchesSubject && matchesSemester;
+    if (backendUser?.role === 'student') {
+      return grade.studentId === (backendUser.studentId || backendUser._id) && matchesSubject && matchesSemester;
+    } else if (backendUser?.role === 'teacher') {
+      return backendUser.subjects?.some((s: any) => s.subjectId === grade.subjectId) && matchesSearch && matchesSubject && matchesSemester;
     } else {
       return matchesSearch && matchesSubject && matchesSemester;
     }
@@ -93,16 +93,16 @@ const GradesPage = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-foreground">
-            {user?.role === 'student' ? 'Điểm số của tôi' : 'Quản lý điểm số'}
+            {backendUser?.role === 'student' ? 'Điểm số của tôi' : 'Quản lý điểm số'}
           </h1>
           <p className="text-muted-foreground">
-            {user?.role === 'student' 
+            {backendUser?.role === 'student' 
               ? 'Xem điểm số các môn học của bạn'
               : 'Quản lý và nhập điểm cho học sinh'
             }
           </p>
         </div>
-        {(user?.role === 'teacher' || user?.role === 'admin') && (
+        {(backendUser?.role === 'teacher' || backendUser?.role === 'admin') && (
           <Button className="bg-gradient-primary hover:bg-primary-hover">
             <Plus className="h-4 w-4 mr-2" />
             Nhập điểm
@@ -114,7 +114,7 @@ const GradesPage = () => {
       <Card className="shadow-card border-border">
         <CardContent className="p-6">
           <div className="flex flex-col sm:flex-row gap-4">
-            {user?.role !== 'student' && (
+            {backendUser?.role !== 'student' && (
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -136,9 +136,9 @@ const GradesPage = () => {
                 <option value="all">Tất cả môn</option>
                 {mockSubjects
                   .filter(subject => 
-                    user?.role === 'student' || 
-                    user?.role === 'admin' || 
-                    user?.subjectIds?.includes(subject.id)
+                    backendUser?.role === 'student' || 
+                    backendUser?.role === 'admin' || 
+                    backendUser?.subjects?.some((s: any) => s.subjectId === subject.id)
                   )
                   .map(subject => (
                     <option key={subject.id} value={subject.id}>{subject.name}</option>
@@ -172,7 +172,7 @@ const GradesPage = () => {
             <table className="w-full min-w-[1000px]">
               <thead className="bg-muted">
                 <tr>
-                  {user?.role !== 'student' && (
+                  {backendUser?.role !== 'student' && (
                     <th className="p-3 text-left font-medium text-muted-foreground">Học sinh</th>
                   )}
                   <th className="p-3 text-left font-medium text-muted-foreground">Môn học</th>
@@ -186,7 +186,7 @@ const GradesPage = () => {
                   <th className="p-3 text-center font-medium text-muted-foreground">GK 2</th>
                   <th className="p-3 text-center font-medium text-muted-foreground">Cuối kỳ</th>
                   <th className="p-3 text-center font-medium text-muted-foreground">TB</th>
-                  {(user?.role === 'teacher' || user?.role === 'admin') && (
+                  {(backendUser?.role === 'teacher' || backendUser?.role === 'admin') && (
                     <th className="p-3 text-center font-medium text-muted-foreground">Thao tác</th>
                   )}
                 </tr>
@@ -194,7 +194,7 @@ const GradesPage = () => {
               <tbody>
                 {filteredGrades.map((grade, index) => (
                   <tr key={grade.id} className={index % 2 === 0 ? 'bg-background' : 'bg-muted/30'}>
-                    {user?.role !== 'student' && (
+                    {backendUser?.role !== 'student' && (
                       <td className="p-3">
                         <div className="flex items-center space-x-2">
                           <User className="h-4 w-4 text-muted-foreground" />
@@ -222,7 +222,7 @@ const GradesPage = () => {
                         {calculateAverage(grade)}
                       </Badge>
                     </td>
-                    {(user?.role === 'teacher' || user?.role === 'admin') && (
+                    {(backendUser?.role === 'teacher' || backendUser?.role === 'admin') && (
                       <td className="p-3 text-center">
                         <Button variant="ghost" size="icon">
                           <Edit className="h-4 w-4" />
@@ -243,7 +243,7 @@ const GradesPage = () => {
             <BarChart3 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-lg font-medium text-foreground mb-2">Chưa có điểm số</h3>
             <p className="text-muted-foreground">
-              {user?.role === 'student' 
+              {backendUser?.role === 'student' 
                 ? 'Điểm số sẽ được cập nhật khi giáo viên nhập điểm.'
                 : 'Chưa có điểm số nào được nhập cho tiêu chí tìm kiếm này.'
               }
@@ -253,7 +253,7 @@ const GradesPage = () => {
       )}
 
       {/* Statistics */}
-      {user?.role === 'student' && filteredGrades.length > 0 && (
+      {backendUser?.role === 'student' && filteredGrades.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Card className="shadow-card border-border">
             <CardContent className="p-4 text-center">

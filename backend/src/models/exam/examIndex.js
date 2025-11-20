@@ -3,6 +3,8 @@ module.exports = {
   ExamClass: require('./examClass'),
   ExamSchedule: require('./examSchedule'),
   ExamRoom: require('./examRoom'),
+  FixedExamRoom: require('./fixedExamRoom'),
   ExamStudent: require('./examStudent'),
-  ExamGrade: require('./examGrade')
+  ExamGrade: require('./examGrade'),
+  RoomAssignment: require('./roomAssignment')
 };

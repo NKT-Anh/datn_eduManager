@@ -27,17 +27,18 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BookOpen, Save } from "lucide-react";
 
-import { subjectApi } from "@/services/subjectApi";
-import { classApi } from "@/services/classApi";
-import { assignmentApi } from "@/services/assignmentApi";
+// ✅ Sử dụng hooks thay vì API trực tiếp
+import { useSubjects, useAssignments, useSchoolYears } from "@/hooks";
 import { scheduleApi } from "@/services/scheduleApi";
 import { getScheduleConfig } from "@/services/scheduleConfigApi";
+import { classApi } from "@/services/classApi";
 import DeleteScheduleDialog from "@/components/dialogs/DeleteScheduleSection";
 import { Subject, ClassType, TeachingAssignment } from "@/types/class";
 import { ScheduleConfig, ClassSchedule } from "@/types/schedule";
 import { ScheduleConfigForm } from "@/components/forms/ScheduleConfigForm";
 import { toast } from "@/components/ui/use-toast";
 import { Teacher } from "@/types/auth";
+import { Loader2 } from "lucide-react";
 // Hàm tạo màu từ tên môn học
 const getSubjectColor = (subjectName: string) => {
   const colors: Record<string, string> = {
@@ -167,11 +168,15 @@ const SortableCell = ({ id, children }: { id: string; children: React.ReactNode 
 };
 
 export default function SchedulePageNew() {
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [classes, setClasses] = useState<ClassType[]>([]);
-  const [assignments, setAssignments] = useState<TeachingAssignment[]>([]);
+  // ✅ Sử dụng hooks
+  const { subjects } = useSubjects();
+  const { assignments } = useAssignments();
+  const { schoolYears, isLoading: isLoadingYears } = useSchoolYears();
+  
   const [scheduleConfig, setScheduleConfig] = useState<ScheduleConfig | null>(null);
   const [schedule, setSchedule] = useState<ClassSchedule | null>(null);
+  const [classes, setClasses] = useState<ClassType[]>([]);
+  const [isLoadingClasses, setIsLoadingClasses] = useState(false);
 
   const [selectedYear, setSelectedYear] = useState<string>("");
   const [selectedSemester, setSelectedSemester] = useState<string>("1");
@@ -181,28 +186,53 @@ export default function SchedulePageNew() {
   const [days, setDays] = useState<{ key: string; label: string }[]>([]);
   const sensors = useSensors(useSensor(PointerSensor));
 
+  // ✅ Load năm học từ API và set năm học mặc định
   useEffect(() => {
-    const fetchBaseData = async () => {
-      try {
-        const [subjectRes, classRes, assignmentRes] = await Promise.all([
-          subjectApi.getSubjects(),
-          classApi.getAll(),
-          assignmentApi.getAll(),
-        ]);
-        setSubjects(subjectRes);
-        setClasses(classRes);
-        setAssignments(assignmentRes);
-
+    if (schoolYears.length > 0 && !selectedYear) {
+      // Ưu tiên lấy năm học active, nếu không có thì lấy năm học đầu tiên
+      const activeYear = schoolYears.find((y: any) => y.isActive) || schoolYears[0];
+      if (activeYear) {
+        setSelectedYear(activeYear.code);
+      } else {
+        // Fallback: Tự tính năm học hiện tại
         const now = new Date();
         const year = now.getFullYear();
         const month = now.getMonth() + 1;
         setSelectedYear(month >= 8 ? `${year}-${year + 1}` : `${year - 1}-${year}`);
+      }
+    }
+  }, [schoolYears]);
+
+  // ✅ Load lớp theo năm học được chọn
+  useEffect(() => {
+    if (!selectedYear) return;
+    
+    const loadClasses = async () => {
+      try {
+        setIsLoadingClasses(true);
+        const classesData = await classApi.getByYear(selectedYear);
+        setClasses(classesData);
+        
+        // Reset selected class nếu lớp hiện tại không còn trong danh sách
+        if (selectedClassId && !classesData.find((c: ClassType) => c._id === selectedClassId)) {
+          setSelectedClassId(null);
+          setSchedule(null);
+        }
       } catch (err) {
-        console.error("Lỗi khi tải dữ liệu cơ bản:", err);
+        console.error("Lỗi tải danh sách lớp:", err);
+        toast({
+          title: "❌ Lỗi",
+          description: "Không thể tải danh sách lớp. Vui lòng thử lại.",
+          variant: "destructive",
+        });
+        setClasses([]);
+      } finally {
+        setIsLoadingClasses(false);
       }
     };
-    fetchBaseData();
-  }, []);
+    
+    loadClasses();
+  }, [selectedYear]);
 
   useEffect(() => {
     const fetchConfig = async () => {
@@ -330,7 +360,18 @@ export default function SchedulePageNew() {
   };
 
   const getUnassignedSubjects = () => {
-    if (!schedule || !scheduleConfig) return [];
+    if (!schedule || !scheduleConfig || !selectedClassId) return [];
+
+    // ✅ Lấy grade của lớp hiện tại
+    const selectedClass = classes.find(c => c._id === selectedClassId);
+    if (!selectedClass) return [];
+
+    const grade = selectedClass.grade as "10" | "11" | "12";
+    if (!grade || !["10", "11", "12"].includes(grade)) return [];
+
+    // ✅ Lấy cấu hình môn học từ gradeConfigs
+    const gradeConfig = scheduleConfig.gradeConfigs?.[grade];
+    if (!gradeConfig?.subjects) return [];
 
     const assignedSubjects: Record<string, number> = {};
 
@@ -344,11 +385,23 @@ export default function SchedulePageNew() {
 
     const unassigned: { subject: string; remaining: number }[] = [];
 
-    for (const [subject, rule] of Object.entries(scheduleConfig.subjectHours)) {
-      const count = assignedSubjects[subject] || 0;
-      const remaining = rule.periodsPerWeek - count;
+    // ✅ Sử dụng cấu trúc mới: gradeConfigs[grade].subjects
+    for (const [subjectId, subjectConfig] of Object.entries(gradeConfig.subjects)) {
+      // ✅ Tìm tên môn học từ subjectId
+      const subject = subjects.find(s => s._id?.toString() === subjectId);
+      if (!subject) continue;
+
+      const subjectName = subject.name;
+      const count = assignedSubjects[subjectName] || 0;
+      
+      // ✅ periodsPerWeek là number trong cấu trúc mới
+      const periodsPerWeek = typeof subjectConfig.periodsPerWeek === 'number' 
+        ? subjectConfig.periodsPerWeek 
+        : 0;
+      
+      const remaining = periodsPerWeek - count;
       if (remaining > 0) {
-        unassigned.push({ subject, remaining });
+        unassigned.push({ subject: subjectName, remaining });
       }
     }
 
@@ -418,21 +471,29 @@ export default function SchedulePageNew() {
           <div className="flex gap-4 mb-4">
             <div>
               <label className="mr-2 font-semibold">Năm học:</label>
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(e.target.value)}
-                className="border rounded px-2 py-1"
-              >
-                {Array.from({ length: 7 }, (_, i) => {
-                  const year = new Date().getFullYear() - i;
-                  const label = `${year - 1}-${year}`;
-                  return (
-                    <option key={label} value={label}>
-                      {label}
-                    </option>
-                  );
-                })}
-              </select>
+              {isLoadingYears ? (
+                <div className="inline-flex items-center gap-2 border rounded px-2 py-1">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm text-muted-foreground">Đang tải...</span>
+                </div>
+              ) : (
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(e.target.value)}
+                  className="border rounded px-2 py-1"
+                  disabled={schoolYears.length === 0}
+                >
+                  {schoolYears.length === 0 ? (
+                    <option value="">Chưa có năm học</option>
+                  ) : (
+                    schoolYears.map((year: any) => (
+                      <option key={year.code} value={year.code}>
+                        {year.name || year.code}
+                      </option>
+                    ))
+                  )}
+                </select>
+              )}
             </div>
             <div>
               <label className="mr-2 font-semibold">Học kỳ:</label>
@@ -451,30 +512,47 @@ export default function SchedulePageNew() {
                 value={selectedGrade}
                 onChange={(e) => setSelectedGrade(e.target.value)}
                 className="border rounded px-2 py-1"
+                disabled={isLoadingClasses || classes.length === 0}
               >
                 <option value="all">Tất cả</option>
-                <option value="10">Khối 10</option>
-                <option value="11">Khối 11</option>
-                <option value="12">Khối 12</option>
+                {/* ✅ Tự động load khối từ danh sách lớp */}
+                {Array.from(new Set(classes.map((c) => c.grade)))
+                  .sort()
+                  .map((grade) => (
+                    <option key={grade} value={grade}>
+                      Khối {grade}
+                    </option>
+                  ))}
               </select>
             </div>
           </div>
 
           {/* Class list */}
-          <ul className="flex flex-wrap gap-2 mb-4">
-            {filteredClasses.map((cls) => (
-              <li key={cls._id}>
-                <button
-                  className={`px-4 py-2 rounded border ${
-                    selectedClassId === cls._id ? "bg-blue-600 text-white" : "bg-gray-100"
-                  }`}
-                  onClick={() => setSelectedClassId(cls._id)}
-                >
-                  {cls.className} (Khối {cls.grade})
-                </button>
-              </li>
-            ))}
-          </ul>
+          {isLoadingClasses ? (
+            <div className="flex items-center gap-2 mb-4 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Đang tải danh sách lớp...</span>
+            </div>
+          ) : filteredClasses.length === 0 ? (
+            <div className="mb-4 text-muted-foreground italic">
+              {selectedYear ? `Không có lớp nào trong năm học ${selectedYear}` : "Vui lòng chọn năm học"}
+            </div>
+          ) : (
+            <ul className="flex flex-wrap gap-2 mb-4">
+              {filteredClasses.map((cls) => (
+                <li key={cls._id}>
+                  <button
+                    className={`px-4 py-2 rounded border ${
+                      selectedClassId === cls._id ? "bg-blue-600 text-white" : "bg-gray-100"
+                    }`}
+                    onClick={() => setSelectedClassId(cls._id)}
+                  >
+                    {cls.className} (Khối {cls.grade})
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
 
           {/* Schedule grid */}
           {schedule && scheduleConfig ? (

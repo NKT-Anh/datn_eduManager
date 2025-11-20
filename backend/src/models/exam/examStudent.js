@@ -5,8 +5,9 @@ const examStudentSchema = new Schema({
   exam: { type: Schema.Types.ObjectId, ref: "Exam", required: true },
   student: { type: Schema.Types.ObjectId, ref: "Student", required: true },
   class: { type: Schema.Types.ObjectId, ref: "Class", required: true },
-  grade: { type: Number, required: true },
-  room: { type: Schema.Types.ObjectId, ref: "ExamRoom", default: null }, // 🔹 thêm
+  grade: { type: String, required: true },
+  // 🏫 Phòng thi cố định (FixedExamRoom) - ổn định suốt kỳ thi
+  room: { type: Schema.Types.ObjectId, ref: "FixedExamRoom", default: null },
   sbd: { type: String, required: true, trim: true },
   subjects: [
     {
@@ -28,7 +29,13 @@ const examStudentSchema = new Schema({
   note: String,
 }, { timestamps: true });
 
-examStudentSchema.index({ exam: 1, student: 1 }, { unique: true });
-examStudentSchema.index({ exam: 1, sbd: 1 }, { unique: true });
+// ✅ Unique index: mỗi học sinh chỉ có thể tham gia 1 lần trong 1 kỳ thi
+// Sử dụng sparse: true để tránh lỗi khi có document với exam hoặc student là null
+examStudentSchema.index({ exam: 1, student: 1 }, { unique: true, sparse: true });
+// ✅ Unique index: SBD phải duy nhất trong 1 kỳ thi
+examStudentSchema.index({ exam: 1, sbd: 1 }, { unique: true, sparse: true });
+// ✅ Index để tìm kiếm theo phòng thi
 examStudentSchema.index({ room: 1 });
+
+module.exports = mongoose.model("ExamStudent", examStudentSchema);
 

@@ -5,6 +5,7 @@ import {
   getIdToken,
   signInWithEmailAndPassword,
   signOut,
+  getAuth,
 } from "firebase/auth";
 import { auth } from "../services/firebase/firebase";
 import axios from "axios";
@@ -27,6 +28,12 @@ interface BackendUser {
   class?: string | null;
   position?: string | null;
   department?: string | null;
+  teacherFlags?: {
+    isHomeroom?: boolean;
+    isDepartmentHead?: boolean;
+    isLeader?: boolean;
+    permissions?: any[];
+  };
 }
 
 interface AuthContextType {
@@ -42,10 +49,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
-  const [backendUser, setBackendUser] = useState<BackendUser | null>(() => {
-    const stored = localStorage.getItem("backendUser");
-    return stored ? JSON.parse(stored) : null;
-  });
+  // ✅ Không load từ localStorage nữa, đợi Firebase xác thực
+  const [backendUser, setBackendUser] = useState<BackendUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Helper: lưu user vào localStorage
@@ -64,7 +69,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (user) {
         try {
-          const token = await getIdToken(user);
+          // ✅ Luôn lấy token mới từ Firebase (force refresh nếu cần)
+          const token = await getIdToken(user, true); // forceRefresh = true
+          console.log("✅ [Auth] Đã lấy token mới từ Firebase");
+          
           const res = await axios.get(`${API_BASE_URL}/accounts/me`, {
             headers: { Authorization: `Bearer ${token}` },
           });
@@ -72,12 +80,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const data: BackendUser = { ...res.data, idToken: token };
           setBackendUser(data);
           persistUser(data);
-        } catch (error) {
-          console.error("[Check backend user failed]", error);
-          setBackendUser(null);
-          persistUser(null);
+          console.log("✅ [Auth] Đã lấy thông tin user từ backend:", data.role);
+        } catch (error: any) {
+          console.error("❌ [Check backend user failed]", {
+            message: error?.response?.data?.message || error.message,
+            code: error?.response?.data?.code,
+            status: error?.response?.status
+          });
+          
+          // Nếu lỗi 401, clear localStorage và đăng xuất
+          if (error?.response?.status === 401) {
+            console.log("⚠️ [Auth] Token không hợp lệ, đang clear session...");
+            setBackendUser(null);
+            persistUser(null);
+            // Không logout Firebase vì user vẫn đăng nhập trên Firebase
+            // Chỉ clear backend session
+          } else {
+            setBackendUser(null);
+            persistUser(null);
+          }
         }
       } else {
+        // User đã logout từ Firebase
         setBackendUser(null);
         persistUser(null);
       }
@@ -85,7 +109,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    // ✅ Tự động refresh token định kỳ (mỗi 50 phút, token Firebase hết hạn sau 1 giờ)
+    const refreshTokenInterval = setInterval(async () => {
+      const auth = getAuth();
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        try {
+          const freshToken = await getIdToken(currentUser, true);
+          const backendUser = localStorage.getItem("backendUser");
+          if (backendUser) {
+            try {
+              const userData = JSON.parse(backendUser);
+              userData.idToken = freshToken;
+              localStorage.setItem("backendUser", JSON.stringify(userData));
+              setBackendUser(userData);
+              console.log("✅ [Auth] Đã refresh token tự động");
+            } catch (err) {
+              console.warn('Không thể cập nhật token trong localStorage');
+            }
+          }
+        } catch (error) {
+          console.error("❌ [Auth] Lỗi refresh token tự động:", error);
+        }
+      }
+    }, 50 * 60 * 1000); // 50 phút
+
+    return () => {
+      unsubscribe();
+      clearInterval(refreshTokenInterval);
+    };
   }, []);
 
   // Login
@@ -93,7 +145,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const credential = await signInWithEmailAndPassword(auth, email, password);
       const user = credential.user;
-      const token = await getIdToken(user);
+      // ✅ Force refresh token khi login
+      const token = await getIdToken(user, true);
 
       const res = await axios.get(`${API_BASE_URL}/accounts/me`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -103,8 +156,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setFirebaseUser(user);
       setBackendUser(data);
       persistUser(data);
-    } catch (err) {
-      console.error("[Login error]", err);
+      console.log("✅ [Login] Đăng nhập thành công:", data.role);
+    } catch (err: any) {
+      console.error("❌ [Login error]", {
+        message: err?.response?.data?.message || err.message,
+        code: err?.code
+      });
       throw err;
     }
   };

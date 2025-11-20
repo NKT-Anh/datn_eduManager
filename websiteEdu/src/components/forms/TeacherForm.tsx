@@ -1,5 +1,5 @@
 import { useForm, Controller } from "react-hook-form";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import {
@@ -24,10 +24,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Combobox } from "@/components/ui/combobox";
 import { Check } from "lucide-react";
-import { Select, SelectItem, SelectTrigger, SelectContent } from "@/components/ui/select";
+import { Select, SelectItem, SelectTrigger, SelectContent, SelectValue } from "@/components/ui/select";
 import { Teacher } from "@/types/auth";
 import { cn } from "@/lib/utils";
 import { ClassType, Subject } from "@/types/class";
+import { Department } from "@/types/department";
+import settingApi from "@/services/settingApi";
 
 // ========== Zod Schema ==========
 const teacherSchema = z.object({
@@ -35,7 +37,6 @@ const teacherSchema = z.object({
   phone: z.string().optional(),
   dob: z.string().optional(),
   gender: z.enum(["male", "female", "other"]).optional(),
-  profilePhoto: z.string().optional(),
   notes: z.string().optional(),
 
   teacherCode: z.string().optional(),
@@ -59,6 +60,7 @@ const teacherSchema = z.object({
   certifications: z.string().optional(), 
   classIds: z.array(z.string()).optional(),
   homeroomClassIds: z.array(z.string()).optional(),
+  currentHomeroomClassId: z.string().optional(),
   teachingExperience: z.preprocess((val) => {
   if (val === "" || val == null) return undefined;
     return Number(val);
@@ -75,10 +77,14 @@ const teacherSchema = z.object({
   }, z.number().optional()),
 
   weeklyLessons: z.preprocess((val) => {
-    if (val === "" || val == null) return undefined;
+    if (val === "" || val == null) return 22; // ✅ Mặc định 22 tiết/tuần
     return Number(val);
-  }, z.number().optional()),
+  }, z.number().min(1, "Số tiết tối thiểu là 1").optional()),
 
+  optionalWeeklyLessons: z.preprocess((val) => {
+    if (val === "" || val == null) return 0; // ✅ Mặc định 0 tiết tự chọn
+    return Number(val);
+  }, z.number().min(0, "Số tiết tự chọn phải >= 0").optional()),
 
     status: z.enum(["active", "inactive"]).optional(),
     school: z.string().optional(),
@@ -87,6 +93,22 @@ const teacherSchema = z.object({
     if (val === "" || val == null) return 3; // default = 3
     return Number(val);
   }, z.number().min(1, "Số lớp tối thiểu là 1").optional()),
+  
+  maxClassPerGrade: z.object({
+    "10": z.preprocess((val) => {
+      if (val === "" || val == null) return 0;
+      return Number(val);
+    }, z.number().min(0).optional()),
+    "11": z.preprocess((val) => {
+      if (val === "" || val == null) return 0;
+      return Number(val);
+    }, z.number().min(0).optional()),
+    "12": z.preprocess((val) => {
+      if (val === "" || val == null) return 0;
+      return Number(val);
+    }, z.number().min(0).optional()),
+  }).optional(),
+  departmentId: z.string().optional(),
   });
 
 type TeacherFormData = z.infer<typeof teacherSchema>;
@@ -95,6 +117,7 @@ interface TeacherFormProps {
   teacher?: Teacher;
   subjects: Subject[];
   classes: ClassType[];
+  departments?: Department[];
   onSubmit: (data: Omit<Teacher, "_id">) => void;
   onCancel?: () => void;
 }
@@ -105,7 +128,27 @@ const renderGenderLabels: Record<string, string> = {
   other: "Khác",
 };
 
-export function TeacherForm({ teacher, subjects, classes, onSubmit, onCancel }: TeacherFormProps) {
+export function TeacherForm({ teacher, subjects, classes, departments = [], onSubmit, onCancel }: TeacherFormProps) {
+  const [currentSchoolYear, setCurrentSchoolYear] = useState<string>("");
+
+  // ✅ Lấy năm học hiện tại từ settings
+  useEffect(() => {
+    const fetchCurrentYear = async () => {
+      try {
+        const settings = await settingApi.getSettings();
+        setCurrentSchoolYear(settings?.currentSchoolYear || "");
+      } catch (error) {
+        console.error("Lỗi lấy năm học hiện tại:", error);
+      }
+    };
+    fetchCurrentYear();
+  }, []);
+
+  // ✅ Lọc lớp theo năm học active
+  const availableClassesForCurrentYear = classes.filter(
+    (cls) => !currentSchoolYear || cls.year === currentSchoolYear || !cls.year
+  );
+
   const form = useForm<TeacherFormData>({
     resolver: zodResolver(teacherSchema),
     defaultValues: {
@@ -113,7 +156,6 @@ export function TeacherForm({ teacher, subjects, classes, onSubmit, onCancel }: 
       phone: teacher?.phone || "",
       dob: teacher?.dob ? teacher.dob.split("T")[0] : "",
       gender: teacher?.gender || "male",
-      profilePhoto: teacher?.profilePhoto || "",
       notes: teacher?.notes || "",
 
       teacherCode: teacher?.teacherCode,
@@ -126,13 +168,37 @@ export function TeacherForm({ teacher, subjects, classes, onSubmit, onCancel }: 
 
       classIds: teacher?.classIds?.map(s => (typeof s === "string" ? s : s._id)) || [],
       homeroomClassIds: teacher?.homeroomClassIds?.map(c => c._id) || [],
+      currentHomeroomClassId: teacher?.currentHomeroomClassId 
+        ? (typeof teacher.currentHomeroomClassId === "string" 
+            ? teacher.currentHomeroomClassId 
+            : teacher.currentHomeroomClassId._id)
+        : "none",
       hireYear: teacher?.hireYear || new Date().getFullYear(),
       hireYearInField: teacher?.hireYearInField,
-      weeklyLessons: teacher?.weeklyLessons,
+      weeklyLessons: teacher?.weeklyLessons || 17, // ✅ Mặc định 17 tiết/tuần (cap limit)
+      optionalWeeklyLessons: teacher?.optionalWeeklyLessons || 0, // ✅ Mặc định 0 tiết tự chọn
       status: teacher?.status || "active",
       school: teacher?.school,
       position: teacher?.position,
        maxClasses: teacher?.maxClasses || 3,
+      maxClassPerGrade: teacher?.maxClassPerGrade 
+        ? (teacher.maxClassPerGrade instanceof Map
+            ? {
+                "10": teacher.maxClassPerGrade.get("10") || 0,
+                "11": teacher.maxClassPerGrade.get("11") || 0,
+                "12": teacher.maxClassPerGrade.get("12") || 0,
+              }
+            : {
+                "10": teacher.maxClassPerGrade["10"] || 0,
+                "11": teacher.maxClassPerGrade["11"] || 0,
+                "12": teacher.maxClassPerGrade["12"] || 0,
+              })
+        : { "10": 0, "11": 0, "12": 0 },
+      departmentId: teacher?.departmentId 
+        ? (typeof teacher.departmentId === "string" 
+            ? teacher.departmentId 
+            : teacher.departmentId._id)
+        : undefined,
     },
   });
 
@@ -154,13 +220,15 @@ export function TeacherForm({ teacher, subjects, classes, onSubmit, onCancel }: 
     const homeroomClassObjects = (data.homeroomClassIds || [])
     .map((id) => classes.find((c) => c._id === id))
     .filter((c): c is ClassType => !!c);
+    const currentHomeroomClassObject = data.currentHomeroomClassId && data.currentHomeroomClassId !== "none"
+      ? classes.find((c) => c._id === data.currentHomeroomClassId)
+      : undefined;
 
     const payload: Omit<Teacher, "_id"> = {
       name: data.name,
       phone: data.phone || undefined,
       dob: data.dob || undefined,
       gender: data.gender,
-      profilePhoto: data.profilePhoto,
       notes: data.notes,
 
       teacherCode: data.teacherCode,
@@ -186,17 +254,42 @@ export function TeacherForm({ teacher, subjects, classes, onSubmit, onCancel }: 
       certifications: data.certifications || "",
 
       classIds: classObjects,
-      homeroomClassIds: homeroomClassObjects, 
+      homeroomClassIds: homeroomClassObjects,
+      currentHomeroomClassId: currentHomeroomClassObject || undefined, 
 
         hireYear: data.hireYear ? Number(data.hireYear) : undefined,
         hireYearInField: data.hireYearInField ? Number(data.hireYearInField) : undefined,
-        weeklyLessons: data.weeklyLessons ? Number(data.weeklyLessons) : undefined,
+        weeklyLessons: data.weeklyLessons ? Number(data.weeklyLessons) : 17, // ✅ Mặc định 17 tiết/tuần (cap limit)
+        optionalWeeklyLessons: data.optionalWeeklyLessons ? Number(data.optionalWeeklyLessons) : 0, // ✅ Số tiết tự chọn
 
    
       status: data.status,
       school: data.school,
-      position: data.position,
+      // ✅ Nếu position là "Phó Hiệu trưởng" hoặc "PHT", thay bằng "Giáo viên"
+      position: (() => {
+        const pos = data.position || 'Giáo viên';
+        if (pos && (
+          pos.toLowerCase().includes('phó hiệu trưởng') ||
+          pos.toLowerCase() === 'pht'
+        )) {
+          return 'Giáo viên';
+        }
+        return pos;
+      })(),
       maxClasses: data.maxClasses ? Number(data.maxClasses) : 3,
+      // ✅ Chỉ gửi maxClassPerGrade nếu có ít nhất một giá trị khác 0
+      // Nếu tất cả = 0, không gửi để backend tự động tính toán
+      maxClassPerGrade: data.maxClassPerGrade && 
+        (data.maxClassPerGrade["10"] > 0 || 
+         data.maxClassPerGrade["11"] > 0 || 
+         data.maxClassPerGrade["12"] > 0)
+        ? new Map([
+            ["10", data.maxClassPerGrade["10"] || 0],
+            ["11", data.maxClassPerGrade["11"] || 0],
+            ["12", data.maxClassPerGrade["12"] || 0],
+          ])
+        : undefined, // Không gửi nếu tất cả = 0, để backend tự tính
+      departmentId: data.departmentId || undefined,
     };
 
     console.log("✅ Sending payload:", payload);
@@ -379,6 +472,35 @@ export function TeacherForm({ teacher, subjects, classes, onSubmit, onCancel }: 
               </FormItem>
             )}/>
           </div>
+          
+          {/* Tổ bộ môn */}
+          <FormField control={form.control} name="departmentId" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Tổ bộ môn</FormLabel>
+              <Select
+                value={field.value || "none"}
+                onValueChange={(value) => field.onChange(value === "none" ? undefined : value)}
+              >
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Chọn tổ bộ môn (tùy chọn)" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="none">Không thuộc tổ nào</SelectItem>
+                  {departments.map((dept) => (
+                    <SelectItem key={dept._id} value={dept._id}>
+                      {dept.name} {dept.code && `(${dept.code})`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormMessage />
+              <p className="text-xs text-muted-foreground">
+                Giáo viên sẽ tự động được thêm vào tổ bộ môn khi tạo mới
+              </p>
+            </FormItem>
+          )}/>
           <div className="grid grid-cols-3 gap-4">
             <FormField control={form.control} name="hireYear" render={({ field }) => (
               <FormItem>
@@ -394,11 +516,67 @@ export function TeacherForm({ teacher, subjects, classes, onSubmit, onCancel }: 
                 <FormMessage />
               </FormItem>
             )}/>
-            <FormField control={form.control} name="weeklyLessons" render={({ field }) => (
+            <FormField control={form.control} name="weeklyLessons" render={({ field }) => {
+              // ✅ Tính effectiveWeeklyLessons để hiển thị preview
+              const baseWeeklyLessons = 17; // Base theo quy tắc THPT
+              const isHomeroom = form.watch("currentHomeroomClassId") && form.watch("currentHomeroomClassId") !== "none";
+              const isDepartmentHead = form.watch("departmentId") && form.watch("departmentId") !== "none";
+              const reduction = (isHomeroom || isDepartmentHead) ? 3 : 0;
+              const optionalLessons = form.watch("optionalWeeklyLessons") || 0;
+              const calculatedEffective = Math.max(0, baseWeeklyLessons - reduction) + optionalLessons;
+              const capLimit = field.value || 17;
+              const effectiveWeeklyLessons = capLimit !== null ? Math.min(calculatedEffective, capLimit) : calculatedEffective;
+              
+              return (
+                <FormItem>
+                  <FormLabel>Giới hạn tối đa số tiết/tuần (Cap Limit)</FormLabel>
+                  <FormControl>
+                    <Input 
+                      type="number" 
+                      {...field} 
+                      min={1}
+                      placeholder="17"
+                      value={field.value || 17}
+                      onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : 17)}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                  <p className="text-xs text-muted-foreground">
+                    Giới hạn tối đa số tiết/tuần (cap limit). Mặc định: 17 tiết/tuần. 
+                    Số tiết thực tế sẽ không vượt quá giá trị này.
+                  </p>
+                </FormItem>
+              );
+            }}/>
+            <FormField control={form.control} name="optionalWeeklyLessons" render={({ field }) => (
               <FormItem>
-                <FormLabel>Số tiết / tuần</FormLabel>
-                <FormControl><Input type="number" {...field} /></FormControl>
+                <FormLabel>Số tiết tự chọn bổ sung</FormLabel>
+                <FormControl>
+                  <Input 
+                    type="number" 
+                    {...field} 
+                    min={0}
+                    placeholder="0"
+                    value={field.value || 0}
+                    onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : 0)}
+                  />
+                </FormControl>
                 <FormMessage />
+                <p className="text-xs text-muted-foreground">
+                  Số tiết tự chọn bổ sung (admin/BGH có thể nhập).
+                  {(() => {
+                    // ✅ Tính effectiveWeeklyLessons: base (17) - reduction + optional, bị cap bởi weeklyLessons
+                    const baseWeeklyLessons = 17; // Base theo quy tắc THPT
+                    const isHomeroom = form.watch("currentHomeroomClassId") && form.watch("currentHomeroomClassId") !== "none";
+                    const isDepartmentHead = form.watch("departmentId") && form.watch("departmentId") !== "none";
+                    const reduction = (isHomeroom || isDepartmentHead) ? 3 : 0;
+                    const optionalLessons = field.value || 0;
+                    const calculatedEffective = Math.max(0, baseWeeklyLessons - reduction) + optionalLessons;
+                    const capLimit = form.watch("weeklyLessons") || 17;
+                    const effectiveWeeklyLessons = capLimit !== null ? Math.min(calculatedEffective, capLimit) : calculatedEffective;
+                    return ` Số tiết thực tế: ${effectiveWeeklyLessons} tiết/tuần (Base: ${baseWeeklyLessons} - Giảm: ${reduction} + Tự chọn: ${optionalLessons}, Cap: ${capLimit})`;
+                  })()}
+                </p>
               </FormItem>
             )}/>
             <FormField control={form.control} name="maxClasses" render={({ field }) => (
@@ -410,23 +588,54 @@ export function TeacherForm({ teacher, subjects, classes, onSubmit, onCancel }: 
         {...field}
         min={1}
         placeholder="Nhập số lớp tối đa"
+        value={field.value || 3}
+        onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : 3)}
       />
     </FormControl>
     <FormMessage />
+    <p className="text-xs text-muted-foreground">
+      Tổng số lớp tối đa giáo viên có thể dạy. Mặc định: 3 lớp
+    </p>
   </FormItem>
 )}/>
 
           </div>
 
-          {/* Thông tin khác: profilePhoto, notes, certifications, teachingExperience */}
+          {/* Số lớp tối đa theo khối */}
+          <FormField control={form.control} name="maxClassPerGrade" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Số lớp tối đa theo khối</FormLabel>
+              <div className="grid grid-cols-3 gap-4">
+                {(["10", "11", "12"] as const).map((grade) => (
+                  <div key={grade}>
+                    <FormLabel className="text-xs">Khối {grade}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={0}
+                        placeholder="0"
+                        value={field.value?.[grade] || 0}
+                        onChange={(e) => {
+                          const value = e.target.value ? Number(e.target.value) : 0;
+                          field.onChange({
+                            ...field.value,
+                            [grade]: value,
+                          });
+                        }}
+                      />
+                    </FormControl>
+                  </div>
+                ))}
+              </div>
+              <FormMessage />
+              <p className="text-xs text-muted-foreground">
+                Số lớp tối đa giáo viên có thể dạy cho từng khối. Mặc định: 0 lớp/khối
+              </p>
+            </FormItem>
+          )}/>
+
+          {/* Thông tin khác: notes, certifications, teachingExperience */}
           <div className="grid grid-cols-2 gap-4">
-            <FormField control={form.control} name="profilePhoto" render={({ field }) => (
-              <FormItem>
-                <FormLabel>URL ảnh đại diện</FormLabel>
-                <FormControl><Input placeholder="Nhập URL" {...field} /></FormControl>
-                <FormMessage />
-              </FormItem>
-            )}/>
             <FormField control={form.control} name="teachingExperience" render={({ field }) => (
               <FormItem>
                 <FormLabel>Thâm niên (số năm dạy)</FormLabel>
@@ -507,39 +716,49 @@ export function TeacherForm({ teacher, subjects, classes, onSubmit, onCancel }: 
             )
           }}/>
 
-          {/* Lớp chủ nhiệm */}
-         {/* Lớp chủ nhiệm */}
-<FormField
-  control={form.control}
-  name="homeroomClassIds"
-  render={({ field }) => {
-    const availableClasses = classes.filter(
-      (cls) =>
-        !cls.teacherId ||
-        (teacher &&
-          teacher.homeroomClassIds?.some((c) => c._id === cls._id))
-    );
+          {/* Lớp chủ nhiệm hiện tại */}
+          <FormField
+            control={form.control}
+            name="currentHomeroomClassId"
+            render={({ field }) => {
+              // ✅ Chỉ lấy lớp của năm học active và chưa có giáo viên chủ nhiệm hoặc là lớp hiện tại của giáo viên này
+              const availableClasses = availableClassesForCurrentYear.filter(
+                (cls) =>
+                  !cls.teacherId ||
+                  (teacher &&
+                    (teacher.currentHomeroomClassId &&
+                      (typeof teacher.currentHomeroomClassId === "string"
+                        ? teacher.currentHomeroomClassId === cls._id
+                        : teacher.currentHomeroomClassId._id === cls._id)))
+              );
 
-    return (
-      <FormItem>
-        <FormLabel>Lớp chủ nhiệm</FormLabel>
-        <FormControl>
-          <Combobox
-            options={availableClasses.map((cls) => ({
-              label: cls.className,
-              value: cls._id!, // dùng id làm value
-            }))}
-            value={field.value} // value là string[] (ids)
-            onChange={(selectedIds: string[]) => {
-              field.onChange(selectedIds); // gán thẳng vào form
+              return (
+                <FormItem>
+                  <FormLabel>Lớp chủ nhiệm hiện tại {currentSchoolYear ? `(${currentSchoolYear})` : ""}</FormLabel>
+                  <FormControl>
+                    <Select
+                      value={field.value || "none"}
+                      onValueChange={(value) => field.onChange(value === "none" ? undefined : value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Chọn lớp chủ nhiệm hiện tại (tùy chọn)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Không có</SelectItem>
+                        {availableClasses.map((cls) => (
+                          <SelectItem key={cls._id} value={cls._id!}>
+                            {cls.className} (Khối {cls.grade}){cls.year ? ` - ${cls.year}` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              );
             }}
           />
-        </FormControl>
-        <FormMessage />
-      </FormItem>
-    );
-  }}
-/>
+
 
 
           <DialogFooter>

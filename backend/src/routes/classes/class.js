@@ -1,34 +1,116 @@
 const express = require("express");
 const router = express.Router();
 const classController = require('../../controllers/class/classController');
-// const verifyToken = require('../../middlewares/verifyFirebaseToken');
-// const checkRole = require('../../middlewares/checkRole');
+const authMiddleware = require('../../middlewares/authMiddleware');
+const checkPermission = require('../../middlewares/checkPermission');
+const { PERMISSIONS } = require('../../config/permissions');
 
-// router.use(verifyToken,checkRole('admin','teacher'))
+// ✅ Lấy danh sách các năm học có lớp - Tất cả roles có quyền xem
+router.get('/years', 
+  authMiddleware, 
+  checkPermission([
+    PERMISSIONS.CLASS_VIEW,
+    PERMISSIONS.CLASS_VIEW_HOMEROOM,
+    PERMISSIONS.CLASS_VIEW_TEACHING
+  ], { checkContext: false }),
+  classController.getAvailableYears
+);
 
-// const { joinClass } = require('../controllers/class/classController');
-// Lấy danh sách tất cả lớp
-router.get('/', classController.getAllClasses);
+// ✅ Lấy danh sách tất cả lớp - Tất cả roles có quyền xem
+// ✅ Có thể filter theo year query param, nếu không có thì trả về tất cả các lớp của tất cả các niên khóa
+router.get('/', 
+  authMiddleware, 
+  checkPermission([
+    PERMISSIONS.CLASS_VIEW,
+    PERMISSIONS.CLASS_VIEW_HOMEROOM,
+    PERMISSIONS.CLASS_VIEW_TEACHING
+  ], { checkContext: false }),
+  classController.getAllClasses
+);
 
-// Auto assign grade
-router.get('/auto-assign', classController.autoAssignGrade);
+// ✅ Auto assign grade - Chỉ Admin
+router.get('/auto-assign', 
+  authMiddleware, 
+  checkPermission(PERMISSIONS.CLASS_UPDATE), 
+  classController.autoAssignGrade
+);
 
-// Tạo lớp cho 1 năm học
-router.post('/setup-year', classController.setupYearClasses);
-router.get("/group-by-year", classController.getGradesAndClassesByYear);
-// Tạo lớp mới
-router.post('/', classController.createClass);
+// ✅ Tạo lớp cho 1 năm học - Chỉ Admin
+router.post('/setup-year', 
+  authMiddleware, 
+  checkPermission(PERMISSIONS.CLASS_CREATE), 
+  classController.setupYearClasses
+);
 
-// Tham gia lớp
-router.post('/join-class', classController.joinClass);
+// ✅ Lấy lớp theo năm - Tất cả roles có quyền xem
+router.get("/group-by-year", 
+  authMiddleware, 
+  checkPermission([
+    PERMISSIONS.CLASS_VIEW,
+    PERMISSIONS.CLASS_VIEW_HOMEROOM,
+    PERMISSIONS.CLASS_VIEW_TEACHING
+  ], { checkContext: false }),
+  classController.getGradesAndClassesByYear
+);
 
-// Cập nhật lớp theo ID
-router.put('/:id', classController.updateClass);
+// ✅ Tạo lớp mới - Chỉ Admin
+router.post('/', 
+  authMiddleware, 
+  checkPermission(PERMISSIONS.CLASS_CREATE), 
+  classController.createClass
+);
 
-// Xóa lớp theo ID
-router.delete('/:id', classController.deleteClass);
+// ✅ Tham gia lớp - Chỉ Admin
+router.post('/join-class', 
+  authMiddleware, 
+  checkPermission(PERMISSIONS.CLASS_UPDATE), 
+  classController.joinClass
+);
 
-// Lấy thông tin lớp theo ID
-router.get('/:id', classController.getClassById);
+// ✅ Cập nhật lớp theo ID - Chỉ Admin
+router.put('/:id', 
+  authMiddleware, 
+  checkPermission(PERMISSIONS.CLASS_UPDATE), 
+  classController.updateClass
+);
+
+// ✅ Xóa lớp theo ID - Chỉ Admin
+router.delete('/:id', 
+  authMiddleware, 
+  checkPermission(PERMISSIONS.CLASS_DELETE), 
+  classController.deleteClass
+);
+
+// ✅ Lấy lớp theo ID - Tất cả roles có quyền xem
+router.get('/:id', 
+  authMiddleware, 
+  checkPermission([
+    PERMISSIONS.CLASS_VIEW,
+    PERMISSIONS.CLASS_VIEW_HOMEROOM,
+    PERMISSIONS.CLASS_VIEW_TEACHING
+  ], { checkContext: false }),
+  classController.getClassById
+);
+
+// ✅ Gắn phòng cho lớp - Chỉ Admin
+router.put('/:id/room', 
+  authMiddleware, 
+  checkPermission(PERMISSIONS.CLASS_UPDATE), 
+  classController.assignRoom
+);
+
+// ✅ Tự động gán phòng cho các lớp - Chỉ Admin
+router.post('/auto-assign-rooms', 
+  authMiddleware, 
+  checkPermission(PERMISSIONS.CLASS_UPDATE), 
+  classController.autoAssignRooms
+);
+
+// ✅ Tự động gán giáo viên chủ nhiệm cho các lớp - Chỉ Admin
+router.post('/auto-assign-homeroom-teachers', 
+  authMiddleware, 
+  checkPermission(PERMISSIONS.CLASS_UPDATE), 
+  classController.autoAssignHomeroomTeachers
+);
 
 module.exports = router;

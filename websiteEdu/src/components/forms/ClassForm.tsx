@@ -28,11 +28,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ClassType } from '@/types/class';
-import { Student } from '@/types/student';
 import { Teacher } from '@/types/auth';
 import { useToast } from '@/hooks/use-toast';
 import { teacherApi } from '@/services/teacherApi';
-import studentApi from '@/services/studentApi';
+import { roomApi, Room } from '@/services/roomApi';
 
 const classSchema = z.object({
   className: z.string().min(1, 'Tên lớp là bắt buộc'),
@@ -40,6 +39,7 @@ const classSchema = z.object({
   teacherId: z.string().optional(),
   capacity: z.number().min(1, 'Sức chứa phải lớn hơn 0'),
   year: z.string().optional(),
+  roomId: z.string().optional(),
 });
 
 type ClassFormData = z.infer<typeof classSchema>;
@@ -62,7 +62,7 @@ export const ClassForm = ({ open, onOpenChange, classData, onSubmit }: ClassForm
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [students, setStudents] = useState<Student[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
 
   const form = useForm<ClassFormData>({
     resolver: zodResolver(classSchema),
@@ -72,13 +72,15 @@ export const ClassForm = ({ open, onOpenChange, classData, onSubmit }: ClassForm
       teacherId: '',
       capacity: 45,
       year: getCurrentSchoolYear(),
+      roomId: '',
     },
   });
 
-  // ✅ Load danh sách GV và HS
+  // ✅ Load danh sách GV và phòng
   useEffect(() => {
     teacherApi.getAll().then(setTeachers).catch(console.error);
-    studentApi.getAll().then(setStudents).catch(console.error);
+    // Chỉ lấy phòng học bình thường (type = 'normal')
+    roomApi.getAll({ status: 'available', type: 'normal' }).then(setRooms).catch(console.error);
   }, []);
 
   // ✅ Reset lại form khi classData thay đổi (fix lỗi khi chỉnh sửa)
@@ -90,6 +92,7 @@ export const ClassForm = ({ open, onOpenChange, classData, onSubmit }: ClassForm
         teacherId: classData.teacherId?._id || '',
         capacity: classData.capacity,
         year: classData.year || getCurrentSchoolYear(),
+        roomId: (classData.roomId as any)?._id || (typeof classData.roomId === 'string' ? classData.roomId : '') || '',
       });
     } else {
       form.reset({
@@ -98,34 +101,55 @@ export const ClassForm = ({ open, onOpenChange, classData, onSubmit }: ClassForm
         teacherId: '',
         capacity: 45,
         year: getCurrentSchoolYear(),
+        roomId: '',
       });
     }
-  }, [classData,teachers, form]);
+  }, [classData, teachers, form]);
 
   const handleSubmit = async (data: ClassFormData) => {
     setIsLoading(true);
     try {
-       if (data.teacherId) {
-      // Lấy danh sách lớp (nếu bạn đã có danh sách class ở context / props thì dùng lại)
+      // Lấy danh sách lớp để kiểm tra trùng
       const allClasses = await fetch(`${import.meta.env.VITE_API_BASE_URL}/class`).then((r) => r.json());
 
-      const conflict = allClasses.find(
+      // ✅ Kiểm tra trùng tên lớp trong cùng năm học và khối
+      const duplicateName = allClasses.find(
         (cls: ClassType) =>
-          cls.teacherId?._id === data.teacherId &&
+          cls.className === data.className &&
           cls.year === data.year &&
+          cls.grade === data.grade &&
           (!classData || cls._id !== classData._id)
       );
 
-      if (conflict) {
+      if (duplicateName) {
         toast({
-          title: 'Giáo viên đã làm GVCN lớp khác',
-          description: `Giáo viên này đã là GVCN lớp ${conflict.className} (${conflict.year}).`,
+          title: 'Tên lớp đã tồn tại',
+          description: `Tên lớp "${data.className}" đã tồn tại trong khối ${data.grade} năm học ${data.year}.`,
           variant: 'destructive',
         });
         setIsLoading(false);
         return; // ❌ Dừng submit
       }
-    }
+
+      // ✅ Kiểm tra giáo viên đã làm GVCN lớp khác
+      if (data.teacherId) {
+        const conflict = allClasses.find(
+          (cls: ClassType) =>
+            cls.teacherId?._id === data.teacherId &&
+            cls.year === data.year &&
+            (!classData || cls._id !== classData._id)
+        );
+
+        if (conflict) {
+          toast({
+            title: 'Giáo viên đã làm GVCN lớp khác',
+            description: `Giáo viên này đã là GVCN lớp ${conflict.className} (${conflict.year}).`,
+            variant: 'destructive',
+          });
+          setIsLoading(false);
+          return; // ❌ Dừng submit
+        }
+      }
 
       await onSubmit(data);
       toast({
@@ -134,10 +158,10 @@ export const ClassForm = ({ open, onOpenChange, classData, onSubmit }: ClassForm
       });
       form.reset();
       onOpenChange(false);
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: 'Có lỗi xảy ra',
-        description: 'Vui lòng thử lại sau.',
+        description: error?.response?.data?.message || 'Vui lòng thử lại sau.',
         variant: 'destructive',
       });
     } finally {
@@ -246,6 +270,35 @@ export const ClassForm = ({ open, onOpenChange, classData, onSubmit }: ClassForm
                   <FormControl>
                     <Input {...field} readOnly />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="roomId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Phòng học</FormLabel>
+                  <Select 
+                    onValueChange={(value) => field.onChange(value === 'none' ? '' : value)} 
+                    value={field.value || 'none'}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Không chọn phòng" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="none">Không chọn phòng</SelectItem>
+                      {rooms.map((room) => (
+                        <SelectItem key={room._id} value={room._id || 'none'}>
+                          {room.roomCode} {room.name ? `- ${room.name}` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}

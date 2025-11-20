@@ -7,20 +7,17 @@ export const autoScheduleApi = {
   generateSchedule: async (
     grades: string[],
     year: string,
-    semester: string,
-    includeActivities: boolean = true
+    semester: string
   ) => {
     console.log("➡️ Gọi API /auto-schedule/generate với dữ liệu:", {
       grades,
       year,
       semester,
-      includeActivities,
     });
     const res = await axios.post(`${API_BASE}/auto-schedule/generate`, {
       grades,
       year,
       semester,
-      includeActivities,
     });
     return res.data;
   },
@@ -71,6 +68,31 @@ export const autoScheduleApi = {
     console.log("🔍 Kiểm tra trùng giáo viên:", { year, semester });
     const res = await axios.get(`${API_BASE}/auto-schedule/check-conflicts`, {
       params: { year, semester },
+    });
+    return res.data;
+  },
+
+  /**
+   * ✅ Kiểm tra điều kiện trước khi tạo lịch
+   * @param grades - Danh sách khối (VD: ["10", "11", "12"])
+   * @param year - Năm học (VD: "2025-2026")
+   * @param semester - Học kỳ (VD: "HK1")
+   * @returns Kết quả validation với errors và warnings
+   */
+  validateBeforeGenerate: async (
+    grades: string[],
+    year: string,
+    semester: string
+  ) => {
+    console.log("✅ Kiểm tra điều kiện trước khi tạo lịch:", {
+      grades,
+      year,
+      semester,
+    });
+    const res = await axios.post(`${API_BASE}/auto-schedule/validate`, {
+      grades,
+      year,
+      semester,
     });
     return res.data;
   },

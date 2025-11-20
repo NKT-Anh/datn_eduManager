@@ -17,6 +17,8 @@ import attendanceApi from '@/services/attendanceApi';
 import { assignmentApi } from '@/services/assignmentApi';
 import { classApi } from '@/services/classApi';
 import { scheduleApi } from '@/services/scheduleApi';
+// ✅ Sử dụng hooks thay vì API trực tiếp
+import { useSchoolYears } from '@/hooks';
 import {
   ClipboardList,
   Save,
@@ -33,6 +35,7 @@ import { TeachingAssignment } from '@/types/class';
 import { ClassType } from '@/types/class';
 import { Subject } from '@/types/class';
 import schoolConfigApi from '@/services/schoolConfigApi';
+import { schoolYearApi } from '@/services/schoolYearApi';
 
 interface Student {
   _id: string;
@@ -63,33 +66,20 @@ const TeacherTakeAttendancePage = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Lấy năm học hiện tại
+  // ✅ Lấy năm học hiện tại từ hooks
+  const { schoolYears: allSchoolYears } = useSchoolYears();
   useEffect(() => {
-    const fetchSettings = async () => {
-      try {
-        const res = await schoolConfigApi.getSchoolYears();
-        if (res.data && res.data.length > 0) {
-          setSchoolYear(res.data[res.data.length - 1].code);
-        } else {
-          // Tính năm học mặc định
-          const now = new Date();
-          const year = now.getFullYear();
-          const month = now.getMonth() + 1;
-          const currentYear = month >= 8 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
-          setSchoolYear(currentYear);
-        }
-      } catch (err: any) {
-        console.error('Error fetching school year:', err);
-        // Tính năm học mặc định
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth() + 1;
-        const currentYear = month >= 8 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
-        setSchoolYear(currentYear);
-      }
-    };
-    fetchSettings();
-  }, []);
+    if (allSchoolYears.length > 0) {
+      setSchoolYear(allSchoolYears[allSchoolYears.length - 1].code);
+    } else {
+      // Tính năm học mặc định
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+      const currentYear = month >= 8 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+      setSchoolYear(currentYear);
+    }
+  }, [allSchoolYears]);
 
   // Lấy danh sách phân công giảng dạy của giáo viên
   useEffect(() => {

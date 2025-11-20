@@ -204,6 +204,104 @@ const createBatchTeachers = async (req, res) => {
 };
 
 /**
+ * 📦 Tạo tài khoản hàng loạt cho các role khác (admin, bgh, qlbm, gvcn, gvbm)
+ */
+const createBatchAccounts = async (req, res) => {
+  try {
+    const { users, role } = req.body; // [{ _id, name, code, phone, email? }], role: 'admin' | 'bgh' | 'qlbm' | 'gvcn' | 'gvbm'
+    
+    if (!users?.length)
+      return res.status(400).json({ message: 'Thiếu danh sách người dùng' });
+    
+    if (!role || !['admin', 'bgh', 'qlbm', 'gvcn', 'gvbm'].includes(role))
+      return res.status(400).json({ message: 'Role không hợp lệ. Chỉ chấp nhận: admin, bgh, qlbm, gvcn, gvbm' });
+
+    const setting = await Setting.findOne({});
+    if (!setting)
+      return res.status(500).json({ message: 'Setting chưa được cấu hình' });
+
+    // Domain theo role
+    // Lưu ý: GVCN, GVBM, QLBM đều dùng chung domain giáo viên để tránh mất dữ liệu khi đổi role
+    const domainMap = {
+      admin: setting.adminEmailDomain || 'admin.school.com',
+      bgh: setting.bghEmailDomain || 'bgh.school.com',
+      qlbm: setting.teacherEmailDomain || 'teacher.school.com', // Dùng chung domain giáo viên
+      gvcn: setting.teacherEmailDomain || 'teacher.school.com',
+      gvbm: setting.teacherEmailDomain || 'teacher.school.com',
+    };
+    
+    const domain = domainMap[role];
+    const defaultPassword = await getDefaultPassword();
+    const createdAccounts = [];
+    const existedAccounts = [];
+    const Admin = require('../../models/user/admin');
+
+    for (const user of users) {
+      // Tạo email từ code hoặc name
+      const code = user.code || user.teacherCode || user.adminCode || 
+                   user._id?.slice(-6) || 
+                   user.name.replace(/\s+/g, '').toLowerCase();
+      const email = user.email || `${code}@${domain}`;
+
+      const result = await createAccountIfNotExists(
+        email,
+        role,
+        user.phone,
+        defaultPassword
+      );
+
+      if (result.existed) {
+        existedAccounts.push(result.email);
+        // Nếu Account tồn tại, gắn lại vào User nếu có _id
+        if (user._id) {
+          const existedAcc = await Account.findOne({ email });
+          if (existedAcc) {
+            // Cập nhật User model tương ứng
+            if (role === 'admin') {
+              await Admin.findByIdAndUpdate(user._id, { accountId: existedAcc._id });
+            } else if (['bgh', 'qlbm', 'gvcn', 'gvbm'].includes(role)) {
+              // Các role này đều là Teacher với role khác nhau
+              await Teacher.findByIdAndUpdate(user._id, { accountId: existedAcc._id });
+            }
+          }
+        }
+      } else if (result.error) {
+        existedAccounts.push(`${result.email} (lỗi: ${result.error})`);
+      } else {
+        // Gắn accountId vào User model
+        if (user._id) {
+          if (role === 'admin') {
+            await Admin.findByIdAndUpdate(user._id, { accountId: result.accountId });
+          } else if (['bgh', 'qlbm', 'gvcn', 'gvbm'].includes(role)) {
+            // Các role này đều là Teacher
+            await Teacher.findByIdAndUpdate(user._id, { accountId: result.accountId });
+          }
+        }
+
+        createdAccounts.push({
+          email: result.email,
+          password: result.password,
+          uid: result.uid,
+        });
+      }
+    }
+
+    res.json({
+      message: `Tạo tài khoản ${role} hàng loạt hoàn tất`,
+      defaultPassword,
+      createdAccounts,
+      existedAccounts,
+      role,
+    });
+  } catch (err) {
+    console.error(err);
+    res
+      .status(500)
+      .json({ message: `Lỗi tạo tài khoản ${req.body.role}`, error: err.message });
+  }
+};
+
+/**
  * 🔁 Reset mật khẩu hàng loạt
  */
 const resetAccountsPassword = async (req, res) => {
@@ -249,9 +347,11 @@ const getAllAccounts = async (req, res) => {
     // 🔹 Lấy tất cả tài khoản
     const accounts = await Account.find({}).lean();
 
-    // 🔹 Lấy toàn bộ học sinh và giáo viên (chỉ lấy các trường cần)
+    // 🔹 Lấy toàn bộ học sinh, giáo viên và admin (chỉ lấy các trường cần)
     const students = await Student.find({}, 'name studentCode accountId').lean();
     const teachers = await Teacher.find({}, 'name teacherCode accountId').lean();
+    const Admin = require('../../models/user/admin');
+    const admins = await Admin.find({}, 'name accountId').lean();
 
     // 🔹 Tạo map để tra cứu nhanh bằng accountId
     const studentMap = new Map(
@@ -263,6 +363,11 @@ const getAllAccounts = async (req, res) => {
       teachers
         .filter((t) => t.accountId)
         .map((t) => [t.accountId.toString(), t])
+    );
+    const adminMap = new Map(
+      admins
+        .filter((a) => a.accountId)
+        .map((a) => [a.accountId.toString(), a])
     );
 
     // 🔹 Gắn thêm thông tin liên kết vào từng account
@@ -277,12 +382,19 @@ const getAllAccounts = async (req, res) => {
           linkedName: s.name,
           linkedCode: s.studentCode,
         };
-      } else if (acc.role === 'teacher' && teacherMap.has(accIdStr)) {
+      } else if (['teacher', 'bgh', 'qlbm', 'gvcn', 'gvbm'].includes(acc.role) && teacherMap.has(accIdStr)) {
         const t = teacherMap.get(accIdStr);
         linked = {
           linkedId: t._id,
           linkedName: t.name,
           linkedCode: t.teacherCode,
+        };
+      } else if (acc.role === 'admin' && adminMap.has(accIdStr)) {
+        const a = adminMap.get(accIdStr);
+        linked = {
+          linkedId: a._id,
+          linkedName: a.name,
+          linkedCode: null,
         };
       }
 
@@ -350,7 +462,8 @@ const deleteAccounts = async (req, res) => {
       }
     }
 
-    // Gỡ liên kết ở Student/Teacher theo role và accountId
+    // Gỡ liên kết ở Student/Teacher/Admin theo role và accountId
+    const Admin = require('../../models/user/admin');
     for (const acc of accounts) {
       try {
         if (acc.role === 'student') {
@@ -358,8 +471,13 @@ const deleteAccounts = async (req, res) => {
             { accountId: acc._id },
             { $unset: { accountId: '' } }
           );
-        } else if (acc.role === 'teacher') {
+        } else if (['teacher', 'bgh', 'qlbm', 'gvcn', 'gvbm'].includes(acc.role)) {
           await Teacher.updateMany(
+            { accountId: acc._id },
+            { $unset: { accountId: '' } }
+          );
+        } else if (acc.role === 'admin') {
+          await Admin.updateMany(
             { accountId: acc._id },
             { $unset: { accountId: '' } }
           );
@@ -405,6 +523,7 @@ const deleteAccounts = async (req, res) => {
 module.exports = {
   createBatchStudents,
   createBatchTeachers,
+  createBatchAccounts,
   resetAccountsPassword,
   getAllAccounts,
   deleteAccounts,

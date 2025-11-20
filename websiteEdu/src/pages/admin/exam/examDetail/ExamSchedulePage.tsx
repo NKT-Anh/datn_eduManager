@@ -35,8 +35,10 @@ import {
 
 } from "lucide-react";
 import { examScheduleApi } from "@/services/exams/examScheduleApi";
-import { subjectApi } from "@/services/subjectApi";
+// ✅ Sử dụng hooks thay vì API trực tiếp
+import { useSubjects } from "@/hooks";
 import ExamScheduleCalendar from "./ExamScheduleCalendar";
+import { usePermissions } from "@/hooks/usePermissions";
 import pdfMake from "pdfmake/build/pdfmake";
 import { vfs } from "pdfmake/build/vfs_fonts";
 import { saveAs } from "file-saver";
@@ -62,10 +64,12 @@ const { Title, Text } = Typography;
 const { Option } = Select;
 
 export default function ExamSchedulePage({ examId, exam }: ExamSchedulePageProps) {
+  const { hasPermission, PERMISSIONS } = usePermissions();
   const [schedules, setSchedules] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
-  const [subjects, setSubjects] = useState<any[]>([]);
+  // ✅ Sử dụng hooks
+  const { subjects } = useSubjects();
   const [form] = Form.useForm();
   const [editing, setEditing] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -75,6 +79,9 @@ export default function ExamSchedulePage({ examId, exam }: ExamSchedulePageProps
 
   const examGrades = exam?.grades || [10, 11, 12];
 const [selectedGrade, setSelectedGrade] = useState<number>(0);
+  const [selectedExamType, setSelectedExamType] = useState<string>("midterm");
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [deleting, setDeleting] = useState(false);
 
 
   /* =========================================================
@@ -87,9 +94,23 @@ const fetchSchedules = async () => {
       examId,
       selectedGrade === 0 ? undefined : selectedGrade
     );
-    setSchedules(res);
-  } catch {
-    message.error("Không thể tải danh sách lịch thi.");
+    const schedulesList = Array.isArray(res) ? res : [];
+    setSchedules(schedulesList);
+    
+    // ✅ Nếu không có dữ liệu, không hiển thị error, chỉ set mảng rỗng
+    if (schedulesList.length === 0) {
+      // Không hiển thị thông báo lỗi, chỉ để trống
+    }
+    
+    // ✅ Reset selectedRowKeys nếu các lịch đã chọn không còn tồn tại
+    setSelectedRowKeys((prev) => {
+      const existingIds = schedulesList.map((s: any) => s._id);
+      return prev.filter((key) => existingIds.includes(key));
+    });
+  } catch (err: any) {
+    // ✅ Nếu có lỗi thực sự (không phải do không có dữ liệu), chỉ log, không hiển thị toast
+    console.error("Lỗi khi tải danh sách lịch thi:", err);
+    setSchedules([]);
   } finally {
     setLoading(false);
   }
@@ -99,18 +120,10 @@ const fetchSchedules = async () => {
   /* =========================================================
      📚 Lấy danh sách môn học
   ========================================================= */
-  const fetchSubjects = async () => {
-    try {
-      const list = await subjectApi.getSubjects();
-      setSubjects(list);
-    } catch {
-      message.error("Không thể tải danh sách môn học.");
-    }
-  };
+  // ✅ Không cần fetchSubjects nữa vì đã dùng hooks
 
 useEffect(() => {
   if (examId) fetchSchedules();
-  fetchSubjects();
 }, [examId, selectedGrade]);
 
 
@@ -402,7 +415,7 @@ const exportToPDF = async () => {
   const handleAutoGenerate = async () => {
     try {
       message.loading({ content: "Đang tạo lịch thi tự động...", key: "auto" });
-      const res = await examScheduleApi.autoGenerate(examId!, selectedGrade);
+      const res = await examScheduleApi.autoGenerate(examId!, selectedGrade, selectedExamType);
       message.success({
         content: `✅ Tạo ${res.total} lịch thi thành công!`,
         key: "auto",
@@ -413,14 +426,79 @@ const exportToPDF = async () => {
     }
   };
 
+  // Lọc môn học theo khối được chọn trong modal
+  const getSubjectsByGrade = (grade: string | number) => {
+    if (!grade || grade === "0" || grade === "all") return subjects;
+    return subjects.filter((s: any) => {
+      const subjectGrades = s.grades || [];
+      return subjectGrades.includes(String(grade));
+    });
+  };
+
   /* =========================================================
-     🗑️ Xóa lịch thi
+     🗑️ Xóa hàng loạt lịch thi
+  ========================================================= */
+  const handleDeleteMultiple = async (ids: string[]) => {
+    try {
+      setDeleting(true);
+      await examScheduleApi.deleteMultiple(ids);
+      message.success(`✅ Đã xóa ${ids.length} lịch thi thành công.`);
+      setSelectedRowKeys([]);
+      // ✅ Tự động fetch lại dữ liệu ngay sau khi xóa
+      await fetchSchedules();
+    } catch (err: any) {
+      message.error(err.response?.data?.error || "Lỗi khi xóa lịch thi.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  /* =========================================================
+     🗑️ Xóa tất cả lịch thi
+  ========================================================= */
+  const handleDeleteAll = async () => {
+    try {
+      const allScheduleIds = schedules.map((s) => s._id);
+      if (allScheduleIds.length === 0) {
+        message.warning("Không có lịch thi nào để xóa.");
+        return;
+      }
+      
+      Modal.confirm({
+        title: "⚠️ Xác nhận xóa",
+        content: `Bạn có chắc chắn muốn xóa tất cả ${allScheduleIds.length} lịch thi? Hành động này không thể hoàn tác.`,
+        okText: "Xóa tất cả",
+        okType: "danger",
+        cancelText: "Hủy",
+        onOk: async () => {
+          setDeleting(true);
+          try {
+            await examScheduleApi.deleteMultiple(allScheduleIds);
+            message.success(`✅ Đã xóa tất cả ${allScheduleIds.length} lịch thi thành công.`);
+            setSelectedRowKeys([]);
+            // ✅ Tự động fetch lại dữ liệu ngay sau khi xóa
+            await fetchSchedules();
+          } catch (err: any) {
+            message.error(err.response?.data?.error || "Lỗi khi xóa lịch thi.");
+          } finally {
+            setDeleting(false);
+          }
+        },
+      });
+    } catch (err: any) {
+      message.error("Lỗi khi xóa lịch thi.");
+    }
+  };
+
+  /* =========================================================
+     🗑️ Xóa lịch thi (một lịch)
   ========================================================= */
   const handleDelete = async (id: string) => {
     try {
       await examScheduleApi.remove(id);
       message.success("🗑️ Đã xóa lịch thi.");
-      fetchSchedules();
+      // ✅ Tự động fetch lại dữ liệu ngay sau khi xóa
+      await fetchSchedules();
     } catch {
       message.error("Xóa thất bại.");
     }
@@ -472,14 +550,79 @@ const exportToPDF = async () => {
       title: "Giờ",
       dataIndex: "startTime",
       align: "center" as const,
-      render: (v: string, r: any) => (
-        <Tooltip title={`Kết thúc: ${r.endTime || "?"}`}>
-          <Space>
-            <Clock size={14} />
-            {v} → <b>{r.endTime || "?"}</b>
-          </Space>
-        </Tooltip>
-      ),
+      render: (v: string, r: any) => {
+        // ✅ Tính vị trí trên timeline
+        const getTimePosition = (timeStr: string) => {
+          const [h, m] = timeStr.split(":").map(Number);
+          const totalMinutes = h * 60 + m;
+          const startMinutes = 7 * 60; // 7h
+          const endMinutes = 17 * 60; // 17h
+          const range = endMinutes - startMinutes;
+          const position = ((totalMinutes - startMinutes) / range) * 100;
+          return Math.max(0, Math.min(100, position));
+        };
+
+        const startPosition = getTimePosition(v || "07:00");
+        const [endH, endM] = (r.endTime || v || "08:00").split(":").map(Number);
+        const [startH, startM] = (v || "07:00").split(":").map(Number);
+        const endTotalMinutes = endH * 60 + endM;
+        const startTotalMinutes = startH * 60 + startM;
+        const durationMinutes = endTotalMinutes - startTotalMinutes;
+        const widthPercent = (durationMinutes / (17 * 60 - 7 * 60)) * 100;
+
+        return (
+          <Tooltip title={`Bắt đầu: ${v} | Kết thúc: ${r.endTime || "?"}`}>
+            <Space direction="vertical" size={6} style={{ width: "100%" }}>
+              <Space>
+                <Clock size={14} />
+                <Tag color="orange" style={{ fontWeight: "bold", fontSize: 12 }}>
+                  {v} → {r.endTime || "?"}
+                </Tag>
+              </Space>
+              {/* Timeline bar mini - Đẹp hơn */}
+              <div style={{ 
+                position: "relative", 
+                width: "180px", 
+                height: "20px", 
+                backgroundColor: "#f5f5f5", 
+                borderRadius: "10px",
+                border: "1px solid #e8e8e8",
+                margin: "0 auto",
+                boxShadow: "inset 0 1px 2px rgba(0,0,0,0.05)",
+                overflow: "hidden"
+              }}>
+                <div
+                  style={{
+                    position: "absolute",
+                    left: `${startPosition}%`,
+                    width: `${Math.max(5, widthPercent)}%`,
+                    height: "100%",
+                    background: "linear-gradient(135deg, #1890ff 0%, #096dd9 100%)",
+                    borderRadius: "10px",
+                    boxShadow: "0 2px 4px rgba(24, 144, 255, 0.3)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    minWidth: "40px",
+                  }}
+                >
+                  <Text 
+                    style={{ 
+                      color: "white", 
+                      fontSize: "10px", 
+                      fontWeight: "bold",
+                      textShadow: "0 1px 2px rgba(0,0,0,0.2)",
+                      whiteSpace: "nowrap"
+                    }}
+                  >
+                    {v}
+                  </Text>
+                </div>
+              </div>
+            </Space>
+          </Tooltip>
+        );
+      },
     },
     {
       title: "Thời lượng",
@@ -517,12 +660,16 @@ const exportToPDF = async () => {
       align: "center" as const,
       render: (_: any, record: any) => (
         <Space>
-          <Tooltip title="Chỉnh sửa lịch thi">
-            <Button icon={<Pencil size={16} />} onClick={() => openModal(record)} size="small" />
-          </Tooltip>
-          <Popconfirm title="Xóa lịch thi này?" onConfirm={() => handleDelete(record._id)}>
-            <Button danger size="small" icon={<Trash2 size={16} />} />
-          </Popconfirm>
+          {hasPermission(PERMISSIONS.EXAM_UPDATE) && (
+            <Tooltip title="Chỉnh sửa lịch thi">
+              <Button icon={<Pencil size={16} />} onClick={() => openModal(record)} size="small" />
+            </Tooltip>
+          )}
+          {hasPermission(PERMISSIONS.EXAM_UPDATE) && (
+            <Popconfirm title="Xóa lịch thi này?" onConfirm={() => handleDelete(record._id)}>
+              <Button danger size="small" icon={<Trash2 size={16} />} />
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
@@ -567,15 +714,60 @@ const exportToPDF = async () => {
   ))}
 </Select>
 
+<Select
+  value={selectedExamType}
+  onChange={setSelectedExamType}
+  style={{ width: 150 }}
+>
+  <Option value="midterm">Giữa kỳ</Option>
+  <Option value="final">Cuối kỳ</Option>
+</Select>
 
 
-          <Button icon={<Zap size={16} />} onClick={handleAutoGenerate} type="primary">
-            Tạo tự động
-          </Button>
 
-          <Button icon={<Plus size={16} />} onClick={() => openModal()}>
-            Thêm mới
-          </Button>
+          {hasPermission(PERMISSIONS.EXAM_UPDATE) && (
+            <>
+              {selectedRowKeys.length > 0 && (
+                <Popconfirm
+                  title={`Xác nhận xóa ${selectedRowKeys.length} lịch thi đã chọn?`}
+                  onConfirm={() => handleDeleteMultiple(selectedRowKeys as string[])}
+                  okText="Xóa"
+                  okType="danger"
+                  cancelText="Hủy"
+                >
+                  <Button 
+                    icon={<Trash2 size={16} />} 
+                    danger
+                    loading={deleting}
+                  >
+                    Xóa đã chọn ({selectedRowKeys.length})
+                  </Button>
+                </Popconfirm>
+              )}
+
+              <Button 
+                icon={<Trash2 size={16} />} 
+                danger
+                loading={deleting}
+                disabled={schedules.length === 0}
+                onClick={handleDeleteAll}
+              >
+                Xóa tất cả
+              </Button>
+            </>
+          )}
+
+          {hasPermission(PERMISSIONS.EXAM_SCHEDULE_AUTO) && (
+            <Button icon={<Zap size={16} />} onClick={handleAutoGenerate} type="primary">
+              Tạo tự động
+            </Button>
+          )}
+
+          {hasPermission(PERMISSIONS.EXAM_UPDATE) && (
+            <Button icon={<Plus size={16} />} onClick={() => openModal()}>
+              Thêm mới
+            </Button>
+          )}
           <Button
   icon={<Printer size={16} />} // hoặc <Printer size={16} /> nếu dùng lucide-react
   onClick={exportToPDF }
@@ -606,6 +798,41 @@ const exportToPDF = async () => {
 
       <Divider />
 
+      {/* ✅ Timeline với các mốc thời gian */}
+      {schedules.length > 0 && (
+        <Card size="small" style={{ marginBottom: 16, backgroundColor: "#f5f5f5" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <Text strong style={{ marginRight: 8 }}>Mốc thời gian:</Text>
+            {["07:00", "08:00", "09:00", "10:00", "11:00", "12:00", "12:30", "13:00", "14:00", "15:00", "16:00", "17:00"].map((time) => {
+              // Lấy danh sách schedules đang hiển thị
+              const displayedSchedules = selectedGrade === 0
+                ? schedules
+                : schedules.filter((s) => Number(s.grade) === Number(selectedGrade));
+              
+              // Kiểm tra xem có schedule nào bắt đầu tại mốc thời gian này không
+              const hasSchedule = displayedSchedules.some((s) => {
+                const [sh, sm] = (s.startTime || "00:00").split(":").map(Number);
+                const [th, tm] = time.split(":").map(Number);
+                return sh === th && sm === tm;
+              });
+              
+              return (
+                <Tag
+                  key={time}
+                  color={hasSchedule ? "blue" : "default"}
+                  style={{
+                    cursor: "default",
+                    fontWeight: hasSchedule ? "bold" : "normal",
+                  }}
+                >
+                  {time}
+                </Tag>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
 <Table
   dataSource={
     selectedGrade === 0
@@ -615,6 +842,15 @@ const exportToPDF = async () => {
   columns={columns}
   rowKey={(r) => r._id}
   loading={loading}
+  rowSelection={{
+    selectedRowKeys,
+    onChange: (selectedKeys) => {
+      setSelectedRowKeys(selectedKeys);
+    },
+    getCheckboxProps: (record) => ({
+      disabled: false,
+    }),
+  }}
   pagination={{
     pageSizeOptions: ["10", "20", "50", "100"], // ✅ Các lựa chọn
     showSizeChanger: true,                      // ✅ Cho phép đổi
@@ -757,7 +993,14 @@ const exportToPDF = async () => {
       style={{ flex: 1 }}
       rules={[{ required: true, message: "Chọn giờ bắt đầu" }]}
     >
-      <TimePicker format="HH:mm" style={{ width: "100%" }} placeholder="Chọn giờ" />
+      <TimePicker 
+        format="HH:mm" 
+        style={{ width: "100%" }} 
+        placeholder="Chọn giờ"
+        minuteStep={15} // ✅ Chỉ cho phép chọn 0, 15, 30, 45 phút
+        showNow={false}
+        size="large"
+      />
     </Form.Item>
   </Space>
 
@@ -792,6 +1035,7 @@ const exportToPDF = async () => {
 </Form>
 
       </Modal>
+
       <Modal
   title="Lịch thi trực quan"
   open={calendarOpen}

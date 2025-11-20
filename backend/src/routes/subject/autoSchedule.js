@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const autoScheduleController = require('../../controllers/subject/autoScheduleController');
 
+// ✅ Kiểm tra điều kiện trước khi tạo lịch
+router.post('/validate', autoScheduleController.validateBeforeGenerate);
+
 // Tự động tạo thời khóa biểu
 router.post('/generate', autoScheduleController.autoGenerateSchedule);
 
