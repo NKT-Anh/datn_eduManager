@@ -41,7 +41,6 @@ const incidentRoutes = require('./incident/incidentRoutes');
 const notificationRoutes = require('./notification/notificationRoutes');
 const replyRoutes = require('./notification/replyRoutes');
 const conductRoutes = require('./conduct/conductRoutes');
-const conductConfigRoutes = require('./conduct/conductConfigRoutes');
 const schoolYearRoutes = require('./schoolYearRoutes');
 const aiChatRoutes = require('./aiChatRoutes');
 
@@ -87,7 +86,6 @@ const routers = [
     { group: 'notifications', router: notificationRoutes, description: 'Quản lý thông báo' },
     { group: 'notifications/replies', router: replyRoutes, description: 'Phản hồi thông báo' },
     { group: 'conducts', router: conductRoutes, description: 'Quản lý hạnh kiểm' },
-    { group: 'conduct-config', router: conductConfigRoutes, description: 'Cấu hình hạnh kiểm' },
     { group: 'school-years', router: schoolYearRoutes, description: 'Quản lý năm học' },
     { group: 'ai-chat', router: aiChatRoutes, description: 'AI Chat hỗ trợ' },
 

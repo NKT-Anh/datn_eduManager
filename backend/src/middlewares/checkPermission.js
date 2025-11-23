@@ -195,8 +195,6 @@ module.exports = (requiredPermissions, options = {}) => {
               PERMISSIONS.NOTIFICATION_SEND_HOMEROOM,
               PERMISSIONS.NOTIFICATION_CREATE,
               PERMISSIONS.DASHBOARD_VIEW_HOMEROOM,
-              PERMISSIONS.ATTENDANCE_CREATE,
-              PERMISSIONS.ATTENDANCE_VIEW_CLASS,
             ];
             const homeroomHasAccess = requireAll
               ? permissions.every(p => homeroomPermissions.includes(p))
@@ -479,46 +477,6 @@ async function checkSinglePermissionContext(permission, role, user, req, context
     }
   }
 
-  // ✅ Quyền điểm danh (attendance)
-  if (permission.includes('attendance')) {
-    // attendance:create, attendance:view_class - GVCN chỉ điểm danh/xem lớp chủ nhiệm
-    if (permission.includes('create') || permission.includes('view_class')) {
-      if (role === 'teacher' && (user?._effectiveFlags?.isHomeroom)) {
-        if (!user) return { allowed: false, message: 'Không tìm thấy thông tin giáo viên' };
-        
-        const classId = (req.params && req.params.classId) 
-          || (req.query && req.query.classId) 
-          || (req.body && req.body.classId);
-        if (classId) {
-          const homeroomIds = user.homeroomClassIds || [];
-          const hasHomeroom = homeroomIds.some(
-            id => String(id._id || id) === String(classId)
-          );
-          if (!hasHomeroom) {
-            return { 
-              allowed: false, 
-              message: 'Bạn chỉ có thể điểm danh/xem điểm danh lớp chủ nhiệm',
-              context: { ...context, classId }
-            };
-          }
-          context.homeroomClassIds = homeroomIds.map(id => String(id._id || id));
-        } else {
-          context.homeroomClassIds = (user.homeroomClassIds || []).map(id => String(id._id || id));
-        }
-      } else if (role === 'teacher' && !(user?._effectiveFlags?.isHomeroom)) {
-        return { allowed: false, message: 'Chỉ giáo viên chủ nhiệm mới được điểm danh' };
-      }
-    }
-    // attendance:view_self - Học sinh xem điểm danh của mình
-    if (permission.includes('view_self')) {
-      if (role === 'student') {
-        if (!user) return { allowed: false, message: 'Không tìm thấy thông tin học sinh' };
-        context.studentId = user._id;
-      }
-    }
-    // attendance:view_all - Admin và BGH xem tất cả (không cần kiểm tra context)
-  }
-
   // ✅ Quyền xem bản thân (student)
   if (permission.includes('self')) {
     if (role === 'student') {
@@ -615,14 +573,6 @@ async function checkSinglePermissionContext(permission, role, user, req, context
 
       // If classId and subjectId provided, require an explicit assignment for that (teacher, subject, class, year, semester)
       if (classId && subjectId && schoolYear && semester) {
-        console.log(`[checkPermission] Checking grade permission. Teacher: ${user._id}, Subject: ${subjectId}, Class: ${classId}, Year: ${schoolYear}, Semester: ${semester}`);
-        console.log(`[checkPermission] Teacher flags:`, {
-          isHomeroom: user._effectiveFlags?.isHomeroom,
-          isDepartmentHead: user._effectiveFlags?.isDepartmentHead,
-          isLeader: user._effectiveFlags?.isLeader,
-          yearRoles: user.yearRoles
-        });
-        
         const exists = await TeachingAssignment.findOne({
           teacherId: user._id,
           subjectId,
@@ -630,79 +580,10 @@ async function checkSinglePermissionContext(permission, role, user, req, context
           year: String(schoolYear),
           semester: String(semester),
         }).lean();
-        
-        console.log(`[checkPermission] TeachingAssignment exists:`, exists ? 'Yes' : 'No');
-        
-        // ✅ Tất cả giáo viên (GVBM, GVCN, QLBM) đều cần TeachingAssignment để nhập/xem điểm
-        // GVCN và QLBM là quyền mở rộng của GVBM, không phải thay thế
-        // Chỉ có điều: GVCN có thể XEM điểm tất cả môn của lớp chủ nhiệm (nhưng vẫn cần assignment để NHẬP)
-        if (!exists) {
-          // ✅ Nếu là GVCN, kiểm tra xem có phải lớp chủ nhiệm không (cho phép XEM nhưng không cho NHẬP)
-          if (user._effectiveFlags?.isHomeroom) {
-            // Lấy lớp chủ nhiệm từ yearRoles theo năm học (yearRoles chỉ lưu lớp chủ nhiệm, không lưu lớp dạy)
-            let isHomeroomClass = false;
-            
-            if (Array.isArray(user.yearRoles)) {
-              const yearRole = user.yearRoles.find(yr => 
-                yr && 
-                String(yr.schoolYear) === String(schoolYear) && 
-                yr.isHomeroom && 
-                yr.currentHomeroomClassId &&
-                String(yr.currentHomeroomClassId) === String(classId)
-              );
-              if (yearRole) {
-                isHomeroomClass = true;
-                console.log(`[checkPermission] ✅ GVCN - Found homeroom class in yearRoles:`, yearRole);
-              } else {
-                console.log(`[checkPermission] ⚠️ GVCN - No matching yearRole found. Looking for:`, {
-                  schoolYear,
-                  classId,
-                  yearRoles: user.yearRoles
-                });
-              }
-            } else {
-              console.log(`[checkPermission] ⚠️ GVCN - yearRoles is not an array:`, user.yearRoles);
-            }
-            
-            if (isHomeroomClass) {
-              // GVCN có thể xem điểm lớp chủ nhiệm (không cần assignment), nhưng vẫn cần assignment để nhập
-              context.canViewButNotEnter = true;
-              context.isHomeroom = true;
-              context.homeroomClassIds = [String(classId)];
-              console.log(`[checkPermission] ✅ GVCN - Allowed to view (but not enter) grades for homeroom class`);
-            } else {
-              console.log(`[checkPermission] ❌ GVCN but not homeroom class. Teacher: ${user._id}, Class: ${classId}, Year: ${schoolYear}`);
-              return { allowed: false, message: 'Bạn không được phân công dạy lớp/môn này trong năm/học kỳ đã chọn', context: { classId, subjectId, schoolYear, semester } };
-            }
-          } 
-          // ✅ QLBM và GVBM: bắt buộc phải có TeachingAssignment
-          else {
-            console.log(`[checkPermission] ❌ No TeachingAssignment found. Teacher: ${user._id}, Subject: ${subjectId}, Class: ${classId}, Year: ${schoolYear}, Semester: ${semester}`);
-            // Kiểm tra xem có assignment nào cho giáo viên này không (để debug)
-            const anyAssign = await TeachingAssignment.findOne({ teacherId: user._id, year: String(schoolYear), semester: String(semester) }).lean();
-            console.log(`[checkPermission] Any assignment for this teacher/year/semester:`, anyAssign ? 'Yes' : 'No');
-            if (anyAssign) {
-              console.log(`[checkPermission] Sample assignment:`, {
-                subjectId: anyAssign.subjectId,
-                classId: anyAssign.classId,
-                year: anyAssign.year,
-                semester: anyAssign.semester
-              });
-            }
-            return { allowed: false, message: 'Bạn không được phân công dạy lớp/môn này trong năm/học kỳ đã chọn', context: { classId, subjectId, schoolYear, semester } };
-          }
-        } else {
-          console.log(`[checkPermission] ✅ TeachingAssignment found - Allowing access`);
+        if (!exists && !(user._effectiveFlags?.isDepartmentHead)) {
+          return { allowed: false, message: 'Bạn không được phân công dạy lớp/môn này trong năm/học kỳ đã chọn', context: { classId, subjectId, schoolYear, semester } };
         }
         context.teachingClassIds = [String(classId)];
-        // ✅ Set subjectIds từ TeachingAssignment
-        const allAssigns = await TeachingAssignment.find({ teacherId: user._id, year: String(schoolYear), semester: String(semester) }).lean();
-        context.subjectIds = [...new Set((allAssigns || []).map(a => String(a.subjectId)))];
-        console.log(`[checkPermission] Context set:`, {
-          teachingClassIds: context.teachingClassIds,
-          subjectIds: context.subjectIds,
-          canViewButNotEnter: context.canViewButNotEnter
-        });
       } else if (subjectId && schoolYear && semester) {
         // If only subject provided, check teacher has any assignment for that subject in the year/semester
         const anyAssign = await TeachingAssignment.findOne({
@@ -717,15 +598,10 @@ async function checkSinglePermissionContext(permission, role, user, req, context
         // Provide list of classes the teacher teaches for this subject/year/semester
         const assigns = await TeachingAssignment.find({ teacherId: user._id, subjectId, year: String(schoolYear), semester: String(semester) }).lean();
         context.teachingClassIds = (assigns || []).map(a => String(a.classId));
-        // ✅ Set subjectIds từ TeachingAssignment
-        const allAssigns = await TeachingAssignment.find({ teacherId: user._id, year: String(schoolYear), semester: String(semester) }).lean();
-        context.subjectIds = [...new Set((allAssigns || []).map(a => String(a.subjectId)))];
       } else {
         // No specific class/subject/year provided — include all assignments for teacher
         const assigns = await TeachingAssignment.find({ teacherId: user._id }).lean();
         context.teachingClassIds = (assigns || []).map(a => String(a.classId));
-        // ✅ Set subjectIds từ TeachingAssignment
-        context.subjectIds = [...new Set((assigns || []).map(a => String(a.subjectId)))];
       }
     }
   }

@@ -1103,24 +1103,12 @@ exports.autoAssignHomeroomTeachers = async (req, res) => {
       return false;
     };
 
-    // Helper: Kiểm tra giáo viên có phải QLBM trong năm học đó không
-    const isDepartmentHeadInYear = (teacher, targetYear) => {
-      if (!teacher.yearRoles || !Array.isArray(teacher.yearRoles)) return false;
-      const yearRole = teacher.yearRoles.find(yr => String(yr.schoolYear) === String(targetYear));
-      return yearRole && yearRole.isDepartmentHead === true;
-    };
-
     // Helper: Sắp xếp giáo viên theo độ ưu tiên
-    const sortTeachersByPriority = (teachers, prioritySubjectIds, grade, targetYear) => {
+    const sortTeachersByPriority = (teachers, prioritySubjectIds, grade) => {
       return teachers
         .filter(teacher => {
           // Lọc giáo viên chưa làm GVCN
           if (teachersWithHomeroom.has(teacher._id.toString())) {
-            return false;
-          }
-          
-          // ✅ Lọc giáo viên đã là QLBM trong năm học đó (không lấy)
-          if (targetYear && isDepartmentHeadInYear(teacher, targetYear)) {
             return false;
           }
           
@@ -1157,14 +1145,14 @@ exports.autoAssignHomeroomTeachers = async (req, res) => {
       try {
         // Sắp xếp giáo viên theo độ ưu tiên
         const prioritySubjectIds = [vanSubjectId, toanSubjectId].filter(Boolean);
-        const sortedTeachers = sortTeachersByPriority(allTeachers, prioritySubjectIds, cls.grade, cls.year);
+        const sortedTeachers = sortTeachersByPriority(allTeachers, prioritySubjectIds, cls.grade);
         
         if (sortedTeachers.length === 0) {
           skipped++;
           details.push({
             className: cls.className,
             status: 'skipped',
-            reason: 'Không tìm thấy giáo viên phù hợp (tất cả giáo viên đã làm GVCN, đã là QLBM trong năm học này, hoặc không dạy khối này)',
+            reason: 'Không tìm thấy giáo viên phù hợp (tất cả giáo viên đã làm GVCN hoặc không dạy khối này)',
           });
           continue;
         }
@@ -1179,7 +1167,6 @@ exports.autoAssignHomeroomTeachers = async (req, res) => {
         const Setting = require('../../models/settings');
         const settings = await Setting.findOne().lean();
         const currentSchoolYear = settings?.currentSchoolYear;
-        const targetYear = cls.year || currentSchoolYear;
 
         if (!selectedTeacher.homeroomClassIds) {
           selectedTeacher.homeroomClassIds = [];
@@ -1196,12 +1183,6 @@ exports.autoAssignHomeroomTeachers = async (req, res) => {
 
         // Không set isDepartmentHead ở đây để giữ lại flag nếu giáo viên đã là TBM
         await selectedTeacher.save();
-
-        // ✅ Cập nhật yearRoles cho năm học của lớp
-        await updateTeacherYearRole(selectedTeacher._id, {
-          isHomeroom: true,
-          currentHomeroomClassId: cls._id
-        }, targetYear);
 
         // Cập nhật Set để tránh gán lại
         teachersWithHomeroom.add(selectedTeacher._id.toString());

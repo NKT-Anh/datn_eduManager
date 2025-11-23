@@ -2,8 +2,6 @@ const GradeItem = require('../models/grade/gradeItem');
 const GradeSummary = require('../models/grade/gradeSummary');
 const GradeConfig = require('../models/grade/gradeConfig');
 const Subject = require('../models/subject/subject');
-const StudentYearRecord = require('../models/user/studentYearRecord');
-const { calculateAcademicLevel } = require('./academicLevelService');
 
 /**
  * 🔹 Lấy cấu hình điểm động từ DB
@@ -40,8 +38,6 @@ function computeWeightedAverage(values) {
 
 /**
  * 🔹 Tính trung bình cho từng thành phần và điểm tổng
- * ✅ Nếu có nhiều điểm cho cùng component (ví dụ: 3 điểm miệng), 
- *    tính tổng các điểm đó nhân với hệ số, không phải trung bình rồi nhân hệ số
  */
 function computeAverages(items, weights, rounding) {
   const w = { ...weights };
@@ -59,7 +55,6 @@ function computeAverages(items, weights, rounding) {
     byComponent[it.component].push(it.score);
   }
 
-  // ✅ Tính trung bình của từng component để hiển thị (cho UI)
   const averages = {
     oral: computeWeightedAverage(byComponent.oral),
     quiz15: computeWeightedAverage(byComponent.quiz15),
@@ -68,21 +63,13 @@ function computeAverages(items, weights, rounding) {
     final: computeWeightedAverage(byComponent.final),
   };
 
-  // ✅ Tính điểm TB môn: mỗi điểm trong component được nhân với hệ số riêng
-  // Ví dụ: 3 điểm miệng (8, 9, 6.4) với hệ số 1 → (8*1 + 9*1 + 6.4*1) = 23.4
-  // Tổng hệ số = 3*1 = 3
   let sum = 0;
   let weightSum = 0;
-  for (const key of Object.keys(byComponent)) {
-    const scores = byComponent[key];
-    const componentWeight = w[key] || 0;
-    
-    if (scores && scores.length > 0) {
-      // Tổng điểm của component nhân với hệ số
-      const componentSum = scores.reduce((a, b) => a + b, 0);
-      sum += componentSum * componentWeight;
-      // Tổng hệ số = số lượng điểm * hệ số của component
-      weightSum += scores.length * componentWeight;
+  for (const key of Object.keys(averages)) {
+    const val = averages[key];
+    if (val != null) {
+      sum += val * (w[key] || 0);
+      weightSum += w[key] || 0;
     }
   }
   const average = weightSum ? sum / weightSum : null;
@@ -153,21 +140,6 @@ async function upsertGradeItem(payload) {
     schoolYear,
     semester,
   });
-
-  // ✅ Tự động tính và lưu điểm TB cả năm sau khi cập nhật điểm
-  // Chỉ tính khi đã có đủ điểm cho cả HK1 và HK2
-  if (updated.classId) {
-    try {
-      await computeAndSaveYearGPA({
-        studentId,
-        classId: updated.classId,
-        schoolYear,
-      });
-    } catch (yearGPAError) {
-      // Không throw error để không ảnh hưởng đến việc lưu điểm
-      console.error('⚠️ Lỗi khi tính điểm TB cả năm (không ảnh hưởng đến việc lưu điểm):', yearGPAError);
-    }
-  }
 
   return updated;
 }
@@ -240,154 +212,7 @@ async function recomputeSummary({ studentId, subjectId, classId, schoolYear, sem
 }
 
 /**
- * 🔹 Tính và lưu điểm TB cả năm vào StudentYearRecord
- * Điểm TB cả năm = (TB tất cả các môn HK1 + TB tất cả các môn HK2) / 2
- * Chỉ tính các môn có includeInAverage !== false
- */
-async function computeAndSaveYearGPA({ studentId, classId, schoolYear }) {
-  if (!studentId || !schoolYear) {
-    throw new Error('Thiếu trường bắt buộc: studentId, schoolYear');
-  }
-
-  try {
-    // Lấy tất cả điểm của học sinh cho HK1 và HK2
-    const hk1Summaries = await GradeSummary.find({
-      studentId,
-      schoolYear,
-      semester: '1',
-      average: { $ne: null }
-    })
-      .populate('subjectId', 'includeInAverage')
-      .lean();
-
-    const hk2Summaries = await GradeSummary.find({
-      studentId,
-      schoolYear,
-      semester: '2',
-      average: { $ne: null }
-    })
-      .populate('subjectId', 'includeInAverage')
-      .lean();
-
-    // Tính điểm TB tất cả các môn cho HK1 (chỉ môn tính điểm TB)
-    const hk1Averages = hk1Summaries
-      .filter(s => s.subjectId && s.subjectId.includeInAverage !== false)
-      .map(s => s.average)
-      .filter(avg => avg !== null && avg !== undefined);
-
-    // Tính điểm TB tất cả các môn cho HK2 (chỉ môn tính điểm TB)
-    const hk2Averages = hk2Summaries
-      .filter(s => s.subjectId && s.subjectId.includeInAverage !== false)
-      .map(s => s.average)
-      .filter(avg => avg !== null && avg !== undefined);
-
-    // Tính điểm TB cho từng học kỳ
-    const hk1GPA = hk1Averages.length > 0
-      ? hk1Averages.reduce((sum, avg) => sum + avg, 0) / hk1Averages.length
-      : null;
-
-    const hk2GPA = hk2Averages.length > 0
-      ? hk2Averages.reduce((sum, avg) => sum + avg, 0) / hk2Averages.length
-      : null;
-
-    // Tính điểm TB cả năm = (TB HK1 + TB HK2) / 2
-    let yearGPA = null;
-    if (hk1GPA !== null && hk2GPA !== null) {
-      yearGPA = (hk1GPA + hk2GPA) / 2;
-    } else if (hk1GPA !== null) {
-      yearGPA = hk1GPA;
-    } else if (hk2GPA !== null) {
-      yearGPA = hk2GPA;
-    }
-
-    // ✅ Tính học lực dựa trên điểm TB cả năm và điểm từng môn
-    let academicLevel = null;
-    if (yearGPA !== null) {
-      // Lấy điểm từng môn cả năm (chỉ môn tính điểm TB)
-      const subjectAverages = [];
-      
-      // Nhóm điểm theo môn học
-      const subjectMap = new Map();
-      hk1Summaries.forEach(s => {
-        if (s.subjectId && s.subjectId.includeInAverage !== false && s.average !== null) {
-          const subjectId = String(s.subjectId._id || s.subjectId);
-          if (!subjectMap.has(subjectId)) {
-            subjectMap.set(subjectId, { hk1: null, hk2: null, subjectId });
-          }
-          subjectMap.get(subjectId).hk1 = s.average;
-        }
-      });
-      
-      hk2Summaries.forEach(s => {
-        if (s.subjectId && s.subjectId.includeInAverage !== false && s.average !== null) {
-          const subjectId = String(s.subjectId._id || s.subjectId);
-          if (!subjectMap.has(subjectId)) {
-            subjectMap.set(subjectId, { hk1: null, hk2: null, subjectId });
-          }
-          subjectMap.get(subjectId).hk2 = s.average;
-        }
-      });
-      
-      // Tính điểm TB cả năm cho từng môn
-      subjectMap.forEach(({ hk1, hk2, subjectId }) => {
-        let yearAvg = null;
-        if (hk1 !== null && hk2 !== null) {
-          yearAvg = (hk1 + hk2) / 2;
-        } else if (hk1 !== null) {
-          yearAvg = hk1;
-        } else if (hk2 !== null) {
-          yearAvg = hk2;
-        }
-        
-        if (yearAvg !== null) {
-          subjectAverages.push({ subjectId, average: yearAvg });
-        }
-      });
-      
-      // Tính học lực
-      try {
-        academicLevel = await calculateAcademicLevel(
-          yearGPA,
-          subjectAverages,
-          schoolYear,
-          '2', // Dùng semester '2' cho cả năm
-          null // Để function tự fetch config
-        );
-      } catch (academicError) {
-        console.error('⚠️ Lỗi khi tính học lực (không ảnh hưởng đến việc lưu điểm):', academicError);
-      }
-    }
-
-    // Lưu vào StudentYearRecord với semester='CN'
-    if (yearGPA !== null && classId) {
-      const updateData = {
-        gpa: yearGPA,
-        classId: classId,
-      };
-      
-      // Thêm học lực nếu đã tính được
-      if (academicLevel) {
-        updateData.academicLevel = academicLevel;
-      }
-      
-      await StudentYearRecord.findOneAndUpdate(
-        { studentId, year: schoolYear, semester: 'CN' },
-        { $set: updateData },
-        { upsert: true, new: true }
-      );
-      console.log(`✅ Đã lưu điểm TB cả năm cho học sinh ${studentId} (${schoolYear}): ${yearGPA.toFixed(2)}${academicLevel ? `, Học lực: ${academicLevel}` : ''}`);
-    }
-
-    return { hk1GPA, hk2GPA, yearGPA, academicLevel };
-  } catch (error) {
-    console.error('❌ Lỗi khi tính điểm TB cả năm:', error);
-    throw error;
-  }
-}
-
-/**
  * 🔹 Lấy bảng điểm tóm tắt của cả lớp cho một môn
- * ✅ Trả về cả GradeItem data để frontend có thể hiển thị nhiều điểm cho cùng component
  */
 async function getClassSubjectSummary({ classId, subjectId, schoolYear, semester }) {
   if (!classId || !subjectId || !schoolYear || !semester) {
@@ -399,64 +224,20 @@ async function getClassSubjectSummary({ classId, subjectId, schoolYear, semester
     .populate('subjectId', 'name code')
     .lean();
 
-  // ✅ Lấy tất cả GradeItem để hiển thị các điểm riêng lẻ
-  const allGradeItems = await GradeItem.find({ 
-    classId, 
-    subjectId, 
-    schoolYear, 
-    semester 
-  })
-    .select('studentId component score attempt')
-    .sort({ studentId: 1, component: 1, attempt: 1 })
-    .lean();
-
   // ✅ Format dữ liệu để đảm bảo có name và _id của học sinh
   return summaries.map(summary => {
     const student = summary.studentId;
-    const studentId = student?._id || summary.studentId;
-    
-    // ✅ Lấy các GradeItem của học sinh này
-    const studentItems = allGradeItems.filter(
-      item => String(item.studentId) === String(studentId)
-    );
-    
-    // ✅ Nhóm điểm theo component và sắp xếp theo attempt
-    const gradeItemsByComponent = {
-      oral: studentItems
-        .filter(item => item.component === 'oral')
-        .sort((a, b) => (a.attempt || 1) - (b.attempt || 1))
-        .map(item => item.score),
-      quiz15: studentItems
-        .filter(item => item.component === 'quiz15')
-        .sort((a, b) => (a.attempt || 1) - (b.attempt || 1))
-        .map(item => item.score),
-      quiz45: studentItems
-        .filter(item => item.component === 'quiz45')
-        .sort((a, b) => (a.attempt || 1) - (b.attempt || 1))
-        .map(item => item.score),
-      midterm: studentItems
-        .filter(item => item.component === 'midterm')
-        .sort((a, b) => (a.attempt || 1) - (b.attempt || 1))
-        .map(item => item.score),
-      final: studentItems
-        .filter(item => item.component === 'final')
-        .sort((a, b) => (a.attempt || 1) - (b.attempt || 1))
-        .map(item => item.score),
-    };
-    
     return {
       ...summary,
       // ✅ Đảm bảo có _id và name của học sinh
       _id: summary._id, // ID của GradeSummary
-      studentId: studentId, // ID của học sinh
+      studentId: student?._id || summary.studentId, // ID của học sinh
       name: student?.name || 'Chưa có tên', // Tên học sinh
       studentCode: student?.studentCode || '', // Mã học sinh
       // Giữ nguyên các trường điểm
       averages: summary.averages || {},
       average: summary.average,
       result: summary.result,
-      // ✅ Thêm gradeItems để frontend có thể hiển thị nhiều điểm cho cùng component
-      gradeItems: gradeItemsByComponent,
     };
   });
 }
@@ -497,20 +278,6 @@ async function saveScores({ classId, subjectId, schoolYear, semester, scores }) 
     // recompute once per student after all components
     try {
       await recomputeSummary({ studentId, subjectId, classId, schoolYear, semester });
-      
-      // ✅ Tự động tính và lưu điểm TB cả năm sau khi cập nhật điểm
-      if (classId) {
-        try {
-          await computeAndSaveYearGPA({
-            studentId,
-            classId,
-            schoolYear,
-          });
-        } catch (yearGPAError) {
-          // Không throw error để không ảnh hưởng đến việc lưu điểm
-          console.error('⚠️ Lỗi khi tính điểm TB cả năm (không ảnh hưởng đến việc lưu điểm):', yearGPAError);
-        }
-      }
     } catch (e) {
       // push an aggregate error if recompute fails
       results.push({ studentId, status: 'error', message: `Recompute failed: ${e.message}` });
@@ -595,7 +362,6 @@ module.exports = {
   getClassSubjectSummary,
   computeAverages,
   getActiveConfig,
-  computeAndSaveYearGPA,
   saveScores,
   initGradesForStudent,
 };

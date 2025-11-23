@@ -215,20 +215,6 @@ exports.createDepartment = async (req, res) => {
     // ✅ Lưu ý: Không ảnh hưởng đến isHomeroom, giáo viên có thể vừa là TBM vừa là GVCN
     if (headTeacherId) {
       const headTeacher = await Teacher.findById(headTeacherId);
-      if (!headTeacher) {
-        return res.status(404).json({ message: 'Không tìm thấy giáo viên' });
-      }
-
-      // ✅ Kiểm tra giáo viên có phải GVCN trong năm học đó không
-      if (headTeacher.yearRoles && Array.isArray(headTeacher.yearRoles)) {
-        const yearRole = headTeacher.yearRoles.find(yr => String(yr.schoolYear) === String(year));
-        if (yearRole && yearRole.isHomeroom === true) {
-          return res.status(400).json({ 
-            message: `Giáo viên ${headTeacher.name} đã là giáo viên chủ nhiệm trong năm học ${year}. Không thể chỉ định làm trưởng bộ môn.` 
-          });
-        }
-      }
-
       if (headTeacher && headTeacher.isDepartmentHead) {
         // Nếu giáo viên này đã là tổ trưởng của tổ khác, reset tổ cũ
         const oldDepartment = await Department.findOne({ headTeacherId: headTeacherId });
@@ -251,11 +237,11 @@ exports.createDepartment = async (req, res) => {
         // Không set isHomeroom ở đây để giữ lại flag nếu giáo viên đã là GVCN
       });
 
-      // ✅ Cập nhật yearRoles cho năm học được chỉ định
+      // ✅ Cập nhật yearRoles cho năm học hiện tại
       await updateTeacherYearRole(headTeacherId, {
         departmentId: department._id,
         isDepartmentHead: true
-      }, year);
+      });
 
       // ✅ Cập nhật teacherIds trong Department - đảm bảo headTeacherId có trong danh sách
       await Department.findByIdAndUpdate(department._id, {
@@ -332,27 +318,10 @@ exports.updateDepartment = async (req, res) => {
 
     // Cập nhật headTeacherId
     if (headTeacherId !== undefined) {
-      // ✅ Lấy năm học của department (dùng chung cho toàn bộ block này)
-      const deptYear = department.year || department.schoolYear;
-
       // ✅ RÀNG BUỘC: CHỈ CÓ 1 TỔ TRƯỞNG TRONG 1 TỔ
       // Nếu có tổ trưởng mới, kiểm tra xem giáo viên đó đã là tổ trưởng của tổ khác chưa
       if (headTeacherId) {
         const newHeadTeacher = await Teacher.findById(headTeacherId);
-        if (!newHeadTeacher) {
-          return res.status(404).json({ message: 'Không tìm thấy giáo viên' });
-        }
-
-        // ✅ Kiểm tra giáo viên có phải GVCN trong năm học đó không
-        if (newHeadTeacher.yearRoles && Array.isArray(newHeadTeacher.yearRoles) && deptYear) {
-          const yearRole = newHeadTeacher.yearRoles.find(yr => String(yr.schoolYear) === String(deptYear));
-          if (yearRole && yearRole.isHomeroom === true) {
-            return res.status(400).json({ 
-              message: `Giáo viên ${newHeadTeacher.name} đã là giáo viên chủ nhiệm trong năm học ${deptYear}. Không thể chỉ định làm trưởng bộ môn.` 
-            });
-          }
-        }
-
         if (newHeadTeacher && newHeadTeacher.isDepartmentHead) {
           // Nếu giáo viên này đã là tổ trưởng của tổ khác, reset tổ cũ
           const oldDepartment = await Department.findOne({ headTeacherId: headTeacherId });
@@ -373,6 +342,7 @@ exports.updateDepartment = async (req, res) => {
       // ✅ Xóa isDepartmentHead từ giáo viên cũ (nếu có) - nhưng vẫn giữ departmentId nếu giáo viên vẫn thuộc tổ
       if (department.headTeacherId && department.headTeacherId.toString() !== headTeacherId?.toString()) {
         const oldHeadTeacher = await Teacher.findById(department.headTeacherId);
+        const deptYear = department.year || department.schoolYear;
         if (oldHeadTeacher && oldHeadTeacher.departmentId && oldHeadTeacher.departmentId.toString() === id) {
           // ✅ Nếu giáo viên cũ vẫn thuộc tổ này, chỉ reset isDepartmentHead = false, giữ lại departmentId
           await Teacher.findByIdAndUpdate(department.headTeacherId, { 
@@ -407,11 +377,11 @@ exports.updateDepartment = async (req, res) => {
         // Không set isHomeroom ở đây để giữ lại flag nếu giáo viên đã là GVCN
       });
       
-      // ✅ Cập nhật yearRoles cho năm học của department
+      // ✅ Cập nhật yearRoles cho năm học hiện tại
       await updateTeacherYearRole(headTeacherId, {
         departmentId: department._id,
         isDepartmentHead: true
-      }, deptYear);
+      });
       
       // ✅ Đảm bảo các giáo viên khác trong tổ KHÔNG có isDepartmentHead = true
       await Teacher.updateMany(
@@ -425,6 +395,7 @@ exports.updateDepartment = async (req, res) => {
       );
 
       // ✅ Reset yearRoles.isDepartmentHead cho các giáo viên khác trong tổ
+      const deptYear = department.year || department.schoolYear;
       if (deptYear) {
         const otherTeachers = await Teacher.find({
           departmentId: department._id,

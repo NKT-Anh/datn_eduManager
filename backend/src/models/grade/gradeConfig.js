@@ -12,14 +12,6 @@ const GradeConfigSchema = new mongoose.Schema(
       midterm: { type: Number, default: 2 },
       final: { type: Number, default: 3 },
     },
-    // ✅ Số cột điểm cho mỗi component (ví dụ: 3 cột miệng, 3 cột 15p)
-    columnCounts: {
-      oral: { type: Number, default: 3, min: 1, max: 10 },
-      quiz15: { type: Number, default: 3, min: 1, max: 10 },
-      quiz45: { type: Number, default: 1, min: 1, max: 10 },
-      midterm: { type: Number, default: 1, min: 1, max: 10 },
-      final: { type: Number, default: 1, min: 1, max: 10 },
-    },
     rounding: { type: String, enum: ['half-up', 'none'], default: 'half-up' },
     // ✅ Cấu hình xếp loại học tập
     classification: {

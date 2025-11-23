@@ -497,21 +497,9 @@ exports.getAssignmentsByTeacher = async (req, res) => {
     const { teacherId } = req.params;
     let { year, semester } = req.query; // lấy query params
 
-    console.log(`[getAssignmentsByTeacher] Request params:`, {
-      teacherId,
-      year,
-      semester,
-      query: req.query
-    });
-
     // ✅ Decode year nếu có ký tự đặc biệt
     if (year) {
       year = decodeURIComponent(year);
-    }
-    
-    // ✅ Decode semester nếu có ký tự đặc biệt
-    if (semester) {
-      semester = decodeURIComponent(semester);
     }
 
     // ✅ Kiểm tra quyền truy cập
@@ -568,14 +556,10 @@ exports.getAssignmentsByTeacher = async (req, res) => {
     if (year) filter.year = year;
     if (semester) filter.semester = semester;
 
-    console.log(`[getAssignmentsByTeacher] Filter:`, filter);
-
     const assignments = await TeachingAssignment.find(filter)
       .populate('teacherId', 'name availableMatrix')
       .populate('subjectId', 'name')
       .populate('classId', 'className classCode grade year');
-
-    console.log(`[getAssignmentsByTeacher] Found ${assignments?.length || 0} assignments`);
 
     // ✅ Trả về mảng rỗng thay vì 404 khi không có assignments
     res.status(200).json(assignments || []);

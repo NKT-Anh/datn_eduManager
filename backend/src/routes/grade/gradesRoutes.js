@@ -8,31 +8,14 @@ const { PERMISSIONS } = require('../../config/permissions');
 const checkGradeEntryPeriod = require('../../middlewares/checkGradeEntryPeriod');
 
 // ✅ Thêm hoặc cập nhật điểm (1 học sinh, 1 cột điểm) - GVBM (môn mình dạy) hoặc Admin
-// ✅ Không check context ở middleware, để controller tự kiểm tra TeachingAssignment
 router.post('/items', 
   authMiddleware, 
-  checkPermission([PERMISSIONS.GRADE_ENTER, PERMISSIONS.GRADE_VIEW], { checkContext: false }), 
+  checkPermission([PERMISSIONS.GRADE_ENTER, PERMISSIONS.GRADE_VIEW], { checkContext: true }), 
   checkGradeEntryPeriod, 
   gradeController.upsertGradeItem
 );
 
-// ✅ Xóa tất cả điểm của một component cho học sinh - GVBM (môn mình dạy) hoặc Admin
-router.delete('/items', 
-  authMiddleware, 
-  checkPermission([PERMISSIONS.GRADE_ENTER, PERMISSIONS.GRADE_VIEW], { checkContext: false }), 
-  gradeController.deleteGradeItems
-);
-
-// ✅ Lưu mảng điểm cho một component - GVBM (môn mình dạy) hoặc Admin
-router.post('/items/bulk', 
-  authMiddleware, 
-  checkPermission([PERMISSIONS.GRADE_ENTER, PERMISSIONS.GRADE_VIEW], { checkContext: false }), 
-  checkGradeEntryPeriod, 
-  gradeController.upsertGradeItems
-);
-
 // ✅ Lấy bảng tổng hợp điểm của 1 lớp + môn học - Tất cả roles có quyền xem
-// ✅ Không check context ở middleware, để frontend tự kiểm tra
 router.get('/summary', 
   authMiddleware, 
   checkPermission([
@@ -54,10 +37,9 @@ router.post('/recompute',
 );
 
 // ✅ Lưu điểm nhiều học sinh cùng lúc - GVBM (môn mình dạy) hoặc Admin
-// ✅ Không check context ở middleware, để controller tự kiểm tra TeachingAssignment
 router.post('/save', 
   authMiddleware, 
-  checkPermission([PERMISSIONS.GRADE_ENTER, PERMISSIONS.GRADE_VIEW], { checkContext: false }), 
+  checkPermission([PERMISSIONS.GRADE_ENTER, PERMISSIONS.GRADE_VIEW], { checkContext: true }), 
   checkGradeEntryPeriod, 
   gradeController.saveScores
 );
@@ -109,27 +91,6 @@ router.delete('/admin/item/:id',
   authMiddleware, 
   checkPermission(PERMISSIONS.GRADE_VIEW, { checkContext: false }), 
   gradeController.deleteGradeItem
-);
-
-// ✅ GVCN xem tất cả điểm của lớp chủ nhiệm (tất cả môn)
-router.get('/homeroom/all', 
-  authMiddleware, 
-  checkPermission([PERMISSIONS.GRADE_VIEW_HOMEROOM, PERMISSIONS.GRADE_VIEW_ALL], { checkContext: true }), 
-  gradeController.getHomeroomClassAllGrades
-);
-
-// ✅ GVCN xem điểm trung bình từng môn, điểm TB học kỳ/năm của học sinh
-router.get('/homeroom/averages', 
-  authMiddleware, 
-  checkPermission([PERMISSIONS.GRADE_VIEW_HOMEROOM, PERMISSIONS.GRADE_VIEW_ALL], { checkContext: true }), 
-  gradeController.getHomeroomClassAverages
-);
-
-// ✅ GVCN xem hạnh kiểm và kết quả xếp loại học tập của lớp
-router.get('/homeroom/classification', 
-  authMiddleware, 
-  checkPermission([PERMISSIONS.GRADE_VIEW_HOMEROOM, PERMISSIONS.CONDUCT_VIEW, PERMISSIONS.GRADE_VIEW_ALL], { checkContext: true }), 
-  gradeController.getHomeroomClassClassification
 );
 
 module.exports = router;

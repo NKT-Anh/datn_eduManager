@@ -12,37 +12,28 @@ const Class = require('../../models/class/class');
  */
 exports.getConducts = async (req, res) => {
   try {
-    const { role, accountId } = req.user;
+    const { role } = req.user;
     const { year, semester, classId, studentId } = req.query;
     
     let filter = {};
     
-    // Admin: Xem tất cả
-    if (role === 'admin') {
+    // Admin và BGH: Xem tất cả
+    if (role === 'admin' || role === 'bgh') {
       // Không giới hạn
     } 
-    // Teacher với isHomeroom flag: Xem hạnh kiểm lớp chủ nhiệm
-    else if (role === 'teacher') {
-      const teacher = await Teacher.findOne({ accountId })
-        .populate('homeroomClassIds')
-        .populate('currentHomeroomClassId');
-      
-      // Kiểm tra permission context từ middleware
-      const permissionContext = req.permissionContext || {};
-      const isHomeroom = permissionContext.isHomeroom || false;
-      const homeroomClassIds = permissionContext.homeroomClassIds || [];
-      
-      if (isHomeroom && homeroomClassIds.length > 0) {
-        // GVCN: Chỉ xem hạnh kiểm lớp chủ nhiệm
-        filter.classId = { $in: homeroomClassIds };
-      } else {
-        // Không phải GVCN, không có quyền xem hạnh kiểm
+    // GVCN: Xem hạnh kiểm lớp chủ nhiệm
+    else if (role === 'gvcn') {
+      const teacher = await Teacher.findOne({ accountId: req.user.accountId })
+        .populate('homeroomClassIds');
+      if (!teacher || !teacher.homeroomClassIds || teacher.homeroomClassIds.length === 0) {
         return res.json({ success: true, total: 0, data: [] });
       }
+      const homeroomClassIds = teacher.homeroomClassIds.map(c => c._id || c);
+      filter.classId = { $in: homeroomClassIds };
     }
     // Học sinh: Xem hạnh kiểm của mình
     else if (role === 'student') {
-      const student = await Student.findOne({ accountId });
+      const student = await Student.findOne({ accountId: req.user.accountId });
       if (!student) {
         return res.json({ success: true, total: 0, data: [] });
       }
@@ -54,8 +45,8 @@ exports.getConducts = async (req, res) => {
     // Lọc theo query params
     if (year) filter.year = year;
     if (semester) filter.semester = semester;
-    if (classId && role === 'admin') filter.classId = classId;
-    if (studentId && role === 'admin') filter.studentId = studentId;
+    if (classId && (role === 'admin' || role === 'bgh')) filter.classId = classId;
+    if (studentId && (role === 'admin' || role === 'bgh')) filter.studentId = studentId;
     
     const records = await StudentYearRecord.find(filter)
       .populate('studentId', 'name studentCode')
@@ -76,7 +67,7 @@ exports.getConducts = async (req, res) => {
 exports.getConductById = async (req, res) => {
   try {
     const { id } = req.params;
-    const { role, accountId } = req.user;
+    const { role } = req.user;
     
     const record = await StudentYearRecord.findById(id)
       .populate('studentId', 'name studentCode')
@@ -89,22 +80,15 @@ exports.getConductById = async (req, res) => {
     
     // Kiểm tra quyền truy cập
     if (role === 'student') {
-      const student = await Student.findOne({ accountId });
+      const student = await Student.findOne({ accountId: req.user.accountId });
       if (String(record.studentId._id) !== String(student._id)) {
         return res.status(403).json({ error: 'Không có quyền truy cập' });
       }
-    } else if (role === 'teacher') {
-      // Kiểm tra permission context từ middleware
-      const permissionContext = req.permissionContext || {};
-      const isHomeroom = permissionContext.isHomeroom || false;
-      const homeroomClassIds = permissionContext.homeroomClassIds || [];
-      
-      if (isHomeroom) {
-        const recordClassId = String(record.classId?._id || record.classId);
-        if (!homeroomClassIds.includes(recordClassId)) {
-          return res.status(403).json({ error: 'Không có quyền truy cập' });
-        }
-      } else {
+    } else if (role === 'gvcn') {
+      const teacher = await Teacher.findOne({ accountId: req.user.accountId })
+        .populate('homeroomClassIds');
+      if (!teacher || !teacher.homeroomClassIds || 
+          !teacher.homeroomClassIds.some(c => String(c._id || c) === String(record.classId?._id || record.classId))) {
         return res.status(403).json({ error: 'Không có quyền truy cập' });
       }
     }
@@ -122,7 +106,7 @@ exports.getConductById = async (req, res) => {
 exports.updateConduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const { role, accountId } = req.user;
+    const { role } = req.user;
     
     const record = await StudentYearRecord.findById(id)
       .populate('classId');
@@ -131,25 +115,13 @@ exports.updateConduct = async (req, res) => {
       return res.status(404).json({ error: 'Không tìm thấy hạnh kiểm' });
     }
     
-    // Teacher với isHomeroom flag: Nhập hạnh kiểm lớp chủ nhiệm
-    if (role === 'teacher') {
-      // Kiểm tra permission context từ middleware
-      const permissionContext = req.permissionContext || {};
-      const isHomeroom = permissionContext.isHomeroom || false;
-      const homeroomClassIds = permissionContext.homeroomClassIds || [];
-      
-      if (!isHomeroom) {
-        return res.status(403).json({ error: 'Bạn không phải giáo viên chủ nhiệm' });
-      }
-      
-      const recordClassId = String(record.classId?._id || record.classId);
-      if (!homeroomClassIds.includes(recordClassId)) {
+    // GVCN: Nhập hạnh kiểm lớp chủ nhiệm
+    if (role === 'gvcn') {
+      const teacher = await Teacher.findOne({ accountId: req.user.accountId })
+        .populate('homeroomClassIds');
+      if (!teacher || !teacher.homeroomClassIds || 
+          !teacher.homeroomClassIds.some(c => String(c._id || c) === String(record.classId?._id || record.classId))) {
         return res.status(403).json({ error: 'Không phải lớp chủ nhiệm của bạn' });
-      }
-      
-      const teacher = await Teacher.findOne({ accountId });
-      if (!teacher) {
-        return res.status(404).json({ error: 'Không tìm thấy thông tin giáo viên' });
       }
       
       const { conduct } = req.body;

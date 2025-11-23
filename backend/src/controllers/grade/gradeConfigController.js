@@ -22,7 +22,7 @@ exports.getGradeConfig = async (req, res) => {
  */
 exports.upsertGradeConfig = async (req, res) => {
   try {
-    const { schoolYear, semester, weights, columnCounts, rounding, classification, requiredSubjects } = req.body;
+    const { schoolYear, semester, weights, rounding, classification, requiredSubjects } = req.body;
 
     if (!schoolYear || !semester) {
       return res.status(400).json({ message: 'Thiếu schoolYear hoặc semester' });
@@ -33,11 +33,6 @@ exports.upsertGradeConfig = async (req, res) => {
       rounding,
       updatedBy: req.user?._id,
     };
-
-    // ✅ Cập nhật columnCounts nếu có
-    if (columnCounts) {
-      updateData.columnCounts = columnCounts;
-    }
 
     // ✅ Cập nhật classification nếu có
     if (classification) {

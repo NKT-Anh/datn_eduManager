@@ -153,15 +153,6 @@ exports.PERMISSIONS = {
   DASHBOARD_VIEW_DEPARTMENT: 'dashboard:view_department',
   DASHBOARD_VIEW_HOMEROOM: 'dashboard:view_homeroom',
   DASHBOARD_VIEW_TEACHING: 'dashboard:view_teaching',
-
-  // 23. Điểm danh (Attendance)
-  ATTENDANCE_CREATE: 'attendance:create',              // GVCN điểm danh
-  ATTENDANCE_VIEW_CLASS: 'attendance:view_class',      // GVCN xem điểm danh lớp
-  ATTENDANCE_VIEW_ALL: 'attendance:view_all',          // BGH, Admin xem tất cả
-  ATTENDANCE_VIEW_SELF: 'attendance:view_self',        // Học sinh xem điểm danh của mình
-  ATTENDANCE_UPDATE: 'attendance:update',              // Cập nhật điểm danh (GVCN, Admin)
-  ATTENDANCE_DELETE: 'attendance:delete',              // Xóa điểm danh (Admin)
-  ATTENDANCE_STATS: 'attendance:stats',                // Xem thống kê điểm danh
 };
 
 // ✅ Mapping roles với permissions
@@ -169,12 +160,6 @@ const ROLE_PERMISSIONS = {
   [exports.ROLES.ADMIN]: [
     // Tất cả quyền
     ...Object.values(exports.PERMISSIONS),
-    // Điểm danh
-    exports.PERMISSIONS.ATTENDANCE_CREATE,
-    exports.PERMISSIONS.ATTENDANCE_VIEW_ALL,
-    exports.PERMISSIONS.ATTENDANCE_UPDATE,
-    exports.PERMISSIONS.ATTENDANCE_DELETE,
-    exports.PERMISSIONS.ATTENDANCE_STATS,
   ],
 
   // ✅ BGH (Ban Giám Hiệu) - Teacher với isLeader = true
@@ -213,8 +198,6 @@ const ROLE_PERMISSIONS = {
     exports.PERMISSIONS.EXAM_PRINT_TICKET_SELF,
     exports.PERMISSIONS.INCIDENT_REPORT,
     exports.PERMISSIONS.NOTIFICATION_VIEW,
-    // Điểm danh
-    exports.PERMISSIONS.ATTENDANCE_VIEW_SELF,
   ],
 };
 
