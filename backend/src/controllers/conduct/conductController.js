@@ -5,7 +5,7 @@ const Class = require('../../models/class/class');
 
 /**
  * 📋 LẤY DANH SÁCH HẠNH KIỂM
- * - Admin: Xem tất cả
+ * - Admin: Xem tất cảs
  * - BGH: Xem tất cả
  * - GVCN: Xem hạnh kiểm lớp chủ nhiệm
  * - Học sinh: Xem hạnh kiểm của mình

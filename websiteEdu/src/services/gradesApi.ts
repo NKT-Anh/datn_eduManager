@@ -1,6 +1,34 @@
 import axiosClient from './axiosInstance';
 
-const gradesApi = {
+// ✅ Type definition cho gradesApi
+interface GradesApi {
+  saveScores: (payload: any) => Promise<any>;
+  upsertGradeItem: (payload: any) => Promise<any>;
+  deleteGradeItems: (params: any) => Promise<any>;
+  upsertGradeItems: (payload: {
+    studentId: string;
+    subjectId: string;
+    component: string;
+    scores: number[];
+    classId?: string;
+    schoolYear: string;
+    semester: string;
+  }) => Promise<any>;
+  getClassSubjectSummary: (params: any) => Promise<any>;
+  recomputeSummary: (payload: any) => Promise<any>;
+  initGradeTable: (payload: any) => Promise<any>;
+  getStudentGrades: (params?: any) => Promise<any>;
+  getAllStudentsGrades: (params?: any) => Promise<any>;
+  getStatistics: (params?: any) => Promise<any>;
+  getAuditLog: (params?: any) => Promise<any>;
+  updateGradeItem: (id: string, payload: any) => Promise<any>;
+  deleteGradeItem: (id: string) => Promise<any>;
+  getHomeroomClassAllGrades: (params: any) => Promise<any>;
+  getHomeroomClassAverages: (params: any) => Promise<any>;
+  getHomeroomClassClassification: (params: any) => Promise<any>;
+}
+
+const gradesApi: GradesApi = {
   // ✅ Lưu điểm nhiều học sinh cùng lúc
   saveScores: async (payload: {
     classId: string;
@@ -72,7 +100,7 @@ const gradesApi = {
     return res.data;
   },
 
-  // ✅ Lưu mảng điểm cho một component
+  // ✅ Lưu mảng điểm cho một component (bulk save)
   upsertGradeItems: async (payload: {
     studentId: string;
     subjectId: string;
@@ -81,7 +109,7 @@ const gradesApi = {
     classId?: string;
     schoolYear: string;
     semester: string;
-  }) => {
+  }): Promise<any> => {
     const res = await axiosClient.post('/grades/items/bulk', payload);
     return res.data;
   },

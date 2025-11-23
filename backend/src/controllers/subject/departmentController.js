@@ -511,7 +511,7 @@ exports.deleteDepartment = async (req, res) => {
       }
     }
 
-    // ✅ Xóa departmentId từ các giáo viên (backup check)
+    // ✅ Xóa departmentId từ các giáo viên (backup check)s
     await Teacher.updateMany(
       { departmentId: department._id },
       { 

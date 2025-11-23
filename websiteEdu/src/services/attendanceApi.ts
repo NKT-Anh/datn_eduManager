@@ -13,7 +13,7 @@ const attendanceApi = {
       status: 'absent' | 'excused' | 'late';
       notes?: string;
     }>;
-    // Backward compatible - điểm danh theo tiết
+    // Backward compatible - điểm danh theo tiế
     subjectId?: string;
     period?: number;
     attendances?: Array<{

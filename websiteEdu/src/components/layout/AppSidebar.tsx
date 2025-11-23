@@ -47,7 +47,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-// ✅ Hàm helper tạo navigationGroups dựa trên role/flags
+// ✅ Hàm helper tạo navigationGroups dựa trên role/flagss
 const getNavigationGroups = (backendUser: any, prefix: string) => {
   const isBGH = backendUser.role === "teacher" && backendUser.teacherFlags?.isLeader;
   const isGVCN = backendUser.role === "teacher" && backendUser.teacherFlags?.isHomeroom;

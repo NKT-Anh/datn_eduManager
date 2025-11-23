@@ -7,6 +7,7 @@ import { useTeachers } from "@/hooks/teachers/useTeachers";
 import { useSubjects } from "@/hooks/subjects/useSubjects";
 import { useSchoolYears } from "@/hooks/schoolYear/useSchoolYears";
 import { useAuth } from "@/contexts/AuthContext";
+import { getTeacherDepartmentId } from "@/utils/teacher";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -129,10 +130,9 @@ export default function DepartmentListPage() {
   // Helper functions
   const getDepartmentTeachers = (departmentId: string): Teacher[] => {
     return teachers.filter((t) => {
-      const deptId = typeof t.departmentId === "object" && t.departmentId !== null
-        ? t.departmentId._id
-        : t.departmentId;
-      return deptId === departmentId;
+      // ✅ Sử dụng helper function để lấy departmentId từ yearRoles hoặc top-level
+      const deptId = getTeacherDepartmentId(t, selectedYear || undefined);
+      return deptId === departmentId || String(deptId) === String(departmentId);
     });
   };
 
@@ -406,13 +406,14 @@ export default function DepartmentListPage() {
                     <div className="text-right">
                       {teacher.subjects && teacher.subjects.length > 0 && (
                         <div className="flex flex-wrap gap-1 max-w-xs justify-end">
-                          {teacher.subjects.slice(0, 2).map((sub, idx) => {
-                            const subject = typeof sub.subjectId === "object"
-                              ? sub.subjectId
-                              : subjects.find((s) => s._id === sub.subjectId);
+                          {teacher.subjects?.slice(0, 2).map((sub, idx) => {
+                            const subjectId = typeof sub.subjectId === "object"
+                              ? sub.subjectId._id
+                              : sub.subjectId;
+                            const subject = subjects.find((s) => s._id === subjectId);
                             return (
                               <Badge key={idx} variant="outline" className="text-xs">
-                                {subject?.name || "N/A"}
+                                {subject?.name || (typeof sub.subjectId === "object" ? sub.subjectId.name : "N/A")}
                               </Badge>
                             );
                           })}

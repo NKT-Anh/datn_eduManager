@@ -54,7 +54,7 @@ interface ClassWithSubjects {
   students?: Student[];
   isExpanded?: boolean;
   loadingStudents?: boolean;
-  errorLoadingStudents?: boolean; // ✅ Flag để phân biệt lỗi vs không có học sinh
+  errorLoadingStudents?: boolean; // ✅ Flag để phân biệt lỗi vs không có học sin
 }
 
 const MyClassesPage = () => {

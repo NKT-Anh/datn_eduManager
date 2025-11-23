@@ -8,7 +8,7 @@ module.exports = async (req, res, next) => {
       return res.status(404).json({ message: "Không tìm thấy cấu hình hệ thống." });
     }
 
-    // 🧭 Lấy học kỳ từ query hoặc body (hỗ trợ cả term và semester)
+    // 🧭 Lấy học kỳ từ query hoặc body (hỗ trợ cả term và semester)d
     let term = req.query.term || req.body.term || req.query.semester || req.body.semester;
 
     // Nếu không có, tự xác định theo tháng hiện tại

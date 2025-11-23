@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { checkMongoConnection } = require('../controllers/indexController');
 
-// Import các router
+// Import các routerd
 const registerRoutes = require('./register');
 const adminRoutes = require('./user/admin');
 const studentRoutes = require('./user/student');

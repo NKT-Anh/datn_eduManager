@@ -33,7 +33,7 @@
 //       const summary = await recomputeSummary(req.body);
 //       res.json(summary);
 //     } catch (err) {
-//       console.error('[recomputeSummary]', err);
+//       console.error('[recomputeSummary]', err);s
 //       res.status(400).json({ message: 'Không thể tính lại điểm tổng hợp', error: err.message });
 //     }
 //   };

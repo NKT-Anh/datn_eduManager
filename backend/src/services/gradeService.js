@@ -164,7 +164,7 @@ async function upsertGradeItem(payload) {
         schoolYear,
       });
     } catch (yearGPAError) {
-      // Không throw error để không ảnh hưởng đến việc lưu điểm
+      // Không throw error để không ảnh hưởng đến việc lưu điểmd
       console.error('⚠️ Lỗi khi tính điểm TB cả năm (không ảnh hưởng đến việc lưu điểm):', yearGPAError);
     }
   }

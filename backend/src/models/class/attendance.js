@@ -36,7 +36,7 @@ const attendanceSchema = new mongoose.Schema({
     oldStatus: { type: String }, // Trạng thái cũ
     newStatus: { type: String }, // Trạng thái mới
     oldNotes: { type: String }, // Ghi chú cũ
-    newNotes: { type: String }, // Ghi chú mới
+    newNotes: { type: String }, // Ghi chú mớis
   }],
 }, { timestamps: true });
 

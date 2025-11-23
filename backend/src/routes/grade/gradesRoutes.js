@@ -16,7 +16,7 @@ router.post('/items',
   gradeController.upsertGradeItem
 );
 
-// ✅ Xóa tất cả điểm của một component cho học sinh - GVBM (môn mình dạy) hoặc Admin
+// ✅ Xóa tất cả điểm của một component cho học sinh - GVBM (môn mình dạy) hoặc Admins
 router.delete('/items', 
   authMiddleware, 
   checkPermission([PERMISSIONS.GRADE_ENTER, PERMISSIONS.GRADE_VIEW], { checkContext: false }), 

@@ -6,7 +6,7 @@ const gradeConfigApi = {
     const res = await axiosClient.get('/grade-config', { params });
     return res.data;
   },
-
+//d
   // ✅ Cập nhật hoặc tạo cấu hình tính điểm (weights, columnCounts, rounding, schoolYear, semester)
   updateConfig: async (payload: {
     weights: Record<string, number>;

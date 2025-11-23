@@ -379,7 +379,7 @@ const StudentGradesPage = () => {
     }
   }, [overallYearAverage, displayYear, backendUser, yearAverageGrades, hk1Grades, hk2Grades, loading]);
 
-  // Tính số môn đạt/không đạt (cho môn không tính TB)
+  // Tính số môn đạt/không đạt (cho môn không tínhTB)
   const getPassFailCount = (gradesList: GradeSummary[]) => {
     const nonAverageGrades = gradesList.filter(g => g.subject.includeInAverage === false);
     const pass = nonAverageGrades.filter(g => g.result === 'D').length;

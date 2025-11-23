@@ -17,7 +17,7 @@ export interface Permission {
   };
   createdAt?: string;
   updatedAt?: string;
-  isDefault?: boolean; // ✅ Nếu true, đây là quyền mặc định từ ROLE_PERMISSIONS
+  isDefault?: boolean; // ✅ Nếu true, đây là quyền mặc định từ ROLE_PERMISSIO
 }
 
 export interface PermissionInput {

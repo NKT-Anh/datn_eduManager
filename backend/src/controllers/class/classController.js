@@ -7,7 +7,7 @@ const Teacher = require("../../models/user/teacher");
 const Setting = require("../../models/settings");
 const SchoolYearModel = require("../../models/schoolYear");
 
-// ✅ Helper: Lấy năm học hiện tại từ settings hoặc active school year
+// ✅ Helper: Lấy năm học hiện tại từ settings hoặc active school years
 async function getCurrentSchoolYear() {
   try {
     // Ưu tiên lấy từ active SchoolYear

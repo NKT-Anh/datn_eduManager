@@ -576,7 +576,7 @@ async function checkSinglePermissionContext(permission, role, user, req, context
     }
   }
 
-  // ✅ Quyền nhập/xem điểm (grade:enter, grade:view)
+  // ✅ Quyền nhập/xem điểm (grade:enter, grade:view)d
   if (permission.includes('grade:')) {
     if (role === 'teacher') {
       if (!user) return { allowed: false, message: 'Không tìm thấy thông tin giáo viên' };

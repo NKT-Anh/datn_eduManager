@@ -461,7 +461,7 @@ const TeacherEnterGradesPage: React.FC = () => {
       }
 
       if (scoreArray.length === 0) {
-        return; // Không có điểm hợp lệ
+        return; // Không có điểm hợp l
       }
 
       console.log('[handleSaveSingleScore] Saving scores with params:', {

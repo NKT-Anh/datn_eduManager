@@ -6,7 +6,7 @@ const Subject = require('../../models/subject/subject');
 const ScheduleConfig = require('../../models/subject/scheduleConfig');
 
 /**
- * ✅ Kiểm tra các ràng buộc khi phân công giảng dạy
+ * ✅ Kiểm tra các ràng buộc khi phân công giảsng dạy
  * @param {string} teacherId - ID giáo viên
  * @param {string} subjectId - ID môn học
  * @param {string} classId - ID lớp học

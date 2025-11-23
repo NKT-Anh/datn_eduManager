@@ -15,7 +15,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import gradeConfigApi from '@/services/gradeConfigApi';
 import schoolConfigApi from '@/services/schoolConfigApi';
-// ✅ Sử dụng hooks thay vì API trực tiếp
+// ✅ Sử dụng hooks thay vì API trực tiếps
 import { useSchoolYears, useSubjects } from '@/hooks';
 import { BarChart3, Save, RotateCcw, Info, Calculator, Plus, X, Eye, EyeOff } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';

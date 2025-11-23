@@ -51,7 +51,7 @@ interface AttendanceRecord {
   };
   date: string;
   period?: number; // Optional - backward compatible
-  session?: 'morning' | 'afternoon'; // New session-based attendance
+  session?: 'morning' | 'afternoon'; // New session-based attendanc
   status: 'present' | 'absent' | 'excused' | 'late';
   notes?: string;
   schoolYear: string;

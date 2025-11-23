@@ -56,7 +56,7 @@ export default function ConductPage() {
   const canEnter = isAdminOrBGH(backendUser) || 
     (isGVCN(backendUser) && hasPermission(PERMISSIONS.CONDUCT_ENTER));
 
-  // ✅ Set năm học mặc định
+  // ✅ Set năm học mặc địnhd
   useEffect(() => {
     const defaultYear = currentYearData?.code || currentYear || (allSchoolYears.length > 0 ? allSchoolYears[allSchoolYears.length - 1].code : '');
     if (defaultYear && !selectedYear) {

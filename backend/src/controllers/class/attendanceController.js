@@ -171,7 +171,7 @@ exports.takeAttendance = async (req, res) => {
       }
     }
 
-    // ✅ Học sinh có mặt không cần tạo bản ghi (mặc định là present)
+    // ✅ Học sinh có mặt không cần tạo bản ghi (mặc định là prsesent)
     // Nếu cần thống kê, có thể query: học sinh không có bản ghi = present
 
     res.json({

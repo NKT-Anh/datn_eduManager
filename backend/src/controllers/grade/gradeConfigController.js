@@ -1,7 +1,7 @@
 const GradeConfig = require('../../models/grade/gradeConfig');
 
 /**
- * Lấy config theo năm học và học kỳ
+ * Lấy config theo năm học và học kỳs
  */
 exports.getGradeConfig = async (req, res) => {
   try {
