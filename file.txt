@@ -1,0 +1,59 @@
+src/
+├── assets/                         # Hình ảnh, âm thanh, font
+│   ├── images/
+│   ├── icons/
+│   └── audio/
+├── constants/                      # Màu sắc, fonts, routes, strings...
+│   ├── colors.ts
+│   ├── fonts.ts
+│   └── routes.ts
+├── navigation/                     # React Navigation (stack, tab,...)
+│   └── AppNavigator.tsx
+├── components/                     # Components dùng chung toàn app
+│   ├── AppButton.tsx
+│   ├── AppHeader.tsx
+│   └── Loading.tsx
+├── features/                       # Tổ chức theo từng tính năng
+│   ├── auth/                       # Đăng nhập, đăng ký
+│   │   ├── components/
+│   │   ├── screens/
+│   │   │   ├── LoginScreen.tsx
+│   │   │   └── RegisterScreen.tsx
+│   │   ├── authService.ts
+│   │   └── authSlice.ts
+│   ├── student/                    # Quản lý học viên
+│   │   ├── components/
+│   │   ├── screens/
+│   │   │   └── StudentProfile.tsx
+│   │   └── studentService.ts
+│   ├── teacher/                    # Quản lý giáo viên
+│   │   ├── components/
+│   │   ├── screens/
+│   │   └── teacherService.ts
+│   ├── course/                     # Quản lý khóa học, bài học
+│   │   ├── components/
+│   │   ├── screens/
+│   │   │   └── CourseDetail.tsx
+│   │   └── courseService.ts
+│   ├── quiz/                       # Làm bài trắc nghiệm, kiểm tra từ vựng
+│   │   ├── components/
+│   │   ├── screens/
+│   │   │   └── QuizScreen.tsx
+│   │   └── quizService.ts
+│   ├── schedule/                   # Xem thời khóa biểu, đặt lịch
+│   │   ├── components/
+│   │   ├── screens/
+│   │   │   └── ScheduleScreen.tsx
+│   │   └── scheduleService.ts
+├── store/                          # Redux hoặc Zustand
+│   ├── store.ts
+│   └── rootReducer.ts
+├── services/                       # Dùng chung (axios instance, firebase, auth, API base,...)
+│   ├── api.ts
+│   └── firebase.ts
+├── utils/                          # Các hàm tiện ích
+│   ├── validators.ts
+│   └── helpers.ts
+└── App.tsx                         # Điểm bắt đầu của app
+npm install @react-navigation/native @react-navigation/stack
+npm install react-native-screens react-native-safe-area-context

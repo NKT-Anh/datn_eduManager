@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>API Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-gray-50">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    function ApiList() {
+      const [apiList, setApiList] = useState([]);
+      const [responses, setResponses] = useState({}); // lưu kết quả Test GET
+
+      useEffect(() => {
+        fetch("/api/docs/list")
+          .then(res => res.json())
+          .then(data => {
+            // gộp theo group và lấy description
+            const grouped = {};
+            data.forEach(api => {
+              if (!grouped[api.group]) grouped[api.group] = { methods: new Set(), description: api.description || "" };
+              api.methods.forEach(m => grouped[api.group].methods.add(m));
+            });
+            const finalList = Object.entries(grouped).map(([group, info]) => ({
+              group,
+              description: info.description,
+              methods: Array.from(info.methods)
+            }));
+            setApiList(finalList);
+          })
+          .catch(err => console.error(err));
+      }, []);
+
+      const handleTestGet = async (group) => {
+        const path = `/api/${group}`;
+        try {
+          const res = await fetch(path, { method: "GET" });
+          let data;
+          const ct = res.headers.get("content-type") || "";
+          if (ct.includes("application/json")) data = await res.json();
+          else data = await res.text();
+          setResponses(prev => ({ ...prev, [group]: data }));
+        } catch(err) {
+          setResponses(prev => ({ ...prev, [group]: { error: err.message } }));
+        }
+      };
+
+      const methodColor = (method) => {
+        switch(method) {
+          case "GET": return "bg-green-100 text-green-700";
+          case "POST": return "bg-blue-100 text-blue-700";
+          case "PUT": return "bg-yellow-100 text-yellow-700";
+          case "DELETE": return "bg-red-100 text-red-700";
+          default: return "bg-gray-100 text-gray-700";
+        }
+      };
+
+      return (
+        <div className="p-6">
+          <h1 className="text-3xl font-bold mb-4 text-blue-600">📚 API Dashboard</h1>
+          <table className="min-w-full bg-white border border-gray-200 rounded-lg shadow-sm">
+            <thead>
+              <tr className="bg-gray-100 text-left">
+                <th className="p-3 border-b">Group</th>
+                <th className="p-3 border-b">Mô tả</th>
+                <th className="p-3 border-b">Phương thức</th>
+                <th className="p-3 border-b text-left">Test GET & Log</th>
+              </tr>
+            </thead>
+            <tbody>
+              {apiList.map(api => (
+                <tr key={api.group} className="hover:bg-gray-50 align-top">
+                  <td className="p-3 border-b font-mono text-blue-600">{api.group}</td>
+                  <td className="p-3 border-b">{api.description}</td>
+                  <td className="p-3 border-b">
+                    {api.methods.map((m, i) => (
+                      <span key={i} className={`inline-block px-2 py-1 mr-1 rounded text-xs font-semibold ${methodColor(m)}`}>
+                        {m}
+                      </span>
+                    ))}
+                  </td>
+                  <td className="p-3 border-b text-left">
+                    <div className="flex gap-3 items-start">
+                      <button
+                        onClick={() => handleTestGet(api.group)}
+                        className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
+                      >
+                        Test GET
+                      </button>
+                      <pre className="bg-gray-100 p-2 rounded text-xs overflow-auto max-h-40 flex-1 w-80">
+                        {responses[api.group] ? JSON.stringify(responses[api.group], null, 2) : ""}
+                      </pre>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<ApiList />, document.getElementById("root"));
+  </script>
+</body>
+</html>

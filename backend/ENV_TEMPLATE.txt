@@ -1,0 +1,20 @@
+# Copy file này thành .env và điền thông tin của bạn
+
+# MongoDB Connection String
+# Local MongoDB:
+# MONGODB_URI=mongodb://localhost:27017/eduManager
+
+# MongoDB Atlas (Cloud):
+# MONGODB_URI=mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/eduManager?retryWrites=true&w=majority
+
+# Example:
+# MONGODB_URI=mongodb+srv://admin:yourpassword@cluster0.abc123.mongodb.net/eduManager?retryWrites=true&w=majority
+
+# Server Port
+PORT=3000
+
+# Firebase Admin (nếu có)
+# FIREBASE_PROJECT_ID=your-project-id
+# FIREBASE_PRIVATE_KEY=your-private-key
+# FIREBASE_CLIENT_EMAIL=your-client-email
+
