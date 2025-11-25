@@ -9,16 +9,27 @@ const Teacher = require("../../models/user/teacher");
 exports.getRoomsByTeacher = async (req, res) => {
   try {
     const { teacherId } = req.params;
+    const { examId } = req.query; // ✅ Hỗ trợ filter theo examId
     
     if (!teacherId) {
       return res.status(400).json({ error: "Thiếu teacherId." });
     }
 
     // ✅ Tìm tất cả Exam có status = "published" (đã công bố)
-    const publishedExams = await Exam.find({ status: "published" })
+    // ✅ Nếu có examId trong query, chỉ lấy exam đó
+    const examQuery = { status: "published" };
+    if (examId) {
+      examQuery._id = examId;
+    }
+    
+    const publishedExams = await Exam.find(examQuery)
       .select("_id")
       .lean();
     const publishedExamIds = publishedExams.map(ex => ex._id);
+    
+    if (publishedExamIds.length === 0) {
+      return res.json({ success: true, data: [], total: 0 });
+    }
 
     // ✅ Tìm tất cả ExamRoom mà giáo viên này là giám thị
     // ✅ CHỈ lấy phòng thi của kỳ thi đã công bố (status = "published")
@@ -125,16 +136,27 @@ exports.getRoomsByTeacher = async (req, res) => {
 exports.getSchedulesByTeacher = async (req, res) => {
   try {
     const { teacherId } = req.params;
+    const { examId } = req.query; // ✅ Hỗ trợ filter theo examId
     
     if (!teacherId) {
       return res.status(400).json({ error: "Thiếu teacherId." });
     }
 
     // ✅ Tìm tất cả Exam có status = "published" (đã công bố)
-    const publishedExams = await Exam.find({ status: "published" })
+    // ✅ Nếu có examId trong query, chỉ lấy exam đó
+    const examQuery = { status: "published" };
+    if (examId) {
+      examQuery._id = examId;
+    }
+    
+    const publishedExams = await Exam.find(examQuery)
       .select("_id")
       .lean();
     const publishedExamIds = publishedExams.map(ex => ex._id);
+    
+    if (publishedExamIds.length === 0) {
+      return res.json({ success: true, data: [], total: 0 });
+    }
 
     // ✅ Tìm tất cả ExamRoom mà giáo viên này là giám thị
     // ✅ CHỈ lấy phòng thi của kỳ thi đã công bố (status = "published")

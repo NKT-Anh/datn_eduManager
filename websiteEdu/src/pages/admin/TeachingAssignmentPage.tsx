@@ -400,15 +400,17 @@ const filteredAssignments = useMemo(() => {
   useEffect(() => {
     if (!filterYear) return; // Đảm bảo filterYear đã được set
     
+    // Lọc assignments theo filterYear và filterSemester
+    const currentFiltered = assignments.filter(
+      (a) =>
+        a.year === filterYear &&
+        (!filterSemester || a.semester === filterSemester)
+    );
+    
+    if (currentFiltered.length === 0) return;
+    
     const checkGradeCounts = async () => {
       const locks: Record<string, { gradeCount: number; locked: boolean }> = {};
-      
-      // Sử dụng filteredAssignments từ scope bên ngoài
-      const currentFiltered = assignments.filter(
-        (a) =>
-          a.year === filterYear &&
-          (!filterSemester || a.semester === filterSemester)
-      );
       
       for (const assignment of currentFiltered) {
         if (assignment._id) {
@@ -425,9 +427,7 @@ const filteredAssignments = useMemo(() => {
       setAssignmentLocks(locks);
     };
 
-    if (currentFiltered.length > 0) {
-      checkGradeCounts();
-    }
+    checkGradeCounts();
   }, [assignments, filterYear, filterSemester]);
 
 // ✅ Tính toán số tiết giáo viên local dựa trên assignments hiện tại trong bảng

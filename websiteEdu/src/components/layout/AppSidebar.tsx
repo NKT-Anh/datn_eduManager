@@ -38,6 +38,7 @@ import {
   TrendingUp,
   PieChart,
   Activity,
+  Mail,
 } from "lucide-react";
 import logoSchool from "@/assets/logo_school.png";
 import { useAuth } from "@/contexts/AuthContext";
@@ -122,10 +123,17 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
         ],
       },
       {
+        label: "Giao tiếp",
+        items: [
+          { id: "send-email", title: "Gửi email hàng loạt", url: `${prefix}/send-email`, icon: Mail },
+          { id: "email-stats", title: "Thống kê email", url: `${prefix}/email-stats`, icon: BarChart3 },
+          { id: "notifications", title: "Thông báo", url: `${prefix}/notifications`, icon: Bell },
+        ],
+      },
+      {
         label: "Khác",
         items: [
           { id: "incidents", title: "Sự cố", url: `${prefix}/incidents`, icon: UserCheck },
-          { id: "notifications", title: "Thông báo", url: `${prefix}/notifications`, icon: Bell },
         ],
       },
       {
@@ -170,10 +178,15 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
         ],
       },
       {
+        label: "Giao tiếp",
+        items: [
+          { id: "notifications", title: "Thông báo", url: `${prefix}/notifications`, icon: Bell },
+        ],
+      },
+      {
         label: "Khác",
         items: [
           { id: "incidents", title: "Sự cố", url: `${prefix}/incidents`, icon: UserCheck },
-          { id: "notifications", title: "Thông báo", url: `${prefix}/notifications`, icon: Bell },
         ],
       },
       {
@@ -217,7 +230,7 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
         ],
       },
       {
-        label: "Khác",
+        label: "Giao tiếp",
         items: [
           { id: "notifications", title: "Thông báo", url: `${prefix}/notifications`, icon: Bell },
         ],
@@ -257,10 +270,15 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
         ],
       },
       {
+        label: "Giao tiếp",
+        items: [
+          { id: "notifications", title: "Thông báo", url: `${prefix}/notifications`, icon: Bell },
+        ],
+      },
+      {
         label: "Khác",
         items: [
           { id: "teaching-subjects", title: "Môn giảng dạy", url: `${prefix}/teaching-subjects`, icon: BookOpen },
-          { id: "notifications", title: "Thông báo", url: `${prefix}/notifications`, icon: Bell },
         ],
       },
       {
@@ -305,6 +323,16 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
                 { id: "classes", title: "Lớp học", url: `${prefix}/classes`, icon: School },
                 { id: "rooms", title: "Phòng học", url: `${prefix}/rooms`, icon: School },
                 { id: "subjects", title: "Môn học", url: `${prefix}/subjects`, icon: BookOpen },
+              ],
+            },
+            {
+              id: "communication",
+              title: "Giao tiếp",
+              icon: Mail,
+              children: [
+                { id: "send-email", title: "Gửi email hàng loạt", url: `${prefix}/send-email`, icon: Mail },
+                { id: "email-history", title: "Lịch sử email", url: `${prefix}/email-history`, icon: Mail },
+                { id: "notifications", title: "Thông báo", url: `${prefix}/notifications`, icon: Bell },
               ],
             },
             {

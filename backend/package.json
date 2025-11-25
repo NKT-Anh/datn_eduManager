@@ -21,14 +21,17 @@
     "express": "^5.1.0",
     "express-list-endpoints": "^7.1.1",
     "firebase-admin": "^13.4.0",
+    "googleapis": "^144.0.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.16.0",
     "multer": "^2.0.2",
+    "node-cron": "^3.0.3",
     "nodemailer": "^7.0.10",
     "openai": "^6.9.1",
     "puppeteer": "^24.27.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
+    "tar": "^7.5.2",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

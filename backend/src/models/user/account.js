@@ -9,6 +9,12 @@ const accountSchema = new mongoose.Schema({
         enum: ['admin', 'student', 'teacher'],
         required: true,
     },
+    // ✅ OTP tạm thời cho reset password qua email
+    tempOTP: { type: String },
+    tempOTPExpiry: { type: Date },
+    // ✅ OTP cho đăng nhập
+    loginOTP: { type: String },
+    loginOTPExpiry: { type: Date },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now }
 });

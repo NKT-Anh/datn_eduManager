@@ -54,8 +54,21 @@ saveOrUpdateSchedule: async (payload: SchedulePayload) => {
   try {
     const { classId, year, semester, timetable } = payload;
 
+    if (!classId || !year || !semester || !timetable) {
+      throw new Error('Thiếu thông tin bắt buộc: classId, year, semester, timetable');
+    }
+
     // 1️⃣ Lấy toàn bộ TKB trong cùng năm học + học kỳ
-    const allSchedules = await scheduleApi.getSchedulesByYearSemester(year, semester);
+    let allSchedules = [];
+    try {
+      allSchedules = await scheduleApi.getSchedulesByYearSemester(year, semester);
+    } catch (err: any) {
+      // Nếu lỗi 404 hoặc không tìm thấy, mảng rỗng là OK
+      if (err.response?.status !== 404) {
+        console.warn('⚠️ Không thể lấy danh sách lịch để kiểm tra trùng:', err);
+      }
+      allSchedules = [];
+    }
 
     // 🧩 Các tên giáo viên hoặc môn cần bỏ qua khi kiểm tra trùng
     const ignoreTeachers = ["Hoạt động", "Chào cờ", "Sinh hoạt", "Thể dục toàn trường"];
@@ -111,7 +124,16 @@ saveOrUpdateSchedule: async (payload: SchedulePayload) => {
     }
 
     // 4️⃣ Không trùng -> lưu như cũ
-    const existing = await scheduleApi.getScheduleByClass(classId, year, semester);
+    let existing = null;
+    try {
+      existing = await scheduleApi.getScheduleByClass(classId, year, semester);
+    } catch (err: any) {
+      // 404 là bình thường nếu chưa có lịch
+      if (err.response?.status !== 404) {
+        console.warn('⚠️ Lỗi khi kiểm tra lịch hiện có:', err);
+      }
+      existing = null;
+    }
 
     if (existing && existing._id) {
       const updated = await scheduleApi.updateSchedule(existing._id, payload);
@@ -121,12 +143,19 @@ saveOrUpdateSchedule: async (payload: SchedulePayload) => {
       return { message: "✅ Đã tạo mới thời khóa biểu thành công!", data: created };
     }
   } catch (error: any) {
-    if (error.response?.status === 404) {
-      const created = await scheduleApi.saveSchedule(payload);
-      return { message: "✅ Đã tạo mới thời khóa biểu thành công!", data: created };
-    }
     console.error("❌ Lỗi khi lưu hoặc cập nhật thời khóa biểu:", error);
-    throw error;
+    
+    // Nếu lỗi là do trùng giáo viên, throw lại để hiển thị message
+    if (error.message && error.message.includes('trùng giáo viên')) {
+      throw error;
+    }
+    
+    // Các lỗi khác
+    throw new Error(
+      error.response?.data?.message || 
+      error.message || 
+      'Không thể lưu thời khóa biểu. Vui lòng kiểm tra kết nối và thử lại.'
+    );
   }
 },
 

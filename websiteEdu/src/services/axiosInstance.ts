@@ -2,7 +2,7 @@
 import axios from "axios";
 import { getAuth, getIdToken } from "firebase/auth";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -10,6 +10,9 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+// Log để debug
+console.log('🔧 API Base URL:', API_BASE_URL);
 
 // 🧩 Gắn token Firebase - Luôn lấy token mới từ Firebase để đảm bảo không hết hạn
 api.interceptors.request.use(

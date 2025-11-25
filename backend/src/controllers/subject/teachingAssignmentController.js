@@ -169,11 +169,41 @@ exports.getAllAssignments = async (req, res) => {
 //         res.status(400).json({ message:"Lỗi khi lấy danh sách", error: err.message });
 //     }
 // }
+/**
+ * ✅ Kiểm tra danh sách phân công có bị khóa không
+ * @param {string} year - Năm học
+ * @param {string} semester - Học kỳ
+ * @returns {Promise<{isLocked: boolean, assignment?: object}>}
+ */
+async function checkAssignmentLock(year, semester) {
+  // Kiểm tra xem có assignment nào trong năm học/học kỳ này bị khóa không
+  // Nếu có ít nhất 1 assignment bị khóa, coi như toàn bộ danh sách bị khóa
+  const lockedAssignment = await TeachingAssignment.findOne({
+    year,
+    semester,
+    isLocked: true
+  }).lean();
+  
+  return {
+    isLocked: !!lockedAssignment,
+    assignment: lockedAssignment
+  };
+}
+
 exports.createAssignment = async (req, res) => {
   try {
     const { teacherId, subjectId, classId, year, semester } = req.body;
     if (!teacherId || !subjectId || !classId || !year || !semester) {
       return res.status(400).json({ error: "Không được để trống" });
+    }
+
+    // 🔒 Kiểm tra danh sách phân công có bị khóa không
+    const lockCheck = await checkAssignmentLock(year, semester);
+    if (lockCheck.isLocked) {
+      return res.status(403).json({ 
+        error: "Danh sách phân công giảng dạy đã bị khóa. Không thể thêm phân công mới.",
+        locked: true
+      });
     }
     
     // ✅ Kiểm tra nếu là Trưởng bộ môn, chỉ có thể phân công cho giáo viên trong tổ
@@ -260,6 +290,15 @@ exports.updateAssignment = async (req, res) => {
     const oldAssignment = await TeachingAssignment.findById(id);
     if (!oldAssignment) {
       return res.status(404).json({ error: "Không tìm thấy phân công" });
+    }
+
+    // 🔒 Kiểm tra danh sách phân công có bị khóa không
+    const lockCheck = await checkAssignmentLock(oldAssignment.year, oldAssignment.semester);
+    if (lockCheck.isLocked) {
+      return res.status(403).json({ 
+        error: "Danh sách phân công giảng dạy đã bị khóa. Không thể cập nhật phân công.",
+        locked: true
+      });
     }
     
     // 🔒 Kiểm tra xem đã có điểm nào được nhập cho phân công cũ chưa
@@ -398,6 +437,15 @@ exports.deleteAssignment = async (req, res) => {
     if (!assignment) {
       return res.status(404).json({ message: "Không tìm thấy phân công" });
     }
+
+    // 🔒 Kiểm tra danh sách phân công có bị khóa không
+    const lockCheck = await checkAssignmentLock(assignment.year, assignment.semester);
+    if (lockCheck.isLocked) {
+      return res.status(403).json({ 
+        error: "Danh sách phân công giảng dạy đã bị khóa. Không thể xóa phân công.",
+        locked: true
+      });
+    }
     
     // 🔒 Kiểm tra xem đã có điểm nào được nhập cho phân công này chưa
     const GradeItem = require('../../models/grade/gradeItem');
@@ -460,11 +508,29 @@ exports.deleteAssignment = async (req, res) => {
       .json({ message: "Lỗi khi xóa phân công", error: err.message });
   }
 };
+/**
+ * ✅ Kiểm tra danh sách phân công có bị khóa không (helper function)
+ */
+exports.checkAssignmentLock = checkAssignmentLock;
+
 exports.createBulkAssignments = async (req, res) => {
   try {
     const payloads = req.body; // mảng TeachingAssignmentPayload
     if (!Array.isArray(payloads) || payloads.length === 0) {
       return res.status(400).json({ message: "Dữ liệu phải là mảng và không rỗng" });
+    }
+
+    // Lấy year và semester từ payload đầu tiên (giả sử tất cả cùng year/semester)
+    const firstPayload = payloads[0];
+    if (firstPayload && firstPayload.year && firstPayload.semester) {
+      // 🔒 Kiểm tra danh sách phân công có bị khóa không
+      const lockCheck = await checkAssignmentLock(firstPayload.year, firstPayload.semester);
+      if (lockCheck.isLocked) {
+        return res.status(403).json({ 
+          error: "Danh sách phân công giảng dạy đã bị khóa. Không thể thêm phân công mới.",
+          locked: true
+        });
+      }
     }
 
     // ✅ Validate duplicate - Tối ưu: Query một lần thay vì loop
@@ -841,6 +907,167 @@ exports.checkMissingTeachers = async (req, res) => {
     console.error('❌ Lỗi khi kiểm tra môn thiếu giáo viên:', err);
     res.status(500).json({
       error: 'Lỗi khi kiểm tra môn thiếu giáo viên',
+      details: err.message,
+    });
+  }
+};
+
+/**
+ * ✅ Khóa danh sách phân công giảng dạy
+ * Chỉ Admin mới có quyền khóa
+ */
+exports.lockAssignments = async (req, res) => {
+  try {
+    const { year, semester } = req.body;
+    
+    if (!year || !semester) {
+      return res.status(400).json({ error: 'Vui lòng cung cấp năm học và học kỳ' });
+    }
+
+    // Kiểm tra quyền - chỉ Admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Chỉ Admin mới có quyền khóa danh sách phân công' });
+    }
+
+    // Kiểm tra xem đã bị khóa chưa
+    const existingLock = await TeachingAssignment.findOne({
+      year,
+      semester,
+      isLocked: true
+    });
+
+    if (existingLock) {
+      return res.status(400).json({ 
+        error: 'Danh sách phân công giảng dạy đã bị khóa',
+        lockedBy: existingLock.lockedBy,
+        lockedAt: existingLock.lockedAt
+      });
+    }
+
+    // Khóa tất cả assignments trong năm học và học kỳ này
+    const result = await TeachingAssignment.updateMany(
+      { year, semester },
+      {
+        isLocked: true,
+        lockedAt: new Date(),
+        lockedBy: req.user.accountId
+      }
+    );
+
+    res.json({
+      message: `Đã khóa ${result.modifiedCount} phân công giảng dạy`,
+      year,
+      semester,
+      lockedCount: result.modifiedCount,
+      lockedAt: new Date(),
+      lockedBy: req.user.accountId
+    });
+  } catch (err) {
+    console.error('❌ Lỗi khi khóa danh sách phân công:', err);
+    res.status(500).json({
+      error: 'Lỗi khi khóa danh sách phân công',
+      details: err.message,
+    });
+  }
+};
+
+/**
+ * ✅ Mở khóa danh sách phân công giảng dạy
+ * Chỉ Admin mới có quyền mở khóa
+ */
+exports.unlockAssignments = async (req, res) => {
+  try {
+    const { year, semester } = req.body;
+    
+    if (!year || !semester) {
+      return res.status(400).json({ error: 'Vui lòng cung cấp năm học và học kỳ' });
+    }
+
+    // Kiểm tra quyền - chỉ Admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Chỉ Admin mới có quyền mở khóa danh sách phân công' });
+    }
+
+    // Kiểm tra xem có bị khóa không
+    const existingLock = await TeachingAssignment.findOne({
+      year,
+      semester,
+      isLocked: true
+    });
+
+    if (!existingLock) {
+      return res.status(400).json({ 
+        error: 'Danh sách phân công giảng dạy chưa bị khóa'
+      });
+    }
+
+    // Mở khóa tất cả assignments trong năm học và học kỳ này
+    const result = await TeachingAssignment.updateMany(
+      { year, semester },
+      {
+        isLocked: false,
+        unlockAt: new Date(),
+        unlockBy: req.user.accountId,
+        // Giữ lại thông tin lockedAt và lockedBy để audit
+      }
+    );
+
+    res.json({
+      message: `Đã mở khóa ${result.modifiedCount} phân công giảng dạy`,
+      year,
+      semester,
+      unlockedCount: result.modifiedCount,
+      unlockAt: new Date(),
+      unlockBy: req.user.accountId
+    });
+  } catch (err) {
+    console.error('❌ Lỗi khi mở khóa danh sách phân công:', err);
+    res.status(500).json({
+      error: 'Lỗi khi mở khóa danh sách phân công',
+      details: err.message,
+    });
+  }
+};
+
+/**
+ * ✅ Kiểm tra trạng thái khóa của danh sách phân công
+ */
+exports.getLockStatus = async (req, res) => {
+  try {
+    const { year, semester } = req.query;
+    
+    if (!year || !semester) {
+      return res.status(400).json({ error: 'Vui lòng cung cấp năm học và học kỳ' });
+    }
+
+    const lockCheck = await checkAssignmentLock(year, semester);
+    
+    if (lockCheck.isLocked && lockCheck.assignment) {
+      // Populate thông tin người khóa
+      const Account = require('../../models/user/account');
+      const lockedByAccount = await Account.findById(lockCheck.assignment.lockedBy)
+        .select('name email')
+        .lean();
+
+      res.json({
+        isLocked: true,
+        lockedAt: lockCheck.assignment.lockedAt,
+        lockedBy: lockCheck.assignment.lockedBy,
+        lockedByInfo: lockedByAccount,
+        year,
+        semester
+      });
+    } else {
+      res.json({
+        isLocked: false,
+        year,
+        semester
+      });
+    }
+  } catch (err) {
+    console.error('❌ Lỗi khi kiểm tra trạng thái khóa:', err);
+    res.status(500).json({
+      error: 'Lỗi khi kiểm tra trạng thái khóa',
       details: err.message,
     });
   }

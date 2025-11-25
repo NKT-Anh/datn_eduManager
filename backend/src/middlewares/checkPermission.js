@@ -127,6 +127,7 @@ module.exports = (requiredPermissions, options = {}) => {
               PERMISSIONS.STUDENT_VIEW,
               PERMISSIONS.TEACHER_VIEW,
               PERMISSIONS.SUBJECT_VIEW,
+              PERMISSIONS.DEPARTMENT_VIEW, // ✅ BGH có thể xem tổ bộ môn
               PERMISSIONS.TEACHING_ASSIGNMENT_VIEW,
               PERMISSIONS.SCHEDULE_VIEW_ALL,
               PERMISSIONS.GRADE_VIEW_ALL,
@@ -142,6 +143,7 @@ module.exports = (requiredPermissions, options = {}) => {
               PERMISSIONS.NOTIFICATION_UPDATE,
               PERMISSIONS.NOTIFICATION_VIEW,
               PERMISSIONS.DASHBOARD_VIEW_ALL,
+              PERMISSIONS.ROLE_MANAGE, // ✅ BGH có thể xem settings (read-only)
             ];
             const bghHasAccess = requireAll
               ? permissions.every(p => bghPermissions.includes(p))

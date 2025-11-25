@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   Settings,
@@ -53,8 +54,6 @@ const SettingsPage = () => {
       port: 587,
       user: '',
       pass: '',
-      fromEmail: '',
-      fromName: '',
       secure: false
     },
     studentEmailDomain: '',
@@ -556,37 +555,99 @@ const SettingsPage = () => {
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label>SMTP Host</Label>
-                <Input value={settings.smtp.host} onChange={(e) => handleChange('smtp.host', e.target.value)} />
+                <Label>SMTP Host <span className="text-red-500">*</span></Label>
+                <Input 
+                  value={settings.smtp.host} 
+                  onChange={(e) => handleChange('smtp.host', e.target.value)}
+                  placeholder="smtp.gmail.com"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Gmail: smtp.gmail.com | Outlook: smtp-mail.outlook.com
+                </p>
               </div>
               <div>
-                <Label>SMTP Port</Label>
-                <Input type="number" value={settings.smtp.port} onChange={(e) => handleChange('smtp.port', Number(e.target.value))} />
+                <Label>SMTP Port <span className="text-red-500">*</span></Label>
+                <Input 
+                  type="number" 
+                  value={settings.smtp.port} 
+                  onChange={(e) => handleChange('smtp.port', Number(e.target.value))}
+                  placeholder="587"
+                />
+                <p className="text-xs text-gray-500 mt-1">587 (TLS) hoặc 465 (SSL)</p>
               </div>
               <div>
-                <Label>SMTP User</Label>
-                <Input value={settings.smtp.user} onChange={(e) => handleChange('smtp.user', e.target.value)} />
+                <Label>SMTP User (Email) <span className="text-red-500">*</span></Label>
+                <Input 
+                  value={settings.smtp.user} 
+                  onChange={(e) => handleChange('smtp.user', e.target.value)}
+                  placeholder="your-email@gmail.com"
+                  type="email"
+                />
+                <p className="text-xs text-gray-500 mt-1">Email đăng nhập SMTP</p>
               </div>
               <div>
-                <Label>SMTP Pass</Label>
-                <Input type="password" value={settings.smtp.pass} onChange={(e) => handleChange('smtp.pass', e.target.value)} />
-              </div>
-              <div>
-                <Label>From Email</Label>
-                <Input value={settings.smtp.fromEmail} onChange={(e) => handleChange('smtp.fromEmail', e.target.value)} />
-              </div>
-              <div>
-                <Label>From Name</Label>
-                <Input value={settings.smtp.fromName} onChange={(e) => handleChange('smtp.fromName', e.target.value)} />
+                <Label>SMTP Pass (App Password) <span className="text-red-500">*</span></Label>
+                <Input 
+                  type="password" 
+                  value={settings.smtp.pass} 
+                  onChange={(e) => handleChange('smtp.pass', e.target.value)}
+                  placeholder="App Password (16 ký tự)"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Với Gmail: Dùng App Password, không dùng mật khẩu thường
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <Switch checked={!!settings.smtp.secure} onCheckedChange={(v) => handleChange('smtp.secure', v)} />
-                <Label>SSL/TLS</Label>
+                <Label>SSL/TLS (Bật nếu dùng port 465)</Label>
               </div>
             </div>
-            <div className="mt-4 flex items-center justify-between">
-              <div />
-              <Button variant="outline">Test Email</Button>
+            <div className="mt-4 space-y-2">
+              <div className="flex gap-2">
+                <Input
+                  value={settings.testEmail || ''}
+                  onChange={(e) => handleChange('testEmail', e.target.value)}
+                  placeholder="Nhập email để test (VD: test@example.com)"
+                  type="email"
+                  className="flex-1"
+                />
+                <Button 
+                  variant="outline"
+                  onClick={async () => {
+                    if (!settings.testEmail || !settings.testEmail.includes('@')) {
+                      toast({ 
+                        title: 'Lỗi', 
+                        description: 'Vui lòng nhập email hợp lệ để test',
+                        variant: 'destructive' 
+                      });
+                      return;
+                    }
+                    try {
+                      setLoading(true);
+                      await settingApi.sendTestEmail(settings.testEmail);
+                      toast({ 
+                        title: 'Thành công', 
+                        description: `Email test đã được gửi đến ${settings.testEmail}` 
+                      });
+                    } catch (err: any) {
+                      console.error(err);
+                      toast({ 
+                        title: 'Lỗi', 
+                        description: err.response?.data?.message || 'Không gửi được email. Vui lòng kiểm tra cấu hình SMTP.',
+                        variant: 'destructive' 
+                      });
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                  disabled={loading || !settings.testEmail}
+                >
+                  {loading ? 'Đang gửi...' : 'Test Email'}
+                </Button>
+              </div>
+              <p className="text-xs text-gray-500">
+                💡 Nhập email và click "Test Email" để kiểm tra cấu hình SMTP
+              </p>
             </div>
           </CardContent>
         </Card>

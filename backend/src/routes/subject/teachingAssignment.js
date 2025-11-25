@@ -156,4 +156,39 @@ router.post("/auto-assign",
   autoAssignTeachingController.autoAssignTeaching
 );
 
+// ✅ Khóa danh sách phân công giảng dạy - Chỉ Admin
+router.post("/lock", 
+  authMiddleware, 
+  checkPermission(PERMISSIONS.TEACHING_ASSIGNMENT_UPDATE), 
+  auditLog({
+    action: 'LOCK',
+    resource: 'TEACHING_ASSIGNMENT',
+    getDescription: (req) => `Khóa danh sách phân công giảng dạy: ${req.body.year} - HK${req.body.semester}`,
+  }),
+  teachingAssignmentController.lockAssignments
+);
+
+// ✅ Mở khóa danh sách phân công giảng dạy - Chỉ Admin
+router.post("/unlock", 
+  authMiddleware, 
+  checkPermission(PERMISSIONS.TEACHING_ASSIGNMENT_UPDATE), 
+  auditLog({
+    action: 'UNLOCK',
+    resource: 'TEACHING_ASSIGNMENT',
+    getDescription: (req) => `Mở khóa danh sách phân công giảng dạy: ${req.body.year} - HK${req.body.semester}`,
+  }),
+  teachingAssignmentController.unlockAssignments
+);
+
+// ✅ Kiểm tra trạng thái khóa - Tất cả roles có quyền xem
+router.get("/lock-status", 
+  authMiddleware, 
+  checkPermission([
+    PERMISSIONS.TEACHING_ASSIGNMENT_VIEW,
+    PERMISSIONS.TEACHING_ASSIGNMENT_VIEW_DEPARTMENT,
+    PERMISSIONS.TEACHING_ASSIGNMENT_VIEW_SELF
+  ], { checkContext: false }), 
+  teachingAssignmentController.getLockStatus
+);
+
 module.exports = router;

@@ -55,7 +55,14 @@ const SettingSchema = new mongoose.Schema({
   gradeEntryEndHK1: { type: String, default: '' },
   gradeEntryStartHK2: { type: String, default: '' },
   gradeEntryEndHK2: { type: String, default: '' },
-  allowAdminGradeOverride: { type: Boolean, default: true }
+  allowAdminGradeOverride: { type: Boolean, default: true },
+
+  // ✅ Cấu hình thời gian nhập hạnh kiểm
+  conductEntryStartHK1: { type: String, default: '' }, // Format: 'YYYY-MM-DD'
+  conductEntryEndHK1: { type: String, default: '' },
+  conductEntryStartHK2: { type: String, default: '' },
+  conductEntryEndHK2: { type: String, default: '' },
+  allowAdminConductOverride: { type: Boolean, default: true } // Admin có thể mở khóa khi cần
 
 }, { timestamps: true });
 

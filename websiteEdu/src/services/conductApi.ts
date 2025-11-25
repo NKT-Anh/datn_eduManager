@@ -21,11 +21,42 @@ const conductApi = {
   // ✅ Cập nhật hạnh kiểm (GVCN nhập, Admin sửa)
   updateConduct: async (id: string, payload: {
     conduct?: string;
+    conductNote?: string;
+    action?: 'save' | 'submit';
     gpa?: number;
     rank?: number;
     note?: string;
   }) => {
     const res = await axiosClient.put(`/conducts/${id}`, payload);
+    return res.data;
+  },
+
+  // ✅ Tính toán đề xuất hạnh kiểm tự động
+  calculateSuggested: async (params: {
+    studentId: string;
+    year: string;
+    semester: string;
+  }) => {
+    const res = await axiosClient.get('/conducts/calculate-suggested', { params });
+    return res.data;
+  },
+
+  // ✅ Phê duyệt hạnh kiểm (BGH)
+  approveConduct: async (id: string, payload: {
+    action: 'approve' | 'reject' | 'lock';
+    comment?: string;
+  }) => {
+    const res = await axiosClient.post(`/conducts/${id}/approve`, payload);
+    return res.data;
+  },
+
+  // ✅ Lấy danh sách hạnh kiểm chờ phê duyệt
+  getPendingConducts: async (params?: {
+    year?: string;
+    semester?: string;
+    classId?: string;
+  }) => {
+    const res = await axiosClient.get('/conducts/pending/list', { params });
     return res.data;
   },
 

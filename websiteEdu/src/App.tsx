@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 
 import LoginForm from "@/components/auth/LoginForm";
+import ForgotPasswordPage from "@/pages/ForgotPasswordPage";
 import AppLayout from "@/components/layout/AppLayout";
 
 // 🏫 Admin Pages
@@ -24,29 +25,32 @@ import TeacherAvailabilityPage from "./pages/admin/TeacherAvailabilityPage";
 import AdminAttendancePage from "./pages/admin/AdminAttendancePage";
 import ProfilePage from "./pages/ProfilePage";
 import SettingsPage from "./pages/SettingsPage";
-import PermissionManagementPage from "./pages/admin/PermissionManagementPage";
-import RolePermissionsPage from "./pages/admin/RolePermissionsPage";
-import RoomListPage from "./pages/admin/RoomListPage";
-import BatchAccountPage from "./pages/admin/BatchAccountPage";
-import SchoolYearPage from "./pages/admin/SchoolYearPage";
-import GradeConfigPage from "./pages/grades/GradeConfigPage";
-import AdminGradesPage from "./pages/admin/AdminGradesPage";
-import GradesStatisticsPage from "./pages/admin/GradesStatisticsPage";
-import StatisticsDashboardPage from "./pages/admin/StatisticsDashboardPage";
-import InitGradeTablePage from "./pages/admin/InitGradeTablePage";
-import AuditLogPage from "./pages/admin/AuditLogPage";
-import ExamListPage from "./pages/admin/exam/ExamListPage";
-import ExamDashboard from "./pages/admin/exam/ExamDashboard";
-import ExamDetailPage from "./pages/admin/exam/ExamDetailPage";
-import AllExamSchedulesPage from "./pages/admin/exam/allPage/AllExamSchedulesPage";
-import ExamSchedulePage from "./pages/admin/exam/ExamSchedulePage";
-import ExamRoomAssignmentPage from "./pages/admin/exam/ExamRoomAssignmentPage";
-import ExamSupervisorAssignmentPage from "./pages/admin/exam/ExamSupervisorAssignmentPage";
-import ProposalHistoryPage from "./pages/admin/ProposalHistoryPage";
-import ClassPeriodsPage from "./pages/admin/ClassPeriodsPage";
-import HomeroomClassPage from "./pages/gvcn/HomeroomClassPage";
-import HomeroomGradesPage from "./pages/gvcn/HomeroomGradesPage";
-import HomeroomAttendancePage from "./pages/gvcn/HomeroomAttendancePage";
+import SendBulkEmailPage from "./pages/admin/SendBulkEmailPage.tsx";
+import EmailHistoryPage from "./pages/admin/EmailHistoryPage.tsx";
+import PermissionManagementPage from "./pages/admin/PermissionManagementPage.tsx";
+import RolePermissionsPage from "./pages/admin/RolePermissionsPage.tsx";
+import RoomListPage from "./pages/admin/RoomListPage.tsx";
+import BatchAccountPage from "./pages/admin/BatchAccountPage.tsx";
+import SchoolYearPage from "./pages/admin/SchoolYearPage.tsx";
+import GradeConfigPage from "./pages/grades/GradeConfigPage.tsx";
+import AdminGradesPage from "./pages/admin/AdminGradesPage.tsx";
+import GradesStatisticsPage from "./pages/admin/GradesStatisticsPage.tsx";
+import StatisticsDashboardPage from "./pages/admin/StatisticsDashboardPage.tsx";
+import InitGradeTablePage from "./pages/admin/InitGradeTablePage.tsx";
+import AuditLogPage from "./pages/admin/AuditLogPage.tsx";
+import ExamListPage from "./pages/admin/exam/ExamListPage.tsx";
+import ExamDashboard from "./pages/admin/exam/ExamDashboard.tsx";
+import ExamDetailPage from "./pages/admin/exam/ExamDetailPage.tsx";
+import AllExamSchedulesPage from "./pages/admin/exam/allPage/AllExamSchedulesPage.tsx";
+import ExamSchedulePage from "./pages/admin/exam/ExamSchedulePage.tsx";
+import ExamRoomAssignmentPage from "./pages/admin/exam/ExamRoomAssignmentPage.tsx";
+import ExamSupervisorAssignmentPage from "./pages/admin/exam/ExamSupervisorAssignmentPage.tsx";
+import ProposalHistoryPage from "./pages/admin/ProposalHistoryPage.tsx";
+import ClassPeriodsPage from "./pages/admin/ClassPeriodsPage.tsx";
+import HomeroomClassPage from "./pages/gvcn/HomeroomClassPage.tsx";
+import HomeroomGradesPage from "./pages/gvcn/HomeroomGradesPage.tsx";
+import HomeroomAttendancePage from "./pages/gvcn/HomeroomAttendancePage.tsx";
+import HomeroomConductPage from "./pages/gvcn/HomeroomConductPage.tsx";
 
 // 👩‍🏫 Teacher Pages
 import TeacherDashboard from "./pages/teacher/TeacherDashboard";
@@ -55,19 +59,21 @@ import TeacherSchedulePage from "./pages/teacher/TeacherSchedulePage";
 import MyClassesPage from "./pages/teacher/MyClassesPage";
 
 // 👨‍🏫 QLBM Pages
-import ProposalsPage from "./pages/qlbm/ProposalsPage";
-import DepartmentListPage from "./pages/qlbm/DepartmentListPage";
-import DepartmentTeachersPage from "./pages/qlbm/DepartmentTeachersPage";
-import TeachingAssignmentsPage from "./pages/qlbm/TeachingAssignmentsPage";
-import DepartmentManagementDashboard from "./pages/qlbm/DepartmentManagementDashboard";
+import ProposalsPage from "./pages/qlbm/ProposalsPage.tsx";
+import DepartmentListPage from "./pages/qlbm/DepartmentListPage.tsx";
+import DepartmentTeachersPage from "./pages/qlbm/DepartmentTeachersPage.tsx";
+import TeachingAssignmentsPage from "./pages/qlbm/TeachingAssignmentsPage.tsx";
+import DepartmentManagementDashboard from "./pages/qlbm/DepartmentManagementDashboard.tsx";
 
 // 🏛️ BGH Pages
-import BGHDashboard from "./pages/bgh/BGHDashboard";
-import BGHStudentsList from "./pages/bgh/BGHStudentsList";
-import BGHIncidentsPage from "./pages/bgh/BGHIncidentsPage";
-import BGHGradesPage from "./pages/bgh/BGHGradesPage";
-import BGHAttendancePage from "./pages/bgh/BGHAttendancePage";
-import ConductPage from "./pages/common/ConductPage";
+import BGHDashboard from "./pages/bgh/BGHDashboard.tsx";
+import BGHStudentsList from "./pages/bgh/BGHStudentsList.tsx";
+import BGHIncidentsPage from "./pages/bgh/BGHIncidentsPage.tsx";
+import BGHGradesPage from "./pages/bgh/BGHGradesPage.tsx";
+import BGHAttendancePage from "./pages/bgh/BGHAttendancePage.tsx";
+import BGHConductApprovalPage from "./pages/bgh/BGHConductApprovalPage.tsx";
+import EmailStatsPage from "./pages/bgh/EmailStatsPage.tsx";
+import ConductPage from "./pages/common/ConductPage.tsx";
 
 // 👨‍🎓 Student Pages
 import StudentDashboard from "./pages/student/StudentDashboard";
@@ -90,10 +96,10 @@ import StudentSchedule from "./pages/student/exams/StudentSchedule";
 import ExamRoom from "./pages/student/exams/ExamRoom";
 
 // 🧭 Common Pages
-import NotFound from "./pages/NotFound";
-import NotificationsPage from "./pages/common/NotificationsPage";
-import NotificationDetailPage from "./pages/common/NotificationDetailPage";
-import StudentIncidentsPage from "./pages/student/StudentIncidentsPage";
+import NotFound from "./pages/NotFound.tsx";
+import NotificationsPage from "./pages/common/NotificationsPage.tsx";
+import NotificationDetailPage from "./pages/common/NotificationDetailPage.tsx";
+import StudentIncidentsPage from "./pages/student/StudentIncidentsPage.tsx";
 
 /* =========================================================
    ⚙️ Query Client
@@ -121,6 +127,8 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/admin/rooms", element: <RoomListPage /> },
     { path: "/admin/profile", element: <ProfilePage /> },
     { path: "/admin/settings", element: <SettingsPage /> },
+    { path: "/admin/send-email", element: <SendBulkEmailPage /> },
+    { path: "/admin/email-history", element: <EmailHistoryPage /> },
     { path: "/admin/batch", element: <BatchAccountPage /> },
     { path: "/admin/grade-config", element: <GradeConfigPage /> },
     { path: "/admin/permissions", element: <PermissionManagementPage /> },
@@ -194,7 +202,7 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/gvcn/schedule", element: <TeacherSchedulePage /> },
     { path: "/gvcn/schedule-weekly", element: <TeacherSchedulePage /> },
     { path: "/gvcn/grades", element: <TeacherEnterGradesPage /> },
-    { path: "/gvcn/conduct", element: <ConductPage /> },
+    { path: "/gvcn/conduct", element: <HomeroomConductPage /> },
     { path: "/gvcn/exams", element: <ExamListPage /> },
     { path: "/gvcn/incidents", element: <BGHIncidentsPage /> },
     { path: "/gvcn/profile", element: <ProfilePage /> },
@@ -217,11 +225,28 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
   bgh: [
     { path: "/bgh/home", element: <BGHDashboard /> },
     { path: "/bgh/students", element: <BGHStudentsList /> },
+    { path: "/bgh/students/:id", element: <StudentDetail /> },
+    { path: "/bgh/teachers", element: <TeacherList /> },
     { path: "/bgh/grades", element: <BGHGradesPage /> },
     { path: "/bgh/attendance", element: <BGHAttendancePage /> },
     { path: "/bgh/incidents", element: <BGHIncidentsPage /> },
+    { path: "/bgh/conduct", element: <BGHConductApprovalPage /> },
+    { path: "/bgh/school-years", element: <SchoolYearPage /> },
+    { path: "/bgh/classes", element: <GradeClassPage /> },
+    { path: "/bgh/rooms", element: <RoomListPage /> },
+    { path: "/bgh/subjects", element: <SubjectActivityPage /> },
+    { path: "/bgh/proposal-history", element: <ProposalHistoryPage /> },
+    { path: "/bgh/teachingAssignmentPage", element: <TeachingAssignmentPage /> },
+    { path: "/bgh/schedule", element: <SchedulePage /> },
+    { path: "/bgh/exam/exam-list", element: <ExamListPage /> },
+    { path: "/bgh/exam/exam-dashboard", element: <ExamDashboard /> },
+    { path: "/bgh/exam/schedule", element: <ExamSchedulePage /> },
+    { path: "/bgh/notifications", element: <NotificationsPage /> },
+    { path: "/bgh/notifications/:id", element: <NotificationDetailPage /> },
     { path: "/bgh/profile", element: <ProfilePage /> },
     { path: "/bgh/settings", element: <SettingsPage /> },
+    { path: "/bgh/send-email", element: <SendBulkEmailPage /> },
+    { path: "/bgh/email-stats", element: <EmailStatsPage /> },
   ],
 };
 
@@ -229,6 +254,78 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
    ⚙️ Component điều hướng theo role
 ========================================================= */
 const AppContent = () => {
+  const { backendUser, loading } = useAuth();
+
+  if (loading) return <div className="text-center p-8">⏳ Đang tải dữ liệu...</div>;
+
+  // Public routes - không cần đăng nhập
+  if (!backendUser) {
+    return (
+      <Routes>
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/login" element={<LoginForm />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
+  }
+
+  // Protected routes - cần đăng nhập
+  // ✅ Xác định route prefix dựa trên role và teacherFlags
+  let routeKey = backendUser.role;
+  if (backendUser.role === 'teacher') {
+    // Kiểm tra teacherFlags để xác định loại giáo viên
+    if (backendUser.teacherFlags?.isLeader) {
+      routeKey = 'bgh';
+    } else if (backendUser.teacherFlags?.isHomeroom) {
+      routeKey = 'gvcn';
+    } else if (backendUser.teacherFlags?.isDepartmentHead) {
+      routeKey = 'qlbm';
+    } else {
+      routeKey = 'gvbm';
+    }
+  }
+
+  const roleRoutes = routesConfig[routeKey] || routesConfig[backendUser.role] || [];
+
+  // ✅ Xác định route home theo role
+  let homeRoute = '/login';
+  if (routeKey === 'admin') {
+    homeRoute = '/admin/home';
+  } else if (routeKey === 'student') {
+    homeRoute = '/student/home';
+  } else if (routeKey === 'bgh') {
+    homeRoute = '/bgh/home';
+  } else if (routeKey === 'gvcn') {
+    homeRoute = '/gvcn/home';
+  } else if (routeKey === 'qlbm') {
+    homeRoute = '/qlbm/home';
+  } else if (routeKey === 'gvbm') {
+    homeRoute = '/gvbm/home';
+  } else if (routeKey === 'teacher') {
+    homeRoute = '/teacher/home';
+  }
+
+  return (
+    <AppLayout>
+      <Routes>
+        {roleRoutes.map(({ path, element }) => (
+          <Route key={path} path={path} element={element} />
+        ))}
+
+        {/* Redirect root → /role/home */}
+        <Route path="/" element={<Navigate to={homeRoute} replace />} />
+
+        {/* Not Found */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </AppLayout>
+  );
+};
+
+/* =========================================================
+   ⚙️ Component điều hướng theo role (Legacy - giữ lại để tham khảo)
+========================================================= */
+const AppContentLegacy = () => {
   const { backendUser, loading } = useAuth();
 
   if (loading) return <div className="text-center p-8">⏳ Đang tải dữ liệu...</div>;

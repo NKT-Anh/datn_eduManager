@@ -84,14 +84,20 @@ export interface TeacherExamSchedule {
 
 export const teacherExamApi = {
   /** 📋 Lấy danh sách phòng thi giáo viên được phân công */
-  async getRooms(teacherId: string): Promise<{ success: boolean; data: TeacherExamRoom[]; total: number }> {
-    const res = await api.get(`/teacher-exams/teacher/${teacherId}/rooms`);
+  async getRooms(teacherId: string, examId?: string): Promise<{ success: boolean; data: TeacherExamRoom[]; total: number }> {
+    const url = examId 
+      ? `/teacher-exams/teacher/${teacherId}/rooms?examId=${examId}`
+      : `/teacher-exams/teacher/${teacherId}/rooms`;
+    const res = await api.get(url);
     return res.data;
   },
 
   /** 🗓️ Lấy lịch coi thi của giáo viên */
-  async getSchedules(teacherId: string): Promise<{ success: boolean; data: TeacherExamSchedule[]; total: number }> {
-    const res = await api.get(`/teacher-exams/teacher/${teacherId}/schedules`);
+  async getSchedules(teacherId: string, examId?: string): Promise<{ success: boolean; data: TeacherExamSchedule[]; total: number }> {
+    const url = examId 
+      ? `/teacher-exams/teacher/${teacherId}/schedules?examId=${examId}`
+      : `/teacher-exams/teacher/${teacherId}/schedules`;
+    const res = await api.get(url);
     return res.data;
   },
 };

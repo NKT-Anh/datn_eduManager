@@ -76,5 +76,29 @@ router.post("/auto-assign",
   checkPermission(PERMISSIONS.STUDENT_UPDATE), 
   studentController.autoAssignToClasses
 );
+
+// ✅ Xét học sinh lên lớp và cập nhật năm học - Chỉ Admin
+router.post("/promote", 
+  authMiddleware, 
+  checkPermission(PERMISSIONS.STUDENT_UPDATE),
+  auditLog({
+    action: 'UPDATE',
+    resource: 'STUDENT',
+    getDescription: (req) => `Xét học sinh lên lớp: ${req.body?.currentYear} → ${req.body?.newYear}`,
+  }),
+  studentController.promoteStudents
+);
+
+// ✅ Cập nhật năm học cho tất cả học sinh - Chỉ Admin
+router.post("/update-year", 
+  authMiddleware, 
+  checkPermission(PERMISSIONS.STUDENT_UPDATE),
+  auditLog({
+    action: 'UPDATE',
+    resource: 'STUDENT',
+    getDescription: (req) => `Cập nhật năm học cho tất cả học sinh: ${req.body?.newYear}`,
+  }),
+  studentController.updateAllStudentsYear
+);
  
 module.exports = router;

@@ -100,6 +100,100 @@ exports.updateSchedule = async (req, res) => {
     const { id } = req.params;
     const { timetable } = req.body;
 
+    // ✅ Lấy schedule hiện tại để lấy classId, year, semester
+    const existingSchedule = await Schedule.findById(id);
+    if (!existingSchedule) {
+      return res.status(404).json({ message: "Không tìm thấy thời khóa biểu." });
+    }
+
+    // ✅ Validate: Kiểm tra môn học và giáo viên phải khớp với TeachingAssignment
+    const classId = existingSchedule.classId;
+    const year = existingSchedule.year;
+    const semester = existingSchedule.semester;
+
+    // Lấy tất cả TeachingAssignment cho lớp này
+    const assignments = await TeachingAssignment.find({
+      classId: classId,
+      year: year,
+      semester: semester
+    })
+      .populate('teacherId', 'name')
+      .populate('subjectId', 'name');
+
+    // Tạo map để kiểm tra nhanh: subjectId -> teacherId
+    const assignmentMap = new Map();
+    assignments.forEach(a => {
+      if (a.subjectId && a.teacherId) {
+        const subjectId = a.subjectId._id ? a.subjectId._id.toString() : a.subjectId.toString();
+        const teacherId = a.teacherId._id ? a.teacherId._id.toString() : a.teacherId.toString();
+        assignmentMap.set(subjectId, teacherId);
+      }
+    });
+
+    // ✅ Kiểm tra từng period trong timetable
+    if (timetable && Array.isArray(timetable)) {
+      for (const dayEntry of timetable) {
+        if (!dayEntry.periods || !Array.isArray(dayEntry.periods)) continue;
+        
+        for (const period of dayEntry.periods) {
+          // Bỏ qua nếu không có subject hoặc teacher
+          if (!period.subject || !period.teacher) continue;
+          
+          // Bỏ qua các hoạt động chung (không có trong TeachingAssignment)
+          const ignoreSubjects = ["Hoạt động", "Chào cờ", "Sinh hoạt", "Thể dục toàn trường"];
+          if (ignoreSubjects.some(s => period.subject.includes(s))) continue;
+
+          // Tìm subjectId từ tên môn học
+          const assignment = assignments.find(a => {
+            if (!a.subjectId) return false;
+            const subjectName = a.subjectId.name || '';
+            return subjectName === period.subject;
+          });
+
+          if (!assignment) {
+            // Nếu không tìm thấy assignment, có thể là môn học không được phân công
+            // Cho phép nhưng cảnh báo
+            console.warn(`⚠️ Môn học "${period.subject}" không có trong bảng phân công cho lớp này`);
+            continue;
+          }
+
+          // Kiểm tra giáo viên có khớp với assignment không
+          const expectedTeacherId = assignment.teacherId._id 
+            ? assignment.teacherId._id.toString() 
+            : assignment.teacherId.toString();
+          
+          const actualTeacherId = period.teacherId 
+            ? period.teacherId.toString() 
+            : null;
+
+          // Nếu có teacherId trong period, kiểm tra khớp
+          if (actualTeacherId && actualTeacherId !== expectedTeacherId) {
+            // Kiểm tra xem tên giáo viên có khớp không (fallback)
+            const expectedTeacherName = assignment.teacherId.name || '';
+            if (period.teacher !== expectedTeacherName) {
+              return res.status(400).json({
+                message: `Môn học "${period.subject}" phải được dạy bởi giáo viên "${expectedTeacherName}" theo bảng phân công, không được thay đổi.`,
+                subject: period.subject,
+                expectedTeacher: expectedTeacherName,
+                actualTeacher: period.teacher
+              });
+            }
+          } else if (!actualTeacherId) {
+            // Nếu không có teacherId, kiểm tra tên giáo viên
+            const expectedTeacherName = assignment.teacherId.name || '';
+            if (period.teacher !== expectedTeacherName) {
+              return res.status(400).json({
+                message: `Môn học "${period.subject}" phải được dạy bởi giáo viên "${expectedTeacherName}" theo bảng phân công, không được thay đổi.`,
+                subject: period.subject,
+                expectedTeacher: expectedTeacherName,
+                actualTeacher: period.teacher
+              });
+            }
+          }
+        }
+      }
+    }
+
     const updated = await Schedule.findByIdAndUpdate(
       id,
       { timetable },
@@ -107,6 +201,7 @@ exports.updateSchedule = async (req, res) => {
     );
     res.status(200).json(updated);
   } catch (err) {
+    console.error("❌ Lỗi khi cập nhật thời khóa biểu:", err);
     res.status(500).json({ message: err.message });
   }
 };

@@ -3,15 +3,9 @@ import { useState, useEffect } from "react";
 import { useTeachers, useUpdateTeacherAvailability, useTeacherAvailability } from "@/hooks";
 import { Teacher } from "@/types/auth";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Card } from "@/components/ui/card";
+import { Edit2, Save, X } from "lucide-react";
 
 const days = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
 const slots = [
@@ -33,12 +27,9 @@ export default function TeacherAvailabilityPage() {
   const { teachers, isLoading: isLoadingTeachers, error: teachersError } = useTeachers();
   const updateAvailabilityMutation = useUpdateTeacherAvailability();
   
-  const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
-  const [availability, setAvailability] = useState<boolean[][]>([]);
-  
-  // ✅ Sử dụng hook để lấy availability
-  const { data: availabilityData, isLoading: loading } = useTeacherAvailability(selectedTeacher?._id);
-  
+  const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null);
+  const [teacherAvailabilityMap, setTeacherAvailabilityMap] = useState<Record<string, boolean[][]>>({});
+
   // ✅ Log để debug
   useEffect(() => {
     if (teachersError) {
@@ -49,64 +40,107 @@ export default function TeacherAvailabilityPage() {
         variant: "destructive",
       });
     }
-    console.log("📋 Danh sách giáo viên:", teachers.length, teachers);
-  }, [teachers, teachersError, toast]);
-  
-  // ✅ Cập nhật availability khi data thay đổi
-  useEffect(() => {
-    if (availabilityData && availabilityData.length > 0) {
-      setAvailability(availabilityData);
-    } else if (selectedTeacher) {
-      // ✅ Mặc định: tất cả đều RẢNH (true) - giống với backend schema default
-      setAvailability(
-        Array(days.length)
-          .fill(null)
-          .map(() => Array(slots.length).fill(true))
-      );
-    }
-  }, [availabilityData, selectedTeacher]);
+  }, [teachersError, toast]);
 
-  // load lịch khi chọn giáo viên
-  const handleSelectTeacher = (id: string) => {
-    const teacher = teachers.find((t) => t._id === id) || null;
-    setSelectedTeacher(teacher);
-    // ✅ Hook sẽ tự động load availability khi selectedTeacher thay đổi
-  };
+  // ✅ Lấy availability cho tất cả giáo viên
+  useEffect(() => {
+    if (teachers.length > 0) {
+      teachers.forEach((teacher) => {
+        if (teacher._id && !teacherAvailabilityMap[teacher._id]) {
+          // Khởi tạo với availableMatrix từ teacher hoặc mặc định
+          const defaultMatrix = Array(days.length)
+            .fill(null)
+            .map(() => Array(slots.length).fill(true));
+          
+          const matrix = teacher.availableMatrix && Array.isArray(teacher.availableMatrix) && teacher.availableMatrix.length > 0
+            ? teacher.availableMatrix.map((row: boolean[]) => [...row])
+            : defaultMatrix;
+          
+          setTeacherAvailabilityMap((prev) => ({
+            ...prev,
+            [teacher._id!]: matrix,
+          }));
+        }
+      });
+    }
+  }, [teachers]);
 
   // toggle 1 ô
-  const toggleCell = (dayIndex: number, slotIndex: number) => {
-    setAvailability((prev) => {
-      const copy = prev.map((row) => [...row]);
-      copy[dayIndex][slotIndex] = !copy[dayIndex][slotIndex];
-      return copy;
+  const toggleCell = (teacherId: string, dayIndex: number, slotIndex: number) => {
+    if (editingTeacherId !== teacherId) return; // Chỉ cho phép edit khi đang ở chế độ edit
+    
+    setTeacherAvailabilityMap((prev) => {
+      const copy = { ...prev };
+      if (!copy[teacherId]) {
+        copy[teacherId] = Array(days.length)
+          .fill(null)
+          .map(() => Array(slots.length).fill(true));
+      }
+      const matrix = copy[teacherId].map((row) => [...row]);
+      matrix[dayIndex][slotIndex] = !matrix[dayIndex][slotIndex];
+      return { ...copy, [teacherId]: matrix };
     });
+  };
+
+  // Bắt đầu edit
+  const handleStartEdit = (teacherId: string) => {
+    setEditingTeacherId(teacherId);
+  };
+
+  // Hủy edit
+  const handleCancelEdit = (teacherId: string) => {
+    // Khôi phục lại từ teacher.availableMatrix
+    const teacher = teachers.find((t) => t._id === teacherId);
+    if (teacher) {
+      const defaultMatrix = Array(days.length)
+        .fill(null)
+        .map(() => Array(slots.length).fill(true));
+      
+      const matrix = teacher.availableMatrix && Array.isArray(teacher.availableMatrix) && teacher.availableMatrix.length > 0
+        ? teacher.availableMatrix.map((row: boolean[]) => [...row])
+        : defaultMatrix;
+      
+      setTeacherAvailabilityMap((prev) => ({
+        ...prev,
+        [teacherId]: matrix,
+      }));
+    }
+    setEditingTeacherId(null);
   };
 
   // lưu
-  const handleSave = async () => {
-    if (!selectedTeacher) return;
-    const freeSlots: string[] = [];
-    availability.forEach((dayRow, dayIndex) => {
-      dayRow.forEach((isFree, slotIndex) => {
-        if (isFree) freeSlots.push(`${days[dayIndex]} - ${slots[slotIndex]}`);
-      });
-    });
-
-    console.log("Các tiết rảnh của giáo viên:", freeSlots);
+  const handleSave = async (teacherId: string) => {
+    const availability = teacherAvailabilityMap[teacherId];
+    if (!availability) return;
 
     try {
       await updateAvailabilityMutation.mutateAsync({
-        id: selectedTeacher._id!,
+        id: teacherId,
         availableMatrix: availability,
       });
       toast({ title: "Thành công", description: "Đã lưu lịch rảnh" });
-    } catch {
-      toast({ title: "Lỗi", description: "Không thể lưu lịch rảnh" });
+      setEditingTeacherId(null);
+    } catch (err) {
+      toast({ title: "Lỗi", description: "Không thể lưu lịch rảnh", variant: "destructive" });
     }
   };
 
+  // Lấy tên môn học của giáo viên
+  const getTeacherSubjects = (teacher: Teacher): string => {
+    if (teacher.mainSubject?.name) {
+      return teacher.mainSubject.name;
+    }
+    if (teacher.subjects && teacher.subjects.length > 0) {
+      return teacher.subjects
+        .map((s: any) => s.subjectId?.name || s.subjectId)
+        .filter(Boolean)
+        .join(", ");
+    }
+    return "Chưa có môn";
+  };
+
   return (
-    <div className="space-y-4">
+    <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold">📅 Lịch rảnh của giáo viên</h1>
 
       {isLoadingTeachers ? (
@@ -122,86 +156,118 @@ export default function TeacherAvailabilityPage() {
           <p>Chưa có giáo viên nào trong hệ thống.</p>
         </div>
       ) : (
-        <Select onValueChange={handleSelectTeacher}>
-          <SelectTrigger className="w-80">
-            <SelectValue placeholder="Chọn giáo viên" />
-          </SelectTrigger>
-          <SelectContent>
-            {teachers.map((t) => (
-              <SelectItem key={t._id} value={t._id!}>
-                {t.name}
-                {t.subjects && t.subjects.length > 0 && (
-                  <> ({t.subjects.map((s: any) => s.subjectId?.name || s.subjectId).join(", ")})</>
-                )}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {teachers.map((teacher) => {
+            const isEditing = editingTeacherId === teacher._id;
+            const availability = teacherAvailabilityMap[teacher._id!] || 
+              Array(days.length).fill(null).map(() => Array(slots.length).fill(true));
 
-      {selectedTeacher && (
-        <Card className="p-4 border shadow-md">
-          <p className="font-medium mb-3">
-            Giáo viên: {selectedTeacher.name} ({selectedTeacher.accountId?.email})
-          </p>
-
-          {loading ? (
-            <p>Đang tải...</p>
-          ) : (
-            <div className="overflow-x-auto">
-  <table className="border-collapse border w-full text-center">
-    <thead>
-      <tr>
-        <th className="border px-3 py-2 bg-gray-100">Tiết / Thứ</th>
-        {days.map((day) => (
-          <th key={day} className="border px-3 py-2 bg-gray-100">
-            {day}
-          </th>
-        ))}
-      </tr>
-    </thead>
-    <tbody>
-      {slots.map((slot, slotIndex) => (
-        <tr key={slot}>
-          <td className="border px-3 py-2 font-medium bg-gray-50">{slot}</td>
-          {days.map((_, dayIndex) => (
-            <td
-              key={dayIndex}
-              onClick={() => toggleCell(dayIndex, slotIndex)}
-              className={`border cursor-pointer py-2 ${
-                availability[dayIndex]?.[slotIndex]
-                  ? "bg-green-500 text-white"
-                  : "bg-gray-100"
-              }`}
-            >
-              {availability[dayIndex]?.[slotIndex] ? "✓" : ""}
-            </td>
-          ))}
-        </tr>
-      ))}
-    </tbody>
-  </table>
-</div>
-
-          )}
-
-          <div className="mt-4 flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setAvailability(
-                  Array(days.length)
-                    .fill(null)
-                    .map(() => Array(slots.length).fill(true))
-                );
-              }}
-            >
-              ✅ Rảnh tất cả
-            </Button>
-
-            <Button onClick={handleSave}>💾 Lưu lịch</Button>
-          </div>
-        </Card>
+            return (
+              <Card key={teacher._id} className="shadow-md">
+                <CardHeader>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <CardTitle className="text-lg">{teacher.name}</CardTitle>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {getTeacherSubjects(teacher)}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      {!isEditing ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleStartEdit(teacher._id!)}
+                        >
+                          <Edit2 className="h-4 w-4 mr-1" />
+                          Sửa
+                        </Button>
+                      ) : (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleCancelEdit(teacher._id!)}
+                          >
+                            <X className="h-4 w-4 mr-1" />
+                            Hủy
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => handleSave(teacher._id!)}
+                            disabled={updateAvailabilityMutation.isPending}
+                          >
+                            <Save className="h-4 w-4 mr-1" />
+                            Lưu
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {isEditing && (
+                    <div className="mb-3 flex justify-end">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setTeacherAvailabilityMap((prev) => {
+                            const copy = { ...prev };
+                            copy[teacher._id!] = Array(days.length)
+                              .fill(null)
+                              .map(() => Array(slots.length).fill(true));
+                            return copy;
+                          });
+                        }}
+                      >
+                        ✅ Rảnh tất cả
+                      </Button>
+                    </div>
+                  )}
+                  <div className="overflow-x-auto">
+                    <table className="border-collapse border w-full text-center text-xs">
+                      <thead>
+                        <tr>
+                          <th className="border px-2 py-1 bg-gray-100">Tiết / Thứ</th>
+                          {days.map((day) => (
+                            <th key={day} className="border px-2 py-1 bg-gray-100">
+                              {day}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {slots.map((slot, slotIndex) => (
+                          <tr key={slot}>
+                            <td className="border px-2 py-1 font-medium bg-gray-50">{slot}</td>
+                            {days.map((_, dayIndex) => (
+                              <td
+                                key={dayIndex}
+                                onClick={() => isEditing && toggleCell(teacher._id!, dayIndex, slotIndex)}
+                                className={`border cursor-pointer py-1 ${
+                                  isEditing
+                                    ? availability[dayIndex]?.[slotIndex]
+                                      ? "bg-green-500 text-white hover:bg-green-600"
+                                      : "bg-gray-200 hover:bg-gray-300"
+                                    : availability[dayIndex]?.[slotIndex]
+                                    ? "bg-green-500 text-white"
+                                    : "bg-gray-200"
+                                }`}
+                              >
+                                {availability[dayIndex]?.[slotIndex] ? "✓" : ""}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       )}
     </div>
   );

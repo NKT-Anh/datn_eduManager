@@ -2,6 +2,8 @@ const StudentYearRecord = require('../../models/user/studentYearRecord');
 const Student = require('../../models/user/student');
 const Teacher = require('../../models/user/teacher');
 const Class = require('../../models/class/class');
+const { checkConductEntryTime, isConductLocked } = require('../../utils/conductTimeHelper');
+const { calculateConduct } = require('./conductConfigController');
 
 /**
  * 📋 LẤY DANH SÁCH HẠNH KIỂM
@@ -118,14 +120,19 @@ exports.getConductById = async (req, res) => {
 
 /**
  * ✏️ CẬP NHẬT HẠNH KIỂM (GVCN nhập hạnh kiểm lớp CN)
+ * - Kiểm tra thời gian cho phép nhập
+ * - Kiểm tra trạng thái locked
+ * - Hỗ trợ lưu bản nháp và gửi phê duyệt
  */
 exports.updateConduct = async (req, res) => {
   try {
     const { id } = req.params;
     const { role, accountId } = req.user;
+    const { conduct, conductNote, action } = req.body; // action: 'save' (bản nháp) hoặc 'submit' (gửi phê duyệt)
     
     const record = await StudentYearRecord.findById(id)
-      .populate('classId');
+      .populate('classId')
+      .populate('studentId');
     
     if (!record) {
       return res.status(404).json({ error: 'Không tìm thấy hạnh kiểm' });
@@ -147,12 +154,34 @@ exports.updateConduct = async (req, res) => {
         return res.status(403).json({ error: 'Không phải lớp chủ nhiệm của bạn' });
       }
       
+      // ✅ Kiểm tra trạng thái locked
+      const locked = await isConductLocked(record, false);
+      if (locked) {
+        return res.status(403).json({ 
+          error: 'Hạnh kiểm đã được chốt. Vui lòng liên hệ Admin để mở khóa nếu cần chỉnh sửa.' 
+        });
+      }
+      
+      // ✅ Kiểm tra thời gian cho phép nhập (trừ khi đang gửi phê duyệt bản đã có)
+      if (action !== 'submit' || record.conductStatus === 'draft') {
+        const timeCheck = await checkConductEntryTime(record.semester, false);
+        if (!timeCheck.allowed) {
+          return res.status(403).json({ 
+            error: timeCheck.message,
+            timeInfo: {
+              startDate: timeCheck.startDate,
+              endDate: timeCheck.endDate
+            }
+          });
+        }
+      }
+      
       const teacher = await Teacher.findOne({ accountId });
       if (!teacher) {
         return res.status(404).json({ error: 'Không tìm thấy thông tin giáo viên' });
       }
       
-      const { conduct } = req.body;
+      // Cập nhật hạnh kiểm
       if (conduct) {
         if (!['Tốt', 'Khá', 'Trung bình', 'Yếu'].includes(conduct)) {
           return res.status(400).json({ error: 'Hạnh kiểm không hợp lệ' });
@@ -160,10 +189,33 @@ exports.updateConduct = async (req, res) => {
         record.conduct = conduct;
         record.homeroomTeacherId = teacher._id;
       }
+      
+      // Cập nhật ghi chú
+      if (conductNote !== undefined) {
+        record.conductNote = conductNote;
+      }
+      
+      // Xử lý action
+      if (action === 'submit') {
+        // Gửi phê duyệt: chuyển từ draft → pending
+        if (record.conductStatus === 'draft') {
+          record.conductStatus = 'pending';
+        }
+      } else if (action === 'save') {
+        // Lưu bản nháp: giữ nguyên draft
+        record.conductStatus = 'draft';
+      }
+      // Nếu không có action, giữ nguyên trạng thái hiện tại
     }
-    // Admin: Có thể sửa tất cả
+    // BGH: Phê duyệt/chốt hạnh kiểm
+    else if (role === 'teacher' && req.user.teacherFlags?.isLeader) {
+      // Xử lý trong hàm approveConduct riêng
+      return res.status(400).json({ error: 'Vui lòng sử dụng API phê duyệt hạnh kiểm' });
+    }
+    // Admin: Có thể sửa tất cả (override)
     else if (role === 'admin') {
-      const { conduct, gpa, rank, note } = req.body;
+      const { gpa, rank, note, conductStatus } = req.body;
+      
       if (conduct) {
         if (!['Tốt', 'Khá', 'Trung bình', 'Yếu'].includes(conduct)) {
           return res.status(400).json({ error: 'Hạnh kiểm không hợp lệ' });
@@ -173,6 +225,15 @@ exports.updateConduct = async (req, res) => {
       if (gpa !== undefined) record.gpa = gpa;
       if (rank !== undefined) record.rank = rank;
       if (note !== undefined) record.note = note;
+      if (conductNote !== undefined) record.conductNote = conductNote;
+      
+      // Admin có thể thay đổi trạng thái (mở khóa)
+      if (conductStatus && ['draft', 'pending', 'approved', 'locked'].includes(conductStatus)) {
+        record.conductStatus = conductStatus;
+        if (conductStatus === 'locked') {
+          record.conductLockedAt = new Date();
+        }
+      }
     } else {
       return res.status(403).json({ error: 'Không có quyền cập nhật hạnh kiểm' });
     }
@@ -182,11 +243,152 @@ exports.updateConduct = async (req, res) => {
     const populated = await StudentYearRecord.findById(record._id)
       .populate('studentId', 'name studentCode')
       .populate('classId', 'className grade')
-      .populate('homeroomTeacherId', 'name teacherCode');
+      .populate('homeroomTeacherId', 'name teacherCode')
+      .populate('conductApprovedBy', 'name teacherCode');
     
     res.json({ success: true, data: populated });
   } catch (error) {
     console.error('❌ Lỗi updateConduct:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * ✅ TÍNH TOÁN HẠNH KIỂM TỰ ĐỘNG (Đề xuất)
+ * GVCN có thể xem đề xuất từ hệ thống trước khi nhập
+ */
+exports.calculateSuggestedConduct = async (req, res) => {
+  try {
+    const { studentId, year, semester } = req.query;
+    
+    if (!studentId || !year || !semester) {
+      return res.status(400).json({ error: 'Thiếu thông tin: studentId, year, semester' });
+    }
+    
+    try {
+      const suggested = await calculateConduct(studentId, year, semester);
+      
+      // Cập nhật conductSuggested vào record nếu có
+      const record = await StudentYearRecord.findOne({ studentId, year, semester });
+      if (record) {
+        record.conductSuggested = suggested;
+        await record.save();
+      }
+      
+      res.json({ 
+        success: true, 
+        data: { 
+          suggested,
+          message: suggested ? `Hệ thống đề xuất: ${suggested}` : 'Không thể tính toán tự động. Vui lòng nhập thủ công.'
+        }
+      });
+    } catch (calcError) {
+      console.error('Error calculating conduct:', calcError);
+      res.json({ 
+        success: true, 
+        data: { 
+          suggested: null,
+          message: 'Không thể tính toán tự động. Vui lòng nhập thủ công.'
+        }
+      });
+    }
+  } catch (error) {
+    console.error('❌ Lỗi calculateSuggestedConduct:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * ✅ PHÊ DUYỆT HẠNH KIỂM (BGH)
+ * - Approve: Duyệt hạnh kiểm
+ * - Reject: Yêu cầu chỉnh sửa (chuyển về draft)
+ * - Lock: Chốt dữ liệu (không cho sửa nữa)
+ */
+exports.approveConduct = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role, accountId } = req.user;
+    const { action, comment } = req.body; // action: 'approve', 'reject', 'lock'
+    
+    // Chỉ BGH mới được phê duyệt
+    if (role !== 'teacher' || !req.user.teacherFlags?.isLeader) {
+      return res.status(403).json({ error: 'Chỉ Ban Giám Hiệu mới được phê duyệt hạnh kiểm' });
+    }
+    
+    const record = await StudentYearRecord.findById(id);
+    if (!record) {
+      return res.status(404).json({ error: 'Không tìm thấy hạnh kiểm' });
+    }
+    
+    const teacher = await Teacher.findOne({ accountId });
+    if (!teacher) {
+      return res.status(404).json({ error: 'Không tìm thấy thông tin giáo viên' });
+    }
+    
+    if (action === 'approve') {
+      // Duyệt: pending → approved
+      record.conductStatus = 'approved';
+      record.conductApprovedBy = teacher._id;
+      record.conductApprovedAt = new Date();
+      if (comment) record.conductComment = comment;
+    } else if (action === 'reject') {
+      // Từ chối: pending → draft (để GVCN chỉnh sửa lại)
+      record.conductStatus = 'draft';
+      record.conductComment = comment || 'Yêu cầu chỉnh sửa lại';
+    } else if (action === 'lock') {
+      // Chốt: approved → locked
+      if (record.conductStatus !== 'approved') {
+        return res.status(400).json({ error: 'Chỉ có thể chốt hạnh kiểm đã được phê duyệt' });
+      }
+      record.conductStatus = 'locked';
+      record.conductLockedAt = new Date();
+      if (comment) record.conductComment = comment;
+    } else {
+      return res.status(400).json({ error: 'Action không hợp lệ. Phải là: approve, reject, hoặc lock' });
+    }
+    
+    await record.save();
+    
+    const populated = await StudentYearRecord.findById(record._id)
+      .populate('studentId', 'name studentCode')
+      .populate('classId', 'className grade')
+      .populate('homeroomTeacherId', 'name teacherCode')
+      .populate('conductApprovedBy', 'name teacherCode');
+    
+    res.json({ success: true, data: populated });
+  } catch (error) {
+    console.error('❌ Lỗi approveConduct:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * 📋 LẤY DANH SÁCH HẠNH KIỂM CHỜ PHÊ DUYỆT (BGH)
+ */
+exports.getPendingConducts = async (req, res) => {
+  try {
+    const { role } = req.user;
+    const { year, semester, classId } = req.query;
+    
+    // Chỉ BGH và Admin mới xem được
+    if (role !== 'admin' && (role !== 'teacher' || !req.user.teacherFlags?.isLeader)) {
+      return res.status(403).json({ error: 'Không có quyền truy cập' });
+    }
+    
+    let filter = { conductStatus: 'pending' };
+    if (year) filter.year = year;
+    if (semester) filter.semester = semester;
+    if (classId) filter.classId = classId;
+    
+    const records = await StudentYearRecord.find(filter)
+      .populate('studentId', 'name studentCode')
+      .populate('classId', 'className grade')
+      .populate('homeroomTeacherId', 'name teacherCode')
+      .sort({ year: -1, semester: 1, 'classId.className': 1 });
+    
+    res.json({ success: true, total: records.length, data: records });
+  } catch (error) {
+    console.error('❌ Lỗi getPendingConducts:', error);
     res.status(500).json({ error: error.message });
   }
 };

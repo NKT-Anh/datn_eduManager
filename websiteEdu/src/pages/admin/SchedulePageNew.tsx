@@ -182,6 +182,7 @@ export default function SchedulePageNew() {
   const [selectedSemester, setSelectedSemester] = useState<string>("1");
   const [selectedGrade, setSelectedGrade] = useState<string>("all");
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+  const [semesterDates, setSemesterDates] = useState<{ startDate?: string; endDate?: string }>({});
 
   const [days, setDays] = useState<{ key: string; label: string }[]>([]);
   const sensors = useSensors(useSensor(PointerSensor));
@@ -202,6 +203,32 @@ export default function SchedulePageNew() {
       }
     }
   }, [schoolYears]);
+
+  // ✅ Lấy ngày bắt đầu/kết thúc học kỳ
+  useEffect(() => {
+    if (selectedYear && selectedSemester && schoolYears.length > 0) {
+      const schoolYear = schoolYears.find((y: any) => y.code === selectedYear);
+      if (schoolYear?.semesters && schoolYear.semesters.length > 0) {
+        // Tìm học kỳ tương ứng (code: "HK1" hoặc "HK2", hoặc name: "Học kỳ 1"/"Học kỳ 2")
+        const semesterCode = selectedSemester === "1" ? "HK1" : "HK2";
+        const semester = schoolYear.semesters.find(
+          (s: any) => s.code === semesterCode || s.code === selectedSemester || s.name?.includes(selectedSemester)
+        );
+        if (semester) {
+          setSemesterDates({
+            startDate: semester.startDate,
+            endDate: semester.endDate,
+          });
+        } else {
+          setSemesterDates({});
+        }
+      } else {
+        setSemesterDates({});
+      }
+    } else {
+      setSemesterDates({});
+    }
+  }, [selectedYear, selectedSemester, schoolYears]);
 
   // ✅ Load lớp theo năm học được chọn
   useEffect(() => {
@@ -570,9 +597,16 @@ export default function SchedulePageNew() {
           {schedule && scheduleConfig ? (
             <div className="space-y-3">
               <div className="flex justify-between items-center">
-                <h2 className="text-xl font-semibold">
-                  Thời khóa biểu lớp {schedule.className} ({schedule.year} - HK {schedule.semester})
-                </h2>
+                <div>
+                  <h2 className="text-xl font-semibold">
+                    Thời khóa biểu lớp {schedule.className} ({schedule.year} - HK {schedule.semester})
+                  </h2>
+                  {semesterDates.startDate && semesterDates.endDate && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      📅 {new Date(semesterDates.startDate).toLocaleDateString('vi-VN')} - {new Date(semesterDates.endDate).toLocaleDateString('vi-VN')}
+                    </p>
+                  )}
+                </div>
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={handleSaveSchedule}>
                     <Save className="h-4 w-4 mr-2" /> Lưu thời khóa biểu

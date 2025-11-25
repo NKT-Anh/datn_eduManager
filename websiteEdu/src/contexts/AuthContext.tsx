@@ -68,6 +68,7 @@ interface AuthContextType {
   loading: boolean;
   setBackendUser: React.Dispatch<React.SetStateAction<BackendUser | null>>; // ✅ đổi dòng này
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -206,6 +207,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
+  // Google Sign-In
+  const loginWithGoogle = async () => {
+    try {
+      const { signInWithPopup } = await import("firebase/auth");
+      const { auth, googleProvider } = await import("@/services/firebase/firebase");
+      
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+      const idToken = await getIdToken(user, true);
+      
+      // ✅ Lấy năm học hiện tại đang active
+      let effectiveYear: string | null = null;
+      try {
+        effectiveYear = await getCurrentActiveSchoolYear();
+      } catch (error) {
+        console.warn('⚠️ [Google Login] Không lấy được năm học từ settings');
+      }
+
+      const res = await axios.get(`${API_BASE_URL || 'http://localhost:3000/api'}/accounts/me`, {
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          ...(effectiveYear ? { 'x-school-year': effectiveYear } : {}),
+        },
+        timeout: 10000,
+      });
+
+      const userData: BackendUser = { ...res.data, idToken };
+      const effectivePermissions = getEffectivePermissions(userData);
+      
+      const data: BackendUser = {
+        ...userData,
+        effectivePermissions,
+        currentSchoolYear: effectiveYear,
+      };
+      
+      setFirebaseUser(user);
+      setBackendUser(data);
+      persistUser(data);
+      
+      console.log("✅ [Google Login] Đăng nhập thành công:", {
+        role: data.role,
+        email: user.email,
+        schoolYear: effectiveYear,
+      });
+    } catch (err: any) {
+      console.error("❌ [Google Login error]", err);
+      throw err;
+    }
+  };
+
   // Login
   const login = async (email: string, password: string) => {
     try {
@@ -288,7 +339,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <AuthContext.Provider
-      value={{ firebaseUser, backendUser, loading, setBackendUser, login, logout }}
+      value={{ firebaseUser, backendUser, loading, setBackendUser, login, loginWithGoogle, logout }}
     >
       {children}
     </AuthContext.Provider>

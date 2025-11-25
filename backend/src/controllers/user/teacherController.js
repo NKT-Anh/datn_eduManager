@@ -119,6 +119,44 @@ exports.createTeacher = async (req, res) => {
 // Cập nhật giáo viên
 exports.updateTeacher = async (req, res) => {
   try {
+    const { phone } = req.body;
+    
+    // ✅ Nếu có thay đổi số điện thoại, đồng bộ vào Account và Firebase
+    if (phone) {
+      const teacher = await Teacher.findById(req.params.id);
+      if (teacher && teacher.accountId) {
+        const Account = require('../../models/user/account');
+        const admin = require('../../config/firebaseAdmin');
+        const account = await Account.findById(teacher.accountId);
+        
+        if (account) {
+          // Format phone number (đảm bảo có +84)
+          let formattedPhone = phone.trim();
+          if (!formattedPhone.startsWith('+')) {
+            if (formattedPhone.startsWith('0')) {
+              formattedPhone = '+84' + formattedPhone.substring(1);
+            } else {
+              formattedPhone = '+84' + formattedPhone;
+            }
+          }
+
+          // Cập nhật trong Account model
+          account.phone = formattedPhone;
+          await account.save();
+
+          // Cập nhật trong Firebase
+          try {
+            await admin.auth().updateUser(account.uid, {
+              phoneNumber: formattedPhone,
+            });
+            console.log(`✅ Đã cập nhật số điện thoại giáo viên trong Firebase: ${formattedPhone}`);
+          } catch (firebaseError) {
+            console.error('⚠️ Lỗi cập nhật số điện thoại trong Firebase:', firebaseError);
+          }
+        }
+      }
+    }
+
     const teacher = await populatedTeacher(Teacher.findByIdAndUpdate(
       req.params.id,
       req.body,
@@ -447,6 +485,7 @@ exports.checkTeacherStatus = async (req, res) => {
       .select('-availableMatrix')
       .populate('subjects.subjectId', 'name code')
       .populate('mainSubject', 'name code')
+      .populate('departmentId', 'name code')
       .lean();
     // Compute effective flags per teacher for the currentYear (prefer yearRoles)
     teachers = teachers.map(t => {

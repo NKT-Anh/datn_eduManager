@@ -9,7 +9,10 @@ const {
   getConducts,
   getConductById,
   updateConduct,
-  createConduct
+  createConduct,
+  calculateSuggestedConduct,
+  approveConduct,
+  getPendingConducts
 } = require('../../controllers/conduct/conductController');
 
 // Tất cả routes đều cần xác thực
@@ -64,26 +67,60 @@ router.put(
     resource: 'CONDUCT',
     getResourceId: (req) => req.params.id,
     getDescription: async (req) => {
-      // Lấy thông tin hạnh kiểm trước khi cập nhật
       try {
-        const Conduct = require('../../models/conduct/conduct');
-        const conduct = await Conduct.findById(req.params.id)
+        const StudentYearRecord = require('../../models/user/studentYearRecord');
+        const record = await StudentYearRecord.findById(req.params.id)
           .populate('studentId', 'name studentCode')
           .lean();
         
-        if (conduct) {
-          const studentName = conduct.studentId ? `${conduct.studentId.name} (${conduct.studentId.studentCode || ''})` : 'N/A';
-          const conductValue = req.body?.conduct || conduct.conduct || 'N/A';
-          const hasComment = req.body?.comment ? 'Có' : (conduct.comment ? 'Có' : 'Không');
-          return `Nhập/sửa hạnh kiểm: Học sinh ${studentName}, Hạnh kiểm: ${conductValue}, Nhận xét: ${hasComment}`;
+        if (record) {
+          const studentName = record.studentId ? `${record.studentId.name} (${record.studentId.studentCode || ''})` : 'N/A';
+          const conductValue = req.body?.conduct || record.conduct || 'N/A';
+          const action = req.body?.action || 'save';
+          return `Nhập/sửa hạnh kiểm: Học sinh ${studentName}, Hạnh kiểm: ${conductValue}, Hành động: ${action === 'submit' ? 'Gửi phê duyệt' : 'Lưu bản nháp'}`;
         }
       } catch (e) {
         // Ignore error
       }
-      return `Nhập/sửa hạnh kiểm: ${req.params.id}, Hạnh kiểm: ${req.body?.conduct || 'N/A'}, Nhận xét: ${req.body?.comment ? 'Có' : 'Không'}`;
+      return `Nhập/sửa hạnh kiểm: ${req.params.id}, Hạnh kiểm: ${req.body?.conduct || 'N/A'}`;
     },
   }),
   updateConduct
+);
+
+// 🧮 Tính toán hạnh kiểm tự động (Đề xuất)
+router.get(
+  '/calculate-suggested',
+  checkPermission([PERMISSIONS.CONDUCT_VIEW, PERMISSIONS.CONDUCT_ENTER], { checkContext: true }),
+  calculateSuggestedConduct
+);
+
+// ✅ Phê duyệt hạnh kiểm (BGH)
+router.post(
+  '/:id/approve',
+  checkPermission(PERMISSIONS.CONDUCT_VIEW, { checkContext: true }),
+  auditLog({
+    action: 'APPROVE_CONDUCT',
+    resource: 'CONDUCT',
+    getResourceId: (req) => req.params.id,
+    getDescription: async (req) => {
+      const action = req.body?.action || 'approve';
+      const actionMap = {
+        approve: 'Phê duyệt',
+        reject: 'Từ chối',
+        lock: 'Chốt'
+      };
+      return `${actionMap[action] || 'Phê duyệt'} hạnh kiểm: ${req.params.id}`;
+    },
+  }),
+  approveConduct
+);
+
+// 📋 Lấy danh sách hạnh kiểm chờ phê duyệt (BGH)
+router.get(
+  '/pending/list',
+  checkPermission(PERMISSIONS.CONDUCT_VIEW, { checkContext: true }),
+  getPendingConducts
 );
 
 module.exports = router;

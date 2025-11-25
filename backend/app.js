@@ -34,6 +34,14 @@ app.use(express.json());
 // Kết nối MongoDB
 connectDB();
 
+// ✅ Khởi tạo backup scheduler
+try {
+  const { initBackupScheduler } = require('./src/jobs/backupScheduler');
+  initBackupScheduler();
+} catch (error) {
+  console.warn('⚠️ [Backup Scheduler] Không thể khởi tạo:', error.message);
+}
+
 // 👉 chỉ mount /api 1 lần, docs đã nằm trong routes/index.js
 app.use('/api', router);
 app.use('/api/docs', docsRoute);

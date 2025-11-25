@@ -1,21 +1,53 @@
-import React, { useState, useEffect } from 'react';
-import { Card, Table, Tag, Space, Typography, Spin, message } from 'antd';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Card, Table, Tag, Space, Typography, Spin, message, Select } from 'antd';
 import { CalendarOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { teacherExamApi, TeacherExamSchedule } from '@/services/exams/teacherExamApi';
+import { getExams } from '@/services/examApi';
 
 const { Title, Text } = Typography;
+const { Option } = Select;
+
+interface Exam {
+  _id: string;
+  name: string;
+  year: string;
+  semester: string;
+  status: string;
+}
 
 const SupervisorSchedule: React.FC = () => {
   const { backendUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [schedules, setSchedules] = useState<TeacherExamSchedule[]>([]);
+  const [exams, setExams] = useState<Exam[]>([]);
+  const [selectedExamId, setSelectedExamId] = useState<string>('');
+
+  useEffect(() => {
+    if (backendUser?.teacherId || backendUser?._id) {
+      fetchExams();
+    }
+  }, [backendUser]);
 
   useEffect(() => {
     if (backendUser?.teacherId || backendUser?._id) {
       fetchSchedules();
     }
-  }, [backendUser]);
+  }, [backendUser, selectedExamId]);
+
+  const fetchExams = async () => {
+    try {
+      const res = await getExams();
+      // ✅ Chỉ lấy kỳ thi đã công bố
+      const publishedExams = (res.data?.data || res.data || []).filter((exam: Exam) => exam.status === 'published');
+      setExams(publishedExams);
+      if (publishedExams.length > 0 && !selectedExamId) {
+        setSelectedExamId(publishedExams[0]._id);
+      }
+    } catch (err: any) {
+      console.error("Lỗi khi tải danh sách kỳ thi:", err);
+    }
+  };
 
   const fetchSchedules = async () => {
     try {
@@ -26,7 +58,7 @@ const SupervisorSchedule: React.FC = () => {
         return;
       }
 
-      const res = await teacherExamApi.getSchedules(teacherId);
+      const res = await teacherExamApi.getSchedules(teacherId, selectedExamId || undefined);
       setSchedules(res.data || []);
     } catch (err: any) {
       console.error("Lỗi khi tải lịch coi thi:", err);
@@ -35,6 +67,11 @@ const SupervisorSchedule: React.FC = () => {
       setLoading(false);
     }
   };
+
+  const examOptions = useMemo(() => 
+    exams.map(e => ({ value: e._id, label: `${e.name} - ${e.year} - HK${e.semester}` })),
+    [exams]
+  );
 
   const getStatusTag = (date: string, startTime: string, endTime: string) => {
     const now = new Date();
@@ -157,9 +194,22 @@ const SupervisorSchedule: React.FC = () => {
   return (
     <div style={{ padding: 24 }}>
       <Card>
-        <Title level={2} style={{ marginBottom: 24 }}>
-          📅 Lịch coi thi
-        </Title>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+          <Title level={2} style={{ margin: 0 }}>
+            📅 Lịch coi thi
+          </Title>
+          <Select
+            style={{ width: 300 }}
+            placeholder="Chọn kỳ thi"
+            value={selectedExamId || undefined}
+            onChange={(value) => setSelectedExamId(value)}
+            allowClear
+          >
+            {examOptions.map(opt => (
+              <Option key={opt.value} value={opt.value}>{opt.label}</Option>
+            ))}
+          </Select>
+        </div>
 
         <Spin spinning={loading}>
           {schedules.length === 0 && !loading ? (

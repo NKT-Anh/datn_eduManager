@@ -37,6 +37,8 @@ src/uploads/
 **/*-firebase-adminsdk-*.json
 
 
+/backend/google-drive-credentials.json
+google-drive-credentials.json
 
 
 

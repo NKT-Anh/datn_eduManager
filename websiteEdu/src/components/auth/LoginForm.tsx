@@ -8,6 +8,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { User, Lock, Eye, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import logoSchool from '@/assets/logo_school.png';
+import { Chrome } from 'lucide-react';
+import OTPLoginForm from './OTPLoginForm';
+import axios from 'axios';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
 const LoginForm = () => {
   const [username, setUsername] = useState('');
@@ -15,7 +20,9 @@ const LoginForm = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const { login, backendUser } = useAuth();
+  const [showOTPForm, setShowOTPForm] = useState(false);
+  const [sendingOTP, setSendingOTP] = useState(false);
+  const { login, loginWithGoogle, backendUser } = useAuth();
   const navigate = useNavigate();
 
   // Điều hướng khi backendUser được cập nhật
@@ -43,6 +50,31 @@ const LoginForm = () => {
     
     navigate(`${routePrefix}/home`);
   }, [backendUser, navigate]);
+
+  const handleSendOTP = async () => {
+    const trimmedUsername = username.trim();
+    if (!trimmedUsername) {
+      setError('Vui lòng nhập email');
+      return;
+    }
+
+    setSendingOTP(true);
+    setError('');
+
+    try {
+      await axios.post(`${API_BASE_URL}/auth/send-login-otp`, { email: trimmedUsername });
+      setShowOTPForm(true);
+    } catch (err: any) {
+      console.error('[Send OTP Error]', err);
+      if (err.response?.data?.message) {
+        setError(err.response.data.message);
+      } else {
+        setError('Không thể gửi mã OTP. Vui lòng thử lại.');
+      }
+    } finally {
+      setSendingOTP(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -192,10 +224,7 @@ const LoginForm = () => {
                 <div className="flex justify-end">
                   <button
                     type="button"
-                    onClick={() => {
-                      // TODO: Implement forgot password functionality
-                      alert('Tính năng quên mật khẩu đang được phát triển');
-                    }}
+                    onClick={() => navigate('/forgot-password')}
                     className="text-xs text-blue-600 hover:text-blue-700 hover:underline focus:outline-none transition-colors"
                   >
                     Quên mật khẩu?
@@ -209,28 +238,89 @@ const LoginForm = () => {
                 </Alert>
               )}
 
-              <Button
-                type="submit"
-                className="w-full h-11 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm hover:shadow transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={loading}
-              >
-                {loading ? (
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-                    Đang đăng nhập...
-                  </span>
-                ) : (
-                  'Đăng nhập'
-                )}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+              <div className="space-y-2">
+                <Button
+                  type="submit"
+                  className="w-full h-11 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm hover:shadow transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                      Đang đăng nhập...
+                    </span>
+                  ) : (
+                    'Đăng nhập với mật khẩu'
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleSendOTP}
+                  className="w-full h-11 text-sm font-semibold border-blue-600 text-blue-600 hover:bg-blue-50 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={sendingOTP || !username.trim()}
+                >
+                  {sendingOTP ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 h-4 border-2 border-blue-600/30 border-t-blue-600 rounded-full animate-spin"></span>
+                      Đang gửi mã OTP...
+                    </span>
+                  ) : (
+                    'Đăng nhập với mã OTP'
+                  )}
+                </Button>
+              </div>
 
-        {/* Footer */}
-        <div className="text-center text-xs text-gray-500">
-          <p>© 2025 Hệ thống quản lý trường học</p>
-        </div>
+                      {/* Divider */}
+                      <div className="relative my-6">
+                        <div className="absolute inset-0 flex items-center">
+                          <span className="w-full border-t border-gray-300"></span>
+                        </div>
+                        <div className="relative flex justify-center text-xs uppercase">
+                          <span className="bg-white px-2 text-gray-500">Hoặc</span>
+                        </div>
+                      </div>
+
+                      {/* Google Sign-In Button */}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full h-11 text-sm font-semibold border-gray-300 hover:bg-gray-50 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={async () => {
+                          try {
+                            setLoading(true);
+                            setError('');
+                            await loginWithGoogle();
+                          } catch (err: any) {
+                            console.error('[Google Sign-In Error]', err);
+                            if (err.code === 'auth/popup-closed-by-user') {
+                              setError('Bạn đã đóng cửa sổ đăng nhập. Vui lòng thử lại.');
+                            } else if (err.code === 'auth/popup-blocked') {
+                              setError('Cửa sổ đăng nhập bị chặn. Vui lòng cho phép popup và thử lại.');
+                            } else if (err.code === 'auth/operation-not-allowed') {
+                              setError('Đăng nhập bằng Google chưa được bật. Vui lòng liên hệ quản trị viên.');
+                            } else if (err.response?.data?.message) {
+                              setError(err.response.data.message);
+                            } else {
+                              setError('Đăng nhập bằng Google thất bại. Vui lòng thử lại.');
+                            }
+                          } finally {
+                            setLoading(false);
+                          }
+                        }}
+                        disabled={loading}
+                      >
+                        <Chrome className="h-4 w-4 mr-2" />
+                        Đăng nhập với Google
+                      </Button>
+                    </form>
+                  </CardContent>
+                </Card>
+
+                {/* Footer */}
+                <div className="text-center text-xs text-gray-500">
+                  <p>© 2025 Hệ thống quản lý trường học</p>
+                </div>
       </div>
     </div>
   );

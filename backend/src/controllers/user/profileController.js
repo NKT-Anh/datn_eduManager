@@ -191,6 +191,35 @@ exports.updateProfile = async (req, res) => {
 
     await User.findOneAndUpdate({ accountId: account._id }, baseUpdate, { new: true });
 
+    // ✅ Đồng bộ số điện thoại mới vào Account và Firebase nếu có thay đổi
+    if (phone !== undefined && phone !== account.phone) {
+      // Format phone number (đảm bảo có +84)
+      let formattedPhone = phone.trim();
+      if (!formattedPhone.startsWith('+')) {
+        if (formattedPhone.startsWith('0')) {
+          formattedPhone = '+84' + formattedPhone.substring(1);
+        } else {
+          formattedPhone = '+84' + formattedPhone;
+        }
+      }
+
+      // Cập nhật trong Account model
+      account.phone = formattedPhone;
+      await account.save();
+
+      // Cập nhật trong Firebase
+      try {
+        await admin.auth().updateUser(account.uid, {
+          phoneNumber: formattedPhone,
+        });
+        console.log(`✅ Đã cập nhật số điện thoại trong Firebase: ${formattedPhone}`);
+      } catch (firebaseError) {
+        console.error('⚠️ Lỗi cập nhật số điện thoại trong Firebase:', firebaseError);
+        // Không throw error để không ảnh hưởng đến việc cập nhật profile
+        // Nhưng log để admin biết
+      }
+    }
+
     /* =========================================================
        👨‍🎓 HỌC SINH
     ========================================================== */
@@ -389,6 +418,18 @@ exports.changePassword = async (req, res) => {
     const { newPassword } = req.body;
 
     if (!newPassword) return res.status(400).json({ message: 'Mật khẩu mới không được để trống' });
+
+    // ✅ Validate password theo policy từ settings
+    const { validatePasswordSync } = require('../../utils/passwordValidator');
+    const Setting = require('../../models/settings');
+    
+    const settings = await Setting.findOne().lean();
+    const policy = settings?.passwordPolicy || 'medium';
+    
+    const validation = validatePasswordSync(newPassword, policy);
+    if (!validation.valid) {
+      return res.status(400).json({ message: validation.message });
+    }
 
     await admin.auth().updateUser(uid, { password: newPassword });
 
