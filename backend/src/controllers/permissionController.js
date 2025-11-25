@@ -301,5 +301,217 @@ exports.copyPermissionsFromYear = async (req, res) => {
   }
 };
 
+/**
+ * ✅ Lấy tất cả role permissions (quyền cấp role, không phụ thuộc năm học)
+ * GET /permissions/roles
+ */
+exports.getAllRolePermissions = async (req, res) => {
+  try {
+    const { ROLE_PERMISSIONS, ROLES, PERMISSIONS } = require('../config/permissions');
+    
+    // Lấy từ database (nếu có) hoặc từ config
+    const rolePermissionsFromDB = await Permission.find({ 
+      schoolYear: 'default',
+      isActive: true 
+    }).lean();
+    
+    const roles = Object.values(ROLES);
+    const allPermissions = Object.values(PERMISSIONS);
+    
+    // Tạo map từ database
+    const dbMap = {};
+    rolePermissionsFromDB.forEach(rp => {
+      dbMap[rp.role] = rp.permissions || [];
+    });
+    
+    // Kết hợp với config
+    const result = roles.map(role => {
+      const dbPermissions = dbMap[role] || [];
+      const configPermissions = ROLE_PERMISSIONS[role] || [];
+      
+      // Ưu tiên database, nếu không có thì dùng config
+      const permissions = dbPermissions.length > 0 ? dbPermissions : configPermissions;
+      
+      return {
+        role,
+        roleName: role === 'admin' ? 'Quản trị viên' : 
+                  role === 'teacher' ? 'Giáo viên' : 
+                  role === 'student' ? 'Học sinh' : role,
+        permissions: permissions,
+        allPermissions: allPermissions.map(perm => ({
+          key: perm,
+          name: perm.split(':').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' '),
+          enabled: permissions.includes(perm)
+        })),
+        isFromDB: dbPermissions.length > 0,
+        isDefault: dbPermissions.length === 0
+      };
+    });
+    
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error getting role permissions:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Lỗi khi lấy danh sách quyền role', 
+      error: error.message 
+    });
+  }
+};
+
+/**
+ * ✅ Cập nhật permissions cho một role
+ * PUT /permissions/roles/:role
+ */
+exports.updateRolePermissions = async (req, res) => {
+  try {
+    const { role } = req.params;
+    const { permissions } = req.body;
+    const account = await Account.findOne({ uid: req.user.uid });
+
+    if (!account) {
+      return res.status(401).json({ 
+        success: false,
+        message: 'Không tìm thấy tài khoản' 
+      });
+    }
+
+    // ✅ CHỈ ADMIN MỚI ĐƯỢC CẬP NHẬT ROLE PERMISSIONS
+    if (account.role !== 'admin') {
+      return res.status(403).json({ 
+        success: false,
+        message: 'Chỉ admin mới được cập nhật quyền role' 
+      });
+    }
+
+    // Validate role
+    const { ROLES, PERMISSIONS: PERMS } = require('../config/permissions');
+    if (!Object.values(ROLES).includes(role)) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Role không hợp lệ' 
+      });
+    }
+
+    // Validate permissions
+    if (!Array.isArray(permissions)) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Permissions phải là mảng' 
+      });
+    }
+
+    const validPermissions = Object.values(PERMS);
+    const invalidPermissions = permissions.filter(p => !validPermissions.includes(p));
+    if (invalidPermissions.length > 0) {
+      return res.status(400).json({ 
+        success: false,
+        message: `Các quyền không hợp lệ: ${invalidPermissions.join(', ')}` 
+      });
+    }
+
+    // Loại bỏ trùng lặp
+    const uniquePermissions = [...new Set(permissions)];
+
+    // Lưu vào database với schoolYear = 'default'
+    let rolePermission = await Permission.findOne({ 
+      role, 
+      schoolYear: 'default' 
+    });
+
+    if (rolePermission) {
+      rolePermission.permissions = uniquePermissions;
+      rolePermission.updatedBy = account._id;
+      rolePermission.isActive = true;
+      await rolePermission.save();
+    } else {
+      rolePermission = await Permission.create({
+        role,
+        schoolYear: 'default',
+        permissions: uniquePermissions,
+        description: `Quyền hệ thống cho role ${role}`,
+        isActive: true,
+        createdBy: account._id,
+        updatedBy: account._id
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Đã cập nhật quyền cho role ${role} thành công`,
+      data: rolePermission
+    });
+  } catch (error) {
+    console.error('Error updating role permissions:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Lỗi khi cập nhật quyền role', 
+      error: error.message 
+    });
+  }
+};
+
+/**
+ * ✅ Reset permissions về mặc định từ config
+ * POST /permissions/roles/:role/reset
+ */
+exports.resetRolePermissions = async (req, res) => {
+  try {
+    const { role } = req.params;
+    const account = await Account.findOne({ uid: req.user.uid });
+
+    if (!account) {
+      return res.status(401).json({ 
+        success: false,
+        message: 'Không tìm thấy tài khoản' 
+      });
+    }
+
+    // ✅ CHỈ ADMIN MỚI ĐƯỢC RESET ROLE PERMISSIONS
+    if (account.role !== 'admin') {
+      return res.status(403).json({ 
+        success: false,
+        message: 'Chỉ admin mới được reset quyền role' 
+      });
+    }
+
+    // Validate role
+    const { ROLES, ROLE_PERMISSIONS } = require('../config/permissions');
+    if (!Object.values(ROLES).includes(role)) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Role không hợp lệ' 
+      });
+    }
+
+    const defaultPermissions = ROLE_PERMISSIONS[role] || [];
+
+    // Xóa permission từ database (nếu có)
+    await Permission.deleteOne({ 
+      role, 
+      schoolYear: 'default' 
+    });
+
+    res.json({
+      success: true,
+      message: `Đã reset quyền cho role ${role} về mặc định`,
+      data: {
+        role,
+        permissions: defaultPermissions
+      }
+    });
+  } catch (error) {
+    console.error('Error resetting role permissions:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Lỗi khi reset quyền role', 
+      error: error.message 
+    });
+  }
+};
+
 
 

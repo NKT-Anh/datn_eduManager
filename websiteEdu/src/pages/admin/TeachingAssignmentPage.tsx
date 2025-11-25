@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { X, BookOpen, Loader2, AlertTriangle, Search, FileText, ChevronDown, ChevronUp, CheckCircle, XCircle, Clock } from "lucide-react";
+import { X, BookOpen, Loader2, AlertTriangle, Search, FileText, ChevronDown, ChevronUp, CheckCircle, XCircle, Clock, Lock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { proposalApi, TeachingAssignmentProposal } from "@/services/proposalApi";
@@ -129,6 +129,7 @@ export default function TeachingAssignmentPage() {
   const [showTeacherLoadCard, setShowTeacherLoadCard] = useState(false);
   const [showAutoCheckCard, setShowAutoCheckCard] = useState(true);
   const [classPeriodsMap, setClassPeriodsMap] = useState<Record<string, number>>({}); // { "subjectId_classId": periods }
+  const [assignmentLocks, setAssignmentLocks] = useState<Record<string, { gradeCount: number; locked: boolean }>>({}); // { assignmentId: { gradeCount, locked } }
 
   const form = useForm<AssignmentFormData>({
     resolver: zodResolver(assignmentSchema),
@@ -384,6 +385,7 @@ useEffect(() => {
       setFilterYear(currentYear);
     }
   }, [currentYear, filterYear]);
+
 // ✅ Chỉ lọc theo năm học (bắt buộc)
 const filteredAssignments = useMemo(() => {
   if (!filterYear) return [];
@@ -393,6 +395,40 @@ const filteredAssignments = useMemo(() => {
       (!filterSemester || a.semester === filterSemester)
   );
 }, [assignments, filterYear, filterSemester]);
+
+  // ✅ Kiểm tra số lượng điểm cho mỗi assignment
+  useEffect(() => {
+    if (!filterYear) return; // Đảm bảo filterYear đã được set
+    
+    const checkGradeCounts = async () => {
+      const locks: Record<string, { gradeCount: number; locked: boolean }> = {};
+      
+      // Sử dụng filteredAssignments từ scope bên ngoài
+      const currentFiltered = assignments.filter(
+        (a) =>
+          a.year === filterYear &&
+          (!filterSemester || a.semester === filterSemester)
+      );
+      
+      for (const assignment of currentFiltered) {
+        if (assignment._id) {
+          try {
+            const result = await assignmentApi.getGradeCount(assignment._id);
+            locks[assignment._id] = result;
+          } catch (err) {
+            console.error(`Error checking grade count for assignment ${assignment._id}:`, err);
+            locks[assignment._id] = { gradeCount: 0, locked: false };
+          }
+        }
+      }
+      
+      setAssignmentLocks(locks);
+    };
+
+    if (currentFiltered.length > 0) {
+      checkGradeCounts();
+    }
+  }, [assignments, filterYear, filterSemester]);
 
 // ✅ Tính toán số tiết giáo viên local dựa trên assignments hiện tại trong bảng
 // Loại bỏ các giáo viên có flag BGH (isLeader)
@@ -1293,6 +1329,10 @@ const handleCheckMissingTeachers = async () => {
                                         className="h-7 w-7 text-destructive hover:text-destructive-foreground hover:bg-destructive shrink-0"
                                         onClick={() => handleDeleteSubject(subject._id!)}
                                         title="Xóa tất cả phân công của môn này"
+                                        disabled={gradeSubjects.some(s => {
+                                          const assignment = getAssignment(s._id!, gradeClasses[0]?._id);
+                                          return assignment?._id && assignmentLocks[assignment._id]?.locked;
+                                        })}
                                       >
                                         <X className="h-4 w-4" />
                                       </Button>
@@ -1301,6 +1341,8 @@ const handleCheckMissingTeachers = async () => {
                                   {gradeClasses.map(cls => {
                                     const cellAssignment = getAssignment(subject._id!, cls._id);
                                     const hasTeacher = !!cellAssignment?.teacherId?._id;
+                                    const isLocked = cellAssignment?._id ? assignmentLocks[cellAssignment._id]?.locked || false : false;
+                                    const gradeCount = cellAssignment?._id ? assignmentLocks[cellAssignment._id]?.gradeCount || 0 : 0;
                                     
                                     // Tính số tiết cho lớp này
                                     const periodKey = `${subject._id}_${cls._id}`;
@@ -1389,17 +1431,24 @@ const handleCheckMissingTeachers = async () => {
                                         key={cls._id}
                                         className={`${hasTeacher ? "bg-primary/5" : "bg-orange-50/50 dark:bg-orange-900/10"} transition-colors`}
                                       >
-    <Select
-                                          value={cellAssignment?.teacherId?._id || ""}
-                                          onValueChange={(teacherId) => {
-                                            if (teacherId) {
-                                              const subjectId = String(subject._id);
-                                              const classId = String(cls._id);
-                                              handleCellChange(subjectId, classId, teacherId);
-                                            }
-                                          }}
-                                        >
-                                          <SelectTrigger className={`w-full h-9 ${hasTeacher ? "border-primary/50 bg-primary/5 hover:bg-primary/10" : "border-orange-200 dark:border-orange-800 hover:bg-orange-100/50 dark:hover:bg-orange-900/20"} transition-colors`}>
+    <div className="relative">
+                                            {isLocked && (
+                                              <div className="absolute -top-1 -right-1 z-10 bg-yellow-500 text-white rounded-full p-1 shadow-md" title={`Đã có ${gradeCount} điểm - Không thể thay đổi`}>
+                                                <Lock className="h-3 w-3" />
+                                              </div>
+                                            )}
+                                            <Select
+                                              value={cellAssignment?.teacherId?._id || ""}
+                                              onValueChange={(teacherId) => {
+                                                if (teacherId && !isLocked) {
+                                                  const subjectId = String(subject._id);
+                                                  const classId = String(cls._id);
+                                                  handleCellChange(subjectId, classId, teacherId);
+                                                }
+                                              }}
+                                              disabled={isLocked}
+                                            >
+                                              <SelectTrigger className={`w-full h-9 ${hasTeacher ? "border-primary/50 bg-primary/5 hover:bg-primary/10" : "border-orange-200 dark:border-orange-800 hover:bg-orange-100/50 dark:hover:bg-orange-900/20"} ${isLocked ? "opacity-60 cursor-not-allowed" : ""} transition-colors`}>
                                             <SelectValue placeholder="Chọn giáo viên">
                                               {cellAssignment?.teacherId?.name ? (
                                                 <>
@@ -1421,8 +1470,8 @@ const handleCheckMissingTeachers = async () => {
                                                 <span className="text-muted-foreground">Chọn giáo viên</span>
                                               )}
                                             </SelectValue>
-    </SelectTrigger>
-    <SelectContent>
+                                              </SelectTrigger>
+                                              <SelectContent>
                                             {teacherLoadLoading && (
                                               <div className="px-3 py-2 text-sm text-muted-foreground flex items-center gap-2">
                                                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -1460,9 +1509,10 @@ const handleCheckMissingTeachers = async () => {
                                                 Không có giáo viên
         </div>
       )}
-    </SelectContent>
-  </Select>
-</TableCell>
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+                                      </TableCell>
                                     );
                                   })}
               </TableRow>

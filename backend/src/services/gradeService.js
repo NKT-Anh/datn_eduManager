@@ -192,13 +192,24 @@ async function recomputeSummary({ studentId, subjectId, classId, schoolYear, sem
   let average = null;
   let result = null; // "D" hoặc "K" cho môn không tính điểm TB
 
-  // Nếu môn học tính điểm trung bình
-  if (subject.includeInAverage) {
+  // Nếu môn học tính điểm trung bình (mặc định là true nếu không set)
+  if (subject.includeInAverage !== false) {
     const config = await getActiveConfig(schoolYear, semester);
     const { weights, rounding } = config;
     const computed = computeAverages(items, weights, rounding);
     averages = computed.averages;
     average = computed.average;
+    
+    console.log(`[recomputeSummary] Tính điểm trung bình:`, {
+      studentId: String(studentId),
+      subjectId: String(subjectId),
+      subjectName: subject.name,
+      includeInAverage: subject.includeInAverage,
+      itemsCount: items.length,
+      computedAverage: average,
+      computedAverages: averages,
+      weights,
+    });
   } else {
     // Môn không tính điểm TB - kiểm tra có điểm nào không để quyết định D/K
     // Nếu có ít nhất 1 điểm >= 5.0 thì D (đạt), ngược lại K (không đạt)
@@ -235,6 +246,28 @@ async function recomputeSummary({ studentId, subjectId, classId, schoolYear, sem
     { $set: updateData },
     { new: true, upsert: true, setDefaultsOnInsert: true }
   );
+
+  console.log(`[recomputeSummary] Đã lưu điểm trung bình vào database:`, {
+    studentId: String(studentId),
+    subjectId: String(subjectId),
+    schoolYear,
+    semester,
+    average,
+    averages,
+    summaryId: summary?._id,
+    savedAverage: summary?.average,
+    savedAverages: summary?.averages,
+  });
+
+  // ✅ Đảm bảo điểm trung bình đã được lưu
+  if (summary && average !== null && average !== undefined) {
+    if (summary.average !== average) {
+      console.error(`[recomputeSummary] ⚠️ LỖI: Điểm trung bình không khớp! Tính được: ${average}, Lưu trong DB: ${summary.average}`);
+      // Thử lưu lại
+      await GradeSummary.findByIdAndUpdate(summary._id, { $set: { average, averages } });
+      console.log(`[recomputeSummary] Đã cập nhật lại điểm trung bình`);
+    }
+  }
 
   return summary;
 }

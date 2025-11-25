@@ -1,6 +1,7 @@
 const User = require('../models/user/user');
 const admin = require('../config/firebaseAdmin'); // Firebase Admin SDK
 const jwt = require('jsonwebtoken');
+const { logLogin } = require('../middlewares/auditLogMiddleware');
 
 // Login: Xác thực Firebase token + trả về role + JWT backend nếu muốn
 exports.login = async (req, res) => {
@@ -117,6 +118,13 @@ exports.login = async (req, res) => {
       }
     }
 
+    // ✅ Log đăng nhập thành công
+    try {
+      await logLogin(req, user, 'SUCCESS');
+    } catch (logError) {
+      console.error('Error logging login:', logError);
+    }
+
     res.json({
       message: 'Login successful',
       role: user.role,
@@ -128,6 +136,30 @@ exports.login = async (req, res) => {
 
   } catch (error) {
     console.error('[Login Error]', error);
+    
+    // ✅ Log đăng nhập thất bại (nếu có thể lấy được thông tin user)
+    try {
+      let decoded = null;
+      try {
+        const idToken = req.headers.authorization?.split('Bearer ')[1];
+        if (idToken) {
+          decoded = await admin.auth().verifyIdToken(idToken);
+        }
+      } catch (e) {
+        // Token không hợp lệ, bỏ qua
+      }
+      
+      if (decoded?.uid) {
+        const Account = require('../models/user/account');
+        const account = await Account.findOne({ uid: decoded.uid }).lean();
+        if (account) {
+          await logLogin(req, account, 'FAILED', error.message);
+        }
+      }
+    } catch (logError) {
+      console.error('Error logging failed login:', logError);
+    }
+    
     res.status(401).json({ message: 'Invalid Firebase token' });
   }
 };

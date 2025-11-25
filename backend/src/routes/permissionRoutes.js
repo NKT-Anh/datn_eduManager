@@ -15,11 +15,11 @@ router.get(
   permissionController.getAllPermissions
 );
 
-// ✅ Lấy permission theo ID
+// ✅ Lấy tất cả role permissions (quyền cấp role) - PHẢI ĐẶT TRƯỚC /:id
 router.get(
-  '/:id',
+  '/roles',
   checkPermission(PERMISSIONS.ROLE_MANAGE, { checkContext: false }),
-  permissionController.getPermissionById
+  permissionController.getAllRolePermissions
 );
 
 // ✅ Lấy permission theo role và schoolYear
@@ -27,6 +27,13 @@ router.get(
   '/role/:role/year/:schoolYear',
   checkPermission(PERMISSIONS.ROLE_MANAGE, { checkContext: false }),
   permissionController.getPermissionByRoleAndYear
+);
+
+// ✅ Lấy permission theo ID - PHẢI ĐẶT SAU /roles
+router.get(
+  '/:id',
+  checkPermission(PERMISSIONS.ROLE_MANAGE, { checkContext: false }),
+  permissionController.getPermissionById
 );
 
 // ✅ Tạo permission mới
@@ -55,6 +62,20 @@ router.post(
   '/copy',
   checkPermission(PERMISSIONS.ROLE_MANAGE, { checkContext: false }),
   permissionController.copyPermissionsFromYear
+);
+
+// ✅ Cập nhật permissions cho một role
+router.put(
+  '/roles/:role',
+  checkPermission(PERMISSIONS.ROLE_MANAGE, { checkContext: false }),
+  permissionController.updateRolePermissions
+);
+
+// ✅ Reset permissions về mặc định
+router.post(
+  '/roles/:role/reset',
+  checkPermission(PERMISSIONS.ROLE_MANAGE, { checkContext: false }),
+  permissionController.resetRolePermissions
 );
 
 module.exports = router;

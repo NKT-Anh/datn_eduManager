@@ -88,6 +88,81 @@ const attendanceApi = {
     const res = await axiosClient.get(`/attendance/class/${classId}/students`);
     return res.data;
   },
+
+  // 📊 Thống kê chi tiết theo lớp (Admin)
+  getAttendanceStatsByClass: async (params?: {
+    schoolYear?: string;
+    semester?: string;
+    startDate?: string;
+    endDate?: string;
+    grade?: string;
+  }) => {
+    const res = await axiosClient.get('/attendance/stats/by-class', { params });
+    return res.data;
+  },
+
+  // 📊 Thống kê theo khối (Admin)
+  getAttendanceStatsByGrade: async (params?: {
+    schoolYear?: string;
+    semester?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    const res = await axiosClient.get('/attendance/stats/by-grade', { params });
+    return res.data;
+  },
+
+  // 📈 Xu hướng điểm danh (Admin)
+  getAttendanceTrends: async (params?: {
+    schoolYear?: string;
+    semester?: string;
+    startDate?: string;
+    endDate?: string;
+    groupBy?: 'day' | 'week' | 'month';
+    classId?: string;
+    grade?: string;
+  }) => {
+    const res = await axiosClient.get('/attendance/stats/trends', { params });
+    return res.data;
+  },
+
+  // 📊 Thống kê tổng quan (Admin)
+  getAttendanceOverview: async (params?: {
+    schoolYear?: string;
+    semester?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    const res = await axiosClient.get('/attendance/stats/overview', { params });
+    return res.data;
+  },
+
+  // 📊 Thống kê hôm nay cho BGH
+  getTodayAttendanceStats: async (params?: {
+    schoolYear?: string;
+    semester?: string;
+  }) => {
+    const res = await axiosClient.get('/attendance/stats/today', { params });
+    return res.data;
+  },
+
+  // 🔔 Cảnh báo điểm danh cho BGH
+  getAttendanceAlerts: async (params?: {
+    schoolYear?: string;
+    semester?: string;
+  }) => {
+    const res = await axiosClient.get('/attendance/alerts', { params });
+    return res.data;
+  },
+
+  // 📋 Điểm danh theo lớp hôm nay cho BGH
+  getTodayAttendanceByClass: async (classId: string, params?: {
+    schoolYear?: string;
+    semester?: string;
+  }) => {
+    const res = await axiosClient.get(`/attendance/class/${classId}/today`, { params });
+    return res.data;
+  },
 };
 
 export default attendanceApi;

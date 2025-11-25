@@ -97,6 +97,10 @@ exports.PERMISSIONS = {
   CONDUCT_VIEW: 'conduct:view',
   CONDUCT_ENTER: 'conduct:enter',                  // Nhập hạnh kiểm lớp CN
 
+  // 13.1. Admin - Xem log hoạt động
+  ADMIN_VIEW: 'admin:view',
+  ADMIN_DELETE: 'admin:delete',
+
   // 13. Quản lý kỳ thi
   EXAM_CREATE: 'exam:create',
   EXAM_UPDATE: 'exam:update',

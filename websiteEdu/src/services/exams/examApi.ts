@@ -123,12 +123,22 @@ async getAll(params?: {
   },
 
   async getSummary() {
-    const res = await api.get(`/exam/summary`);
-    return res.data;
+    try {
+      const res = await api.get(`/exam/summary/status`);
+      return res.data || [];
+    } catch (error) {
+      console.error('Error getting exam summary:', error);
+      return [];
+    }
   },
 
   async getYearlyStats() {
-    const res = await api.get(`/exam/yearly-stats`);
-    return res.data;
+    try {
+      const res = await api.get(`/exam/summary/year`);
+      return res.data || [];
+    } catch (error) {
+      console.error('Error getting yearly stats:', error);
+      return [];
+    }
   },
 };

@@ -107,4 +107,10 @@ export const assignmentApi = {
     return res.data;
   },
 
+  // ✅ Kiểm tra số lượng điểm của phân công
+  getGradeCount: async (id: string): Promise<{ gradeCount: number; locked: boolean }> => {
+    const res = await api.get(`${API_URL}/${id}/grade-count`);
+    return res.data;
+  },
+
 };

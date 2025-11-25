@@ -262,6 +262,31 @@ exports.updateAssignment = async (req, res) => {
       return res.status(404).json({ error: "Không tìm thấy phân công" });
     }
     
+    // 🔒 Kiểm tra xem đã có điểm nào được nhập cho phân công cũ chưa
+    const GradeItem = require('../../models/grade/gradeItem');
+    const gradeCount = await GradeItem.countDocuments({
+      subjectId: oldAssignment.subjectId,
+      classId: oldAssignment.classId,
+      schoolYear: oldAssignment.year,
+      semester: oldAssignment.semester,
+    });
+    
+    // Nếu có điểm và thông tin phân công thay đổi (giáo viên, lớp, môn, năm, kỳ) thì không cho phép
+    const isChanged = 
+      String(oldAssignment.teacherId) !== String(teacherId) ||
+      String(oldAssignment.subjectId) !== String(subjectId) ||
+      String(oldAssignment.classId) !== String(classId) ||
+      String(oldAssignment.year) !== String(year) ||
+      String(oldAssignment.semester) !== String(semester);
+    
+    if (gradeCount > 0 && isChanged) {
+      return res.status(403).json({ 
+        error: `Không thể thay đổi phân công này vì đã có ${gradeCount} điểm được nhập. Vui lòng xóa tất cả điểm trước khi thay đổi phân công.`,
+        gradeCount,
+        locked: true
+      });
+    }
+    
     // ✅ Kiểm tra nếu là Trưởng bộ môn, chỉ có thể cập nhật phân công cho giáo viên trong tổ
     if (req.user && req.user.role === 'teacher' && req.user.teacherFlags?.isDepartmentHead) {
       const Teacher = require('../../models/user/teacher');
@@ -334,6 +359,36 @@ exports.updateAssignment = async (req, res) => {
 };
 
 
+// GET /teachingAssignments/:id/grade-count - Kiểm tra số lượng điểm của phân công
+exports.getGradeCount = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const assignment = await TeachingAssignment.findById(id).lean();
+    if (!assignment) {
+      return res.status(404).json({ error: "Không tìm thấy phân công" });
+    }
+    
+    const GradeItem = require('../../models/grade/gradeItem');
+    const gradeCount = await GradeItem.countDocuments({
+      subjectId: assignment.subjectId,
+      classId: assignment.classId,
+      schoolYear: assignment.year,
+      semester: assignment.semester,
+    });
+    
+    res.status(200).json({ 
+      gradeCount,
+      locked: gradeCount > 0 
+    });
+  } catch (err) {
+    res.status(400).json({ 
+      error: "Lỗi khi kiểm tra số lượng điểm", 
+      details: err.message 
+    });
+  }
+};
+
 exports.deleteAssignment = async (req, res) => {
   try {
     const { id } = req.params;
@@ -342,6 +397,23 @@ exports.deleteAssignment = async (req, res) => {
     const assignment = await TeachingAssignment.findById(id).populate('teacherId').lean();
     if (!assignment) {
       return res.status(404).json({ message: "Không tìm thấy phân công" });
+    }
+    
+    // 🔒 Kiểm tra xem đã có điểm nào được nhập cho phân công này chưa
+    const GradeItem = require('../../models/grade/gradeItem');
+    const gradeCount = await GradeItem.countDocuments({
+      subjectId: assignment.subjectId,
+      classId: assignment.classId,
+      schoolYear: assignment.year,
+      semester: assignment.semester,
+    });
+    
+    if (gradeCount > 0) {
+      return res.status(403).json({ 
+        error: `Không thể xóa phân công này vì đã có ${gradeCount} điểm được nhập. Vui lòng xóa tất cả điểm trước khi xóa phân công.`,
+        gradeCount,
+        locked: true
+      });
     }
     
     // ✅ Kiểm tra nếu là Trưởng bộ môn, chỉ có thể xóa phân công cho giáo viên trong tổ

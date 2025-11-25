@@ -4,6 +4,7 @@ const scheduleController = require("../../controllers/subject/scheduleController
 const authMiddleware = require('../../middlewares/authMiddleware');
 const checkPermission = require('../../middlewares/checkPermission');
 const { PERMISSIONS } = require('../../config/permissions');
+const { auditLog } = require('../../middlewares/auditLogMiddleware');
 
 // ✅ Danh sách thời khóa biểu - Tất cả roles có quyền xem
 router.get("/", 
@@ -43,7 +44,13 @@ router.post("/",
 // ✅ Cập nhật - Chỉ Admin
 router.put("/:id", 
   authMiddleware, 
-  checkPermission(PERMISSIONS.SCHEDULE_UPDATE), 
+  checkPermission(PERMISSIONS.SCHEDULE_UPDATE),
+  auditLog({
+    action: 'UPDATE',
+    resource: 'SCHEDULE',
+    getResourceId: (req) => req.params.id,
+    getDescription: (req) => `BGH cập nhật/duyệt thời khóa biểu: ${req.params.id}, Lớp ${req.body?.classId || 'N/A'}`,
+  }),
   scheduleController.updateSchedule
 );
 

@@ -4,6 +4,7 @@ const schoolYearController = require('../controllers/schoolYearController');
 const authMiddleware = require('../middlewares/authMiddleware');
 const checkPermission = require('../middlewares/checkPermission');
 const { PERMISSIONS } = require('../config/permissions');
+const { auditLog } = require('../middlewares/auditLogMiddleware');
 
 // 📋 Lấy danh sách năm học - Tất cả roles có quyền xem
 router.get(
@@ -42,6 +43,12 @@ router.put(
   '/:id',
   authMiddleware,
   checkPermission(PERMISSIONS.YEAR_MANAGE, { checkContext: false }),
+  auditLog({
+    action: 'UPDATE',
+    resource: 'SCHOOL_YEAR',
+    getResourceId: (req) => req.params.id,
+    getDescription: (req) => `BGH cập nhật thông tin năm học: ${req.body?.name || req.params.id}, Học kỳ 1: ${req.body?.semester1Start || 'N/A'} - ${req.body?.semester1End || 'N/A'}, Học kỳ 2: ${req.body?.semester2Start || 'N/A'} - ${req.body?.semester2End || 'N/A'}`,
+  }),
   schoolYearController.updateSchoolYear
 );
 

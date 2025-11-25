@@ -44,6 +44,8 @@ const conductRoutes = require('./conduct/conductRoutes');
 const conductConfigRoutes = require('./conduct/conductConfigRoutes');
 const schoolYearRoutes = require('./schoolYearRoutes');
 const aiChatRoutes = require('./aiChatRoutes');
+const permissionRoutes = require('./permissionRoutes');
+const auditLogRoutes = require('./auditLogRoutes');
 
 // Tạo mảng routers với group name và mô tả
 const routers = [
@@ -90,6 +92,8 @@ const routers = [
     { group: 'conduct-config', router: conductConfigRoutes, description: 'Cấu hình hạnh kiểm' },
     { group: 'school-years', router: schoolYearRoutes, description: 'Quản lý năm học' },
     { group: 'ai-chat', router: aiChatRoutes, description: 'AI Chat hỗ trợ' },
+    { group: 'permissions', router: permissionRoutes, description: 'Quản lý phân quyền' },
+    { group: 'audit-logs', router: auditLogRoutes, description: 'Log hoạt động hệ thống' },
 
 ];  
 

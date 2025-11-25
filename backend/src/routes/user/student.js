@@ -4,6 +4,7 @@ const studentController = require('../../controllers/user/studentController');
 const authMiddleware = require('../../middlewares/authMiddleware');
 const checkPermission = require('../../middlewares/checkPermission');
 const { PERMISSIONS } = require('../../config/permissions');
+const { auditLog } = require('../../middlewares/auditLogMiddleware');
 
 // ✅ Danh sách học sinh - Tất cả roles có quyền xem (với context)
 router.get('/', 
@@ -32,21 +33,40 @@ router.get('/:id',
 // ✅ Thêm học sinh - Chỉ Admin
 router.post('/', 
   authMiddleware, 
-  checkPermission(PERMISSIONS.STUDENT_CREATE), 
+  checkPermission(PERMISSIONS.STUDENT_CREATE),
+  auditLog({
+    action: 'CREATE',
+    resource: 'STUDENT',
+    getResourceName: (req) => req.body?.name || null,
+    getDescription: (req) => `Tạo học sinh: ${req.body?.name || 'N/A'}`,
+  }),
   studentController.createStudent
 );
 
 // ✅ Cập nhật học sinh - Chỉ Admin
 router.put('/:id', 
   authMiddleware, 
-  checkPermission(PERMISSIONS.STUDENT_UPDATE), 
+  checkPermission(PERMISSIONS.STUDENT_UPDATE),
+  auditLog({
+    action: 'UPDATE',
+    resource: 'STUDENT',
+    getResourceId: (req) => req.params.id,
+    getResourceName: (req) => req.body?.name || null,
+    getDescription: (req) => `Cập nhật học sinh: ${req.body?.name || req.params.id}`,
+  }),
   studentController.updateStudent
 );
 
 // ✅ Xóa học sinh - Chỉ Admin
 router.delete('/:id', 
   authMiddleware, 
-  checkPermission(PERMISSIONS.STUDENT_DELETE), 
+  checkPermission(PERMISSIONS.STUDENT_DELETE),
+  auditLog({
+    action: 'DELETE',
+    resource: 'STUDENT',
+    getResourceId: (req) => req.params.id,
+    getDescription: (req) => `Xóa học sinh: ${req.params.id}`,
+  }),
   studentController.deleteStudent
 );
 

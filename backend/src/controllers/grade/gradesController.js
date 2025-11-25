@@ -270,17 +270,33 @@ exports.upsertGradeItems = async (req, res) => {
 
     // ✅ Tính lại summary (đảm bảo đúng học sinh, năm học, học kỳ)
     try {
-      await recomputeSummary({
+      const summary = await recomputeSummary({
         studentId: String(studentId),
         subjectId: String(subjectId),
         classId: classId ? String(classId) : undefined,
         schoolYear: String(schoolYear),
         semester: String(semester),
       });
-      console.log(`[upsertGradeItems] Đã tính lại summary cho học sinh ${studentId}, năm học ${schoolYear}, học kỳ ${semester}`);
+      console.log(`[upsertGradeItems] Đã tính lại summary cho học sinh ${studentId}, năm học ${schoolYear}, học kỳ ${semester}`, {
+        average: summary?.average,
+        averages: summary?.averages,
+        summaryId: summary?._id,
+      });
+      
+      if (!summary || summary.average === null || summary.average === undefined) {
+        console.warn(`[upsertGradeItems] ⚠️ Cảnh báo: Điểm trung bình chưa được tính hoặc bằng null cho học sinh ${studentId}, môn ${subjectId}`);
+      }
     } catch (recomputeError) {
       console.error('⚠️ Lỗi khi tính lại summary:', recomputeError);
-      // Vẫn trả về success vì đã lưu điểm thành công
+      console.error('⚠️ Chi tiết lỗi:', {
+        message: recomputeError.message,
+        stack: recomputeError.stack,
+        studentId,
+        subjectId,
+        schoolYear,
+        semester,
+      });
+      // Vẫn trả về success vì đã lưu điểm thành công, nhưng log lỗi để debug
     }
 
     // ✅ Tính lại điểm TB cả năm

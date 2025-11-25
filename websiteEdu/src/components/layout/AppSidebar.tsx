@@ -35,6 +35,9 @@ import {
   Bell,
   FileText,
   AlertCircle,
+  TrendingUp,
+  PieChart,
+  Activity,
 } from "lucide-react";
 import logoSchool from "@/assets/logo_school.png";
 import { useAuth } from "@/contexts/AuthContext";
@@ -290,6 +293,7 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
                 { id: "departments", title: "Tổ bộ môn", url: `${prefix}/departments`, icon: Users },
                 { id: "batch", title: "Tạo tài khoản", url: `${prefix}/batch`, icon: Users },
                 { id: "permissions", title: "Phân quyền", url: `${prefix}/permissions`, icon: Shield },
+                { id: "role-permissions", title: "Phân quyền hệ thống", url: `${prefix}/role-permissions`, icon: Shield },
               ],
             },
             {
@@ -344,6 +348,21 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
               ],
             },
             { id: "attendance", title: "Điểm danh", url: `${prefix}/attendance`, icon: ClipboardList },
+          ],
+        },
+        {
+          label: "Thống kê & Báo cáo",
+          items: [
+            { id: "statistics-dashboard", title: "Dashboard Thống kê", url: `${prefix}/statistics`, icon: BarChart3 },
+            { id: "grades-stats", title: "Thống kê điểm số", url: `${prefix}/grades-statistics`, icon: BarChart3 },
+            { id: "exam-dashboard", title: "Thống kê kỳ thi", url: `${prefix}/exam/exam-dashboard`, icon: PieChart },
+            { id: "attendance-stats", title: "Thống kê điểm danh", url: `${prefix}/attendance`, icon: TrendingUp },
+          ],
+        },
+        {
+          label: "Giám sát",
+          items: [
+            { id: "audit-logs", title: "Log hoạt động", url: `${prefix}/audit-logs`, icon: Activity },
           ],
         },
         {

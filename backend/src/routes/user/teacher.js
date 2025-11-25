@@ -4,6 +4,7 @@ const teacherController = require('../../controllers/user/teacherController');
 const authMiddleware = require('../../middlewares/authMiddleware');
 const checkPermission = require('../../middlewares/checkPermission');
 const { PERMISSIONS } = require('../../config/permissions');
+const { auditLog } = require('../../middlewares/auditLogMiddleware');
 
 // ✅ Cập nhật lịch rảnh - Giáo viên cập nhật của mình hoặc Admin
 router.put('/:id/availability',
@@ -35,7 +36,13 @@ router.get('/',
 // ✅ Tạo giáo viên - Chỉ Admin
 router.post('/', 
   authMiddleware, 
-  checkPermission(PERMISSIONS.TEACHER_CREATE), 
+  checkPermission(PERMISSIONS.TEACHER_CREATE),
+  auditLog({
+    action: 'CREATE',
+    resource: 'TEACHER',
+    getResourceName: (req) => req.body?.name || null,
+    getDescription: (req) => `Tạo giáo viên: ${req.body?.name || 'N/A'}`,
+  }),
   teacherController.createTeacher
 );
 
@@ -61,14 +68,27 @@ router.get('/:id',
 // ✅ Cập nhật giáo viên - Chỉ Admin
 router.put('/:id', 
   authMiddleware, 
-  checkPermission(PERMISSIONS.TEACHER_UPDATE), 
+  checkPermission(PERMISSIONS.TEACHER_UPDATE),
+  auditLog({
+    action: 'UPDATE',
+    resource: 'TEACHER',
+    getResourceId: (req) => req.params.id,
+    getResourceName: (req) => req.body?.name || null,
+    getDescription: (req) => `Cập nhật giáo viên: ${req.body?.name || req.params.id}`,
+  }),
   teacherController.updateTeacher
 );
 
 // ✅ Xóa giáo viên - Chỉ Admin
 router.delete('/:id', 
   authMiddleware, 
-  checkPermission(PERMISSIONS.TEACHER_DELETE), 
+  checkPermission(PERMISSIONS.TEACHER_DELETE),
+  auditLog({
+    action: 'DELETE',
+    resource: 'TEACHER',
+    getResourceId: (req) => req.params.id,
+    getDescription: (req) => `Xóa giáo viên: ${req.params.id}`,
+  }),
   teacherController.deleteTeacher
 );
 

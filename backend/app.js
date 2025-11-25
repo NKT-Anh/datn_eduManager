@@ -3,6 +3,7 @@ const cors = require('cors');
 const connectDB = require('./src/config/index');
 const {router} = require('./src/routes/index');
 const docsRoute = require('./src/routes/docs');
+const autoAuditLog = require('./src/middlewares/autoAuditLogMiddleware');
 
 const app = express();
 

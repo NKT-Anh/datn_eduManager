@@ -25,13 +25,16 @@ import AdminAttendancePage from "./pages/admin/AdminAttendancePage";
 import ProfilePage from "./pages/ProfilePage";
 import SettingsPage from "./pages/SettingsPage";
 import PermissionManagementPage from "./pages/admin/PermissionManagementPage";
+import RolePermissionsPage from "./pages/admin/RolePermissionsPage";
 import RoomListPage from "./pages/admin/RoomListPage";
 import BatchAccountPage from "./pages/admin/BatchAccountPage";
 import SchoolYearPage from "./pages/admin/SchoolYearPage";
 import GradeConfigPage from "./pages/grades/GradeConfigPage";
-import GradesSummaryPage from "./pages/grades/GradesSummaryPage";
 import AdminGradesPage from "./pages/admin/AdminGradesPage";
+import GradesStatisticsPage from "./pages/admin/GradesStatisticsPage";
+import StatisticsDashboardPage from "./pages/admin/StatisticsDashboardPage";
 import InitGradeTablePage from "./pages/admin/InitGradeTablePage";
+import AuditLogPage from "./pages/admin/AuditLogPage";
 import ExamListPage from "./pages/admin/exam/ExamListPage";
 import ExamDashboard from "./pages/admin/exam/ExamDashboard";
 import ExamDetailPage from "./pages/admin/exam/ExamDetailPage";
@@ -63,6 +66,7 @@ import BGHDashboard from "./pages/bgh/BGHDashboard";
 import BGHStudentsList from "./pages/bgh/BGHStudentsList";
 import BGHIncidentsPage from "./pages/bgh/BGHIncidentsPage";
 import BGHGradesPage from "./pages/bgh/BGHGradesPage";
+import BGHAttendancePage from "./pages/bgh/BGHAttendancePage";
 import ConductPage from "./pages/common/ConductPage";
 
 // 👨‍🎓 Student Pages
@@ -88,6 +92,8 @@ import ExamRoom from "./pages/student/exams/ExamRoom";
 // 🧭 Common Pages
 import NotFound from "./pages/NotFound";
 import NotificationsPage from "./pages/common/NotificationsPage";
+import NotificationDetailPage from "./pages/common/NotificationDetailPage";
+import StudentIncidentsPage from "./pages/student/StudentIncidentsPage";
 
 /* =========================================================
    ⚙️ Query Client
@@ -118,10 +124,13 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/admin/batch", element: <BatchAccountPage /> },
     { path: "/admin/grade-config", element: <GradeConfigPage /> },
     { path: "/admin/permissions", element: <PermissionManagementPage /> },
+    { path: "/admin/role-permissions", element: <RolePermissionsPage /> },
     { path: "/admin/school-years", element: <SchoolYearPage /> },
     { path: "/admin/proposal-history", element: <ProposalHistoryPage /> },
     { path: "/admin/grades", element: <AdminGradesPage /> },
-    { path: "/admin/grades-summary", element: <GradesSummaryPage /> },
+    { path: "/admin/grades-statistics", element: <GradesStatisticsPage /> },
+    { path: "/admin/statistics", element: <StatisticsDashboardPage /> },
+    { path: "/admin/audit-logs", element: <AuditLogPage /> },
     { path: "/admin/init-grades", element: <InitGradeTablePage /> },
     { path: "/admin/exam/exam-list", element: <ExamListPage /> },
     // { path: "/admin/exam/new", element: <ExamForm /> },
@@ -130,6 +139,8 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/admin/exam/schedule", element: <ExamSchedulePage /> },
     { path: "/admin/exam/room-assignment", element: <ExamRoomAssignmentPage /> },
     { path: "/admin/exam/supervisor-assignment", element: <ExamSupervisorAssignmentPage /> },
+    { path: "/admin/notifications", element: <NotificationsPage /> },
+    { path: "/admin/notifications/:id", element: <NotificationDetailPage /> },
     // { path: "/admin/exam/room-assignments", element: <RoomAssignments /> },
     // { path: "/admin/exam/schedule", element: <AllExamSchedulesPage /> },
   ],
@@ -150,6 +161,8 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/student/attendance", element: <StudentAttendancePage /> },
     { path: "/student/conduct", element: <ConductPage /> },
     { path: "/student/notifications", element: <NotificationsPage /> },
+    { path: "/student/notifications/:id", element: <NotificationDetailPage /> },
+    { path: "/student/incidents", element: <StudentIncidentsPage /> },
     { path: "/student/profile", element: <ProfilePage /> },
     { path: "/student/settings", element: <SettingsPage /> },
     { path: "/student/exams/student-schedule", element: <StudentSchedule /> },
@@ -205,6 +218,7 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/bgh/home", element: <BGHDashboard /> },
     { path: "/bgh/students", element: <BGHStudentsList /> },
     { path: "/bgh/grades", element: <BGHGradesPage /> },
+    { path: "/bgh/attendance", element: <BGHAttendancePage /> },
     { path: "/bgh/incidents", element: <BGHIncidentsPage /> },
     { path: "/bgh/profile", element: <ProfilePage /> },
     { path: "/bgh/settings", element: <SettingsPage /> },

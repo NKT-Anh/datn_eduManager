@@ -89,6 +89,74 @@ export const permissionApi = {
     }>(`${BASE_URL}/copy`, payload);
     return res.data;
   },
+
+  // ✅ Lấy tất cả role permissions (quyền cấp role)
+  getAllRolePermissions: async (): Promise<{
+    success: boolean;
+    data: Array<{
+      role: string;
+      roleName: string;
+      permissions: string[];
+      allPermissions: Array<{
+        key: string;
+        name: string;
+        enabled: boolean;
+      }>;
+      isFromDB: boolean;
+      isDefault: boolean;
+    }>;
+  }> => {
+    const res = await api.get<{
+      success: boolean;
+      data: Array<{
+        role: string;
+        roleName: string;
+        permissions: string[];
+        allPermissions: Array<{
+          key: string;
+          name: string;
+          enabled: boolean;
+        }>;
+        isFromDB: boolean;
+        isDefault: boolean;
+      }>;
+    }>(`${BASE_URL}/roles`);
+    return res.data;
+  },
+
+  // ✅ Cập nhật permissions cho một role
+  updateRolePermissions: async (role: string, permissions: string[]): Promise<{
+    success: boolean;
+    message: string;
+    data: Permission;
+  }> => {
+    const res = await api.put<{
+      success: boolean;
+      message: string;
+      data: Permission;
+    }>(`${BASE_URL}/roles/${role}`, { permissions });
+    return res.data;
+  },
+
+  // ✅ Reset permissions về mặc định
+  resetRolePermissions: async (role: string): Promise<{
+    success: boolean;
+    message: string;
+    data: {
+      role: string;
+      permissions: string[];
+    };
+  }> => {
+    const res = await api.post<{
+      success: boolean;
+      message: string;
+      data: {
+        role: string;
+        permissions: string[];
+      };
+    }>(`${BASE_URL}/roles/${role}/reset`);
+    return res.data;
+  },
 };
 
 

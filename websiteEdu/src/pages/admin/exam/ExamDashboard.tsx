@@ -83,11 +83,16 @@ export default function ExamDashboard() {
   const loadStats = async () => {
     setLoading(true);
     try {
-      const [summaryRes, yearlyRes, allExams] = await Promise.all([
+      const [summaryRes, yearlyRes, allExamsRes] = await Promise.all([
         examApi.getSummary(),
         examApi.getYearlyStats(),
-        examApi.getAll(),
+        examApi.getAll({ limit: 1000 }), // Lấy tất cả để thống kê
       ]);
+
+      // ✅ Xử lý response từ getAll() - có thể là object với data property
+      const allExams = Array.isArray(allExamsRes) 
+        ? allExamsRes 
+        : (allExamsRes?.data || []);
 
       // ✅ Group theo năm học (HK1 / HK2)
       const grouped = allExams.reduce((acc: any, exam: any) => {
@@ -107,10 +112,15 @@ export default function ExamDashboard() {
       const percentArchived = allExams.length
         ? Math.round((archived / allExams.length) * 100)
         : 0;
-      const topYearObj = yearlyRes.reduce(
-        (prev, curr) => (curr.totalExams > prev.totalExams ? curr : prev),
-        { totalExams: 0, _id: "-" }
-      );
+      
+      // ✅ Xử lý yearlyRes - có thể là array hoặc object
+      const yearlyData = Array.isArray(yearlyRes) ? yearlyRes : [];
+      const topYearObj = yearlyData.length > 0
+        ? yearlyData.reduce(
+            (prev, curr) => (curr.totalExams > prev.totalExams ? curr : prev),
+            { totalExams: 0, _id: "-" }
+          )
+        : { totalExams: 0, _id: "-" };
 
       setInsight({
         topYear: topYearObj._id || "-",
@@ -120,11 +130,11 @@ export default function ExamDashboard() {
       });
 
       setSemesterStats(semesterData);
-      setSummary(summaryRes);
-      setYearStats(yearlyRes);
-    } catch (err) {
-      console.error(err);
-      message.error("Không thể tải dữ liệu thống kê kỳ thi");
+      setSummary(Array.isArray(summaryRes) ? summaryRes : []);
+      setYearStats(yearlyData);
+    } catch (err: any) {
+      console.error('Error loading exam stats:', err);
+      message.error(err?.response?.data?.error || "Không thể tải dữ liệu thống kê kỳ thi");
     } finally {
       setLoading(false);
     }
@@ -211,8 +221,13 @@ export default function ExamDashboard() {
   const loadDetailedData = async () => {
     setAnalysisLoading(true);
     try {
-      const exams = await examApi.getAll();
-      setYearList([...new Set(exams.map((e: any) => e.year))]);
+      const examsRes = await examApi.getAll({ limit: 1000 });
+      // ✅ Xử lý response từ getAll() - có thể là object với data property
+      const exams = Array.isArray(examsRes) 
+        ? examsRes 
+        : (examsRes?.data || []);
+      
+      setYearList([...new Set(exams.map((e: any) => e.year).filter(Boolean))]);
 
       let filtered = exams;
       if (analysisFilters.grade !== "Tất cả")
@@ -228,14 +243,14 @@ export default function ExamDashboard() {
           (e: any) => e.semester === analysisFilters.semester
         );
 
-      const grouped = filtered.reduce((acc: any, exam: any) => {
+      const grouped: Record<string, number> = (filtered as any[]).reduce((acc: Record<string, number>, exam: any) => {
         const key = exam.status || "unknown";
         acc[key] = (acc[key] || 0) + 1;
         return acc;
       }, {});
       const chartData = Object.entries(grouped).map(([status, count]) => ({
         status,
-        count,
+        count: count as number,
       }));
       setAnalysisData(chartData);
     } catch (err) {

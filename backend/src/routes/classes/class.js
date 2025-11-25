@@ -4,6 +4,7 @@ const classController = require('../../controllers/class/classController');
 const authMiddleware = require('../../middlewares/authMiddleware');
 const checkPermission = require('../../middlewares/checkPermission');
 const { PERMISSIONS } = require('../../config/permissions');
+const { auditLog } = require('../../middlewares/auditLogMiddleware');
 
 // ✅ Lấy danh sách các năm học có lớp - Tất cả roles có quyền xem
 router.get('/years', 
@@ -70,14 +71,27 @@ router.post('/join-class',
 // ✅ Cập nhật lớp theo ID - Chỉ Admin
 router.put('/:id', 
   authMiddleware, 
-  checkPermission(PERMISSIONS.CLASS_UPDATE), 
+  checkPermission(PERMISSIONS.CLASS_UPDATE),
+  auditLog({
+    action: 'UPDATE',
+    resource: 'CLASS',
+    getResourceId: (req) => req.params.id,
+    getResourceName: (req) => req.body?.className || null,
+    getDescription: (req) => `Cập nhật lớp: ${req.body?.className || req.params.id}`,
+  }),
   classController.updateClass
 );
 
 // ✅ Xóa lớp theo ID - Chỉ Admin
 router.delete('/:id', 
   authMiddleware, 
-  checkPermission(PERMISSIONS.CLASS_DELETE), 
+  checkPermission(PERMISSIONS.CLASS_DELETE),
+  auditLog({
+    action: 'DELETE',
+    resource: 'CLASS',
+    getResourceId: (req) => req.params.id,
+    getDescription: (req) => `Xóa lớp: ${req.params.id}`,
+  }),
   classController.deleteClass
 );
 

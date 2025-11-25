@@ -5,6 +5,8 @@ const router = express.Router();
 const authMiddleware = require('../../middlewares/authMiddleware');
 const checkPermission = require('../../middlewares/checkPermission');
 const { PERMISSIONS } = require('../../config/permissions');
+const { auditLog } = require('../../middlewares/auditLogMiddleware');
+const { getTeacherName, getSubjectName, getClassName } = require('../../utils/auditLogHelpers');
 
 // ✅ Tạo phân công giảng dạy - Admin hoặc Trưởng bộ môn (cho giáo viên trong tổ)
 router.post('/', 
@@ -12,7 +14,24 @@ router.post('/',
   checkPermission([
     PERMISSIONS.TEACHING_ASSIGNMENT_CREATE,
     PERMISSIONS.DEPARTMENT_ASSIGN_TEACHING
-  ]), 
+  ]),
+  auditLog({
+    action: 'CREATE',
+    resource: 'TEACHING_ASSIGNMENT',
+    getDescription: async (req) => {
+      const teacherId = req.body?.teacherId;
+      const subjectId = req.body?.subjectId;
+      const classId = req.body?.classId;
+      
+      const [teacherName, subjectName, className] = await Promise.all([
+        getTeacherName(teacherId),
+        getSubjectName(subjectId),
+        getClassName(classId),
+      ]);
+      
+      return `Tạo phân công giảng dạy: Giáo viên ${teacherName} - Môn ${subjectName} - Lớp ${className}`;
+    },
+  }),
   teachingAssignmentController.createAssignment
 );
 
@@ -44,8 +63,37 @@ router.put('/:id',
   checkPermission([
     PERMISSIONS.TEACHING_ASSIGNMENT_UPDATE,
     PERMISSIONS.DEPARTMENT_ASSIGN_TEACHING
-  ]), 
+  ]),
+  auditLog({
+    action: 'UPDATE',
+    resource: 'TEACHING_ASSIGNMENT',
+    getResourceId: (req) => req.params.id,
+    getDescription: async (req) => {
+      const teacherId = req.body?.teacherId;
+      const subjectId = req.body?.subjectId;
+      const classId = req.body?.classId;
+      
+      const [teacherName, subjectName, className] = await Promise.all([
+        getTeacherName(teacherId),
+        getSubjectName(subjectId),
+        getClassName(classId),
+      ]);
+      
+      return `Cập nhật phân công giảng dạy: Giáo viên ${teacherName} - Môn ${subjectName} - Lớp ${className}`;
+    },
+  }),
   teachingAssignmentController.updateAssignment
+);
+
+// ✅ Kiểm tra số lượng điểm của phân công - Tất cả roles có quyền xem
+router.get('/:id/grade-count', 
+  authMiddleware, 
+  checkPermission([
+    PERMISSIONS.TEACHING_ASSIGNMENT_VIEW,
+    PERMISSIONS.TEACHING_ASSIGNMENT_VIEW_DEPARTMENT,
+    PERMISSIONS.TEACHING_ASSIGNMENT_VIEW_SELF
+  ], { checkContext: false }),
+  teachingAssignmentController.getGradeCount
 );
 
 // ✅ Xóa phân công giảng dạy - Admin hoặc Trưởng bộ môn (cho giáo viên trong tổ)
@@ -54,7 +102,33 @@ router.delete('/:id',
   checkPermission([
     PERMISSIONS.TEACHING_ASSIGNMENT_UPDATE,
     PERMISSIONS.DEPARTMENT_ASSIGN_TEACHING
-  ]), 
+  ]),
+  auditLog({
+    action: 'DELETE',
+    resource: 'TEACHING_ASSIGNMENT',
+    getResourceId: (req) => req.params.id,
+    getDescription: async (req) => {
+      // Lấy thông tin phân công trước khi xóa
+      try {
+        const TeachingAssignment = require('../../models/subject/teachingAssignment');
+        const assignment = await TeachingAssignment.findById(req.params.id)
+          .populate('teacherId', 'name')
+          .populate('subjectId', 'name')
+          .populate('classId', 'className')
+          .lean();
+        
+        if (assignment) {
+          const teacherName = assignment.teacherId?.name || 'N/A';
+          const subjectName = assignment.subjectId?.name || 'N/A';
+          const className = assignment.classId?.className || 'N/A';
+          return `Xóa phân công giảng dạy: Giáo viên ${teacherName} - Môn ${subjectName} - Lớp ${className}`;
+        }
+      } catch (e) {
+        // Ignore error
+      }
+      return `Xóa phân công giảng dạy: ${req.params.id}`;
+    },
+  }),
   teachingAssignmentController.deleteAssignment
 );
 

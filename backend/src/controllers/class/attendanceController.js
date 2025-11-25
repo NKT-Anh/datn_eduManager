@@ -717,8 +717,842 @@ exports.getStudentsForAttendance = async (req, res) => {
   }
 };
 
+/**
+ * 📊 Lấy thống kê điểm danh chi tiết theo lớp (Admin)
+ * GET /attendance/stats/by-class?schoolYear=xxx&semester=xxx&startDate=xxx&endDate=xxx
+ */
+exports.getAttendanceStatsByClass = async (req, res) => {
+  try {
+    const { schoolYear, semester, startDate, endDate, grade } = req.query;
+    const { role } = req.user;
 
+    // Admin và BGH (teacher với isLeader) đều có quyền xem
+    if (role === 'teacher') {
+      const Teacher = require('../../models/user/teacher');
+      const teacher = await Teacher.findOne({ accountId: req.user.accountId }).lean();
+      if (!teacher || !teacher.isLeader) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Chỉ BGH và Admin mới được xem thống kê chi tiết' 
+        });
+      }
+    } else if (role !== 'admin') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Chỉ BGH và Admin mới được xem thống kê chi tiết' 
+      });
+    }
 
+    // Lấy danh sách lớp
+    let classQuery = {};
+    if (grade) classQuery.grade = grade;
+    const classes = await Class.find(classQuery).lean();
 
+    const statsByClass = [];
+
+    for (const cls of classes) {
+      // Lấy số học sinh trong lớp
+      const totalStudents = await Student.countDocuments({ classId: cls._id, status: 'active' });
+
+      // Query điểm danh
+      const attendanceQuery = {
+        classId: cls._id,
+      };
+      if (schoolYear) attendanceQuery.schoolYear = schoolYear;
+      if (semester) attendanceQuery.semester = semester;
+      if (startDate || endDate) {
+        attendanceQuery.date = {};
+        if (startDate) {
+          const start = new Date(startDate);
+          start.setHours(0, 0, 0, 0);
+          attendanceQuery.date.$gte = start;
+        }
+        if (endDate) {
+          const end = new Date(endDate);
+          end.setHours(23, 59, 59, 999);
+          attendanceQuery.date.$lte = end;
+        }
+      }
+
+      const attendances = await Attendance.find(attendanceQuery).lean();
+      
+      const absentCount = attendances.filter(a => a.status === 'absent').length;
+      const excusedCount = attendances.filter(a => a.status === 'excused').length;
+      const lateCount = attendances.filter(a => a.status === 'late').length;
+      const totalAbsent = attendances.length;
+      const presentCount = totalStudents > 0 ? totalStudents - totalAbsent : 0;
+      const attendanceRate = totalStudents > 0 
+        ? ((presentCount / totalStudents) * 100).toFixed(1) 
+        : 0;
+
+      statsByClass.push({
+        classId: cls._id,
+        className: cls.className,
+        classCode: cls.classCode,
+        grade: cls.grade,
+        totalStudents,
+        present: presentCount,
+        absent: absentCount,
+        excused: excusedCount,
+        late: lateCount,
+        totalAbsent,
+        attendanceRate: parseFloat(attendanceRate),
+      });
+    }
+
+    // Sắp xếp theo tỷ lệ điểm danh
+    statsByClass.sort((a, b) => b.attendanceRate - a.attendanceRate);
+
+    res.json({
+      success: true,
+      data: statsByClass,
+    });
+  } catch (err) {
+    console.error('[getAttendanceStatsByClass]', err);
+    res.status(500).json({ success: false, message: 'Lỗi khi lấy thống kê theo lớp', error: err.message });
+  }
+};
+
+/**
+ * 📊 Lấy thống kê điểm danh theo khối (Admin)
+ * GET /attendance/stats/by-grade?schoolYear=xxx&semester=xxx&startDate=xxx&endDate=xxx
+ */
+exports.getAttendanceStatsByGrade = async (req, res) => {
+  try {
+    const { schoolYear, semester, startDate, endDate } = req.query;
+    const { role } = req.user;
+
+    // Admin và BGH (teacher với isLeader) đều có quyền xem
+    if (role === 'teacher') {
+      const Teacher = require('../../models/user/teacher');
+      const teacher = await Teacher.findOne({ accountId: req.user.accountId }).lean();
+      if (!teacher || !teacher.isLeader) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Chỉ BGH và Admin mới được xem thống kê chi tiết' 
+        });
+      }
+    } else if (role !== 'admin') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Chỉ BGH và Admin mới được xem thống kê chi tiết' 
+      });
+    }
+
+    // Lấy tất cả khối
+    const grades = await Class.distinct('grade');
+    const statsByGrade = [];
+
+    for (const grade of grades.sort()) {
+      // Lấy tất cả lớp trong khối
+      const classes = await Class.find({ grade }).lean();
+      const classIds = classes.map(c => c._id);
+
+      // Lấy số học sinh trong khối
+      const totalStudents = await Student.countDocuments({ 
+        classId: { $in: classIds }, 
+        status: 'active' 
+      });
+
+      // Query điểm danh
+      const attendanceQuery = {
+        classId: { $in: classIds },
+      };
+      if (schoolYear) attendanceQuery.schoolYear = schoolYear;
+      if (semester) attendanceQuery.semester = semester;
+      if (startDate || endDate) {
+        attendanceQuery.date = {};
+        if (startDate) {
+          const start = new Date(startDate);
+          start.setHours(0, 0, 0, 0);
+          attendanceQuery.date.$gte = start;
+        }
+        if (endDate) {
+          const end = new Date(endDate);
+          end.setHours(23, 59, 59, 999);
+          attendanceQuery.date.$lte = end;
+        }
+      }
+
+      const attendances = await Attendance.find(attendanceQuery).lean();
+      
+      const absentCount = attendances.filter(a => a.status === 'absent').length;
+      const excusedCount = attendances.filter(a => a.status === 'excused').length;
+      const lateCount = attendances.filter(a => a.status === 'late').length;
+      const totalAbsent = attendances.length;
+      const presentCount = totalStudents > 0 ? totalStudents - totalAbsent : 0;
+      const attendanceRate = totalStudents > 0 
+        ? ((presentCount / totalStudents) * 100).toFixed(1) 
+        : 0;
+
+      statsByGrade.push({
+        grade,
+        totalClasses: classes.length,
+        totalStudents,
+        present: presentCount,
+        absent: absentCount,
+        excused: excusedCount,
+        late: lateCount,
+        totalAbsent,
+        attendanceRate: parseFloat(attendanceRate),
+      });
+    }
+
+    res.json({
+      success: true,
+      data: statsByGrade,
+    });
+  } catch (err) {
+    console.error('[getAttendanceStatsByGrade]', err);
+    res.status(500).json({ success: false, message: 'Lỗi khi lấy thống kê theo khối', error: err.message });
+  }
+};
+
+/**
+ * 📈 Lấy xu hướng điểm danh theo ngày/tuần/tháng (Admin)
+ * GET /attendance/stats/trends?schoolYear=xxx&semester=xxx&startDate=xxx&endDate=xxx&groupBy=day|week|month
+ */
+exports.getAttendanceTrends = async (req, res) => {
+  try {
+    const { schoolYear, semester, startDate, endDate, groupBy = 'day', classId, grade } = req.query;
+    const { role } = req.user;
+
+    // Admin và BGH (teacher với isLeader) đều có quyền xem
+    if (role === 'teacher') {
+      const Teacher = require('../../models/user/teacher');
+      const teacher = await Teacher.findOne({ accountId: req.user.accountId }).lean();
+      if (!teacher || !teacher.isLeader) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Chỉ BGH và Admin mới được xem xu hướng điểm danh' 
+        });
+      }
+    } else if (role !== 'admin') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Chỉ BGH và Admin mới được xem xu hướng điểm danh' 
+      });
+    }
+
+    // Query điểm danh
+    const attendanceQuery = {};
+    if (schoolYear) attendanceQuery.schoolYear = schoolYear;
+    if (semester) attendanceQuery.semester = semester;
+
+    // Filter theo lớp hoặc khối
+    if (classId) {
+      attendanceQuery.classId = classId;
+    } else if (grade) {
+      const classes = await Class.find({ grade }).lean();
+      const classIds = classes.map(c => c._id);
+      attendanceQuery.classId = { $in: classIds };
+    }
+
+    // Date range
+    if (startDate || endDate) {
+      attendanceQuery.date = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        attendanceQuery.date.$gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        attendanceQuery.date.$lte = end;
+      }
+    }
+
+    const attendances = await Attendance.find(attendanceQuery)
+      .populate('classId', 'className grade')
+      .sort({ date: 1 })
+      .lean();
+
+    // Group by date
+    const trends = {};
+    const dateMap = {};
+
+    attendances.forEach(att => {
+      const date = new Date(att.date);
+      let key;
+
+      if (groupBy === 'week') {
+        // Lấy tuần trong năm
+        const week = getWeekNumber(date);
+        key = `${date.getFullYear()}-W${week}`;
+      } else if (groupBy === 'month') {
+        key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      } else {
+        // day
+        key = date.toISOString().split('T')[0];
+      }
+
+      if (!trends[key]) {
+        trends[key] = {
+          date: key,
+          present: 0,
+          absent: 0,
+          excused: 0,
+          late: 0,
+          total: 0,
+        };
+        dateMap[key] = date;
+      }
+
+      if (att.status === 'absent') trends[key].absent++;
+      else if (att.status === 'excused') trends[key].excused++;
+      else if (att.status === 'late') trends[key].late++;
+      trends[key].total++;
+    });
+
+    // Tính số học sinh có mặt (cần lấy tổng số học sinh)
+    const classIds = classId 
+      ? [classId] 
+      : grade 
+        ? (await Class.find({ grade }).lean()).map(c => c._id)
+        : await Class.distinct('_id');
+
+    // Tính present cho mỗi ngày/tuần/tháng
+    const trendsArray = Object.keys(trends)
+      .sort()
+      .map(key => {
+        // Ước tính số học sinh có mặt (cần query thực tế)
+        const totalStudents = classIds.length > 0 
+          ? 0 // Sẽ tính sau nếu cần
+          : 0;
+        
+        const trend = trends[key];
+        const present = Math.max(0, totalStudents - trend.total);
+        const attendanceRate = totalStudents > 0 
+          ? ((present / totalStudents) * 100).toFixed(1)
+          : 0;
+
+        return {
+          ...trend,
+          present,
+          attendanceRate: parseFloat(attendanceRate),
+          dateObj: dateMap[key],
+        };
+      });
+
+    res.json({
+      success: true,
+      data: trendsArray,
+    });
+  } catch (err) {
+    console.error('[getAttendanceTrends]', err);
+    res.status(500).json({ success: false, message: 'Lỗi khi lấy xu hướng điểm danh', error: err.message });
+  }
+};
+
+// Helper function để tính số tuần
+function getWeekNumber(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
+
+/**
+ * 📊 Lấy thống kê tổng quan toàn trường (Admin)
+ * GET /attendance/stats/overview?schoolYear=xxx&semester=xxx
+ */
+exports.getAttendanceOverview = async (req, res) => {
+  try {
+    const { schoolYear, semester, startDate, endDate } = req.query;
+    const { role } = req.user;
+
+    // Admin và BGH (teacher với isLeader) đều có quyền xem
+    if (role === 'teacher') {
+      const Teacher = require('../../models/user/teacher');
+      const teacher = await Teacher.findOne({ accountId: req.user.accountId }).lean();
+      if (!teacher || !teacher.isLeader) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Chỉ BGH và Admin mới được xem thống kê tổng quan' 
+        });
+      }
+    } else if (role !== 'admin') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Chỉ BGH và Admin mới được xem thống kê tổng quan' 
+      });
+    }
+
+    // Query điểm danh
+    const attendanceQuery = {};
+    if (schoolYear) attendanceQuery.schoolYear = schoolYear;
+    if (semester) attendanceQuery.semester = semester;
+    if (startDate || endDate) {
+      attendanceQuery.date = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        attendanceQuery.date.$gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        attendanceQuery.date.$lte = end;
+      }
+    }
+
+    // Tổng số học sinh
+    const totalStudents = await Student.countDocuments({ status: 'active' });
+
+    // Tổng số lớp
+    const totalClasses = await Class.countDocuments({});
+
+    // Điểm danh
+    const attendances = await Attendance.find(attendanceQuery).lean();
+
+    const absentCount = attendances.filter(a => a.status === 'absent').length;
+    const excusedCount = attendances.filter(a => a.status === 'excused').length;
+    const lateCount = attendances.filter(a => a.status === 'late').length;
+    const totalAbsent = attendances.length;
+    const presentCount = totalStudents > 0 ? totalStudents - totalAbsent : 0;
+    const attendanceRate = totalStudents > 0 
+      ? ((presentCount / totalStudents) * 100).toFixed(1) 
+      : 0;
+
+    // Thống kê theo khối
+    const grades = await Class.distinct('grade');
+    const byGrade = [];
+    for (const grade of grades.sort()) {
+      const classes = await Class.find({ grade }).lean();
+      const classIds = classes.map(c => c._id);
+      const gradeStudents = await Student.countDocuments({ 
+        classId: { $in: classIds }, 
+        status: 'active' 
+      });
+      const gradeAttendances = attendances.filter(a => 
+        classIds.includes(String(a.classId))
+      );
+      const gradeAbsent = gradeAttendances.filter(a => a.status === 'absent').length;
+      const gradeTotalAbsent = gradeAttendances.length;
+      const gradePresent = gradeStudents > 0 ? gradeStudents - gradeTotalAbsent : 0;
+      const gradeRate = gradeStudents > 0 
+        ? ((gradePresent / gradeStudents) * 100).toFixed(1) 
+        : 0;
+
+      byGrade.push({
+        grade,
+        totalStudents: gradeStudents,
+        totalClasses: classes.length,
+        present: gradePresent,
+        absent: gradeAbsent,
+        totalAbsent: gradeTotalAbsent,
+        attendanceRate: parseFloat(gradeRate),
+      });
+    }
+
+    // Top 5 lớp có tỷ lệ điểm danh thấp nhất
+    const classes = await Class.find({}).lean();
+    const classStats = [];
+    for (const cls of classes) {
+      const clsStudents = await Student.countDocuments({ 
+        classId: cls._id, 
+        status: 'active' 
+      });
+      const clsAttendances = attendances.filter(a => 
+        String(a.classId) === String(cls._id)
+      );
+      const clsTotalAbsent = clsAttendances.length;
+      const clsPresent = clsStudents > 0 ? clsStudents - clsTotalAbsent : 0;
+      const clsRate = clsStudents > 0 
+        ? ((clsPresent / clsStudents) * 100).toFixed(1) 
+        : 0;
+
+      classStats.push({
+        classId: cls._id,
+        className: cls.className,
+        grade: cls.grade,
+        attendanceRate: parseFloat(clsRate),
+        totalAbsent: clsTotalAbsent,
+      });
+    }
+
+    const topLowAttendance = classStats
+      .filter(c => c.attendanceRate < 100)
+      .sort((a, b) => a.attendanceRate - b.attendanceRate)
+      .slice(0, 5);
+
+    res.json({
+      success: true,
+      data: {
+        overall: {
+          totalStudents,
+          totalClasses,
+          present: presentCount,
+          absent: absentCount,
+          excused: excusedCount,
+          late: lateCount,
+          totalAbsent,
+          attendanceRate: parseFloat(attendanceRate),
+        },
+        byGrade,
+        topLowAttendance,
+      },
+    });
+  } catch (err) {
+    console.error('[getAttendanceOverview]', err);
+    res.status(500).json({ success: false, message: 'Lỗi khi lấy thống kê tổng quan', error: err.message });
+  }
+};
+
+/**
+ * 📊 Lấy thống kê điểm danh hôm nay cho BGH
+ * GET /attendance/stats/today?schoolYear=xxx&semester=xxx
+ */
+exports.getTodayAttendanceStats = async (req, res) => {
+  try {
+    const { schoolYear, semester } = req.query;
+    const { role } = req.user;
+
+    // BGH và Admin đều có quyền xem
+    if (role !== 'admin' && role !== 'teacher') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Chỉ BGH và Admin mới được xem thống kê hôm nay' 
+      });
+    }
+
+    // Kiểm tra nếu là teacher thì phải là BGH (isLeader)
+    if (role === 'teacher') {
+      const Teacher = require('../../models/user/teacher');
+      const teacher = await Teacher.findOne({ accountId: req.user.accountId }).lean();
+      if (!teacher || !teacher.isLeader) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Chỉ BGH mới được xem thống kê hôm nay' 
+        });
+      }
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Query điểm danh hôm nay
+    const attendanceQuery = {
+      date: { $gte: today, $lt: tomorrow },
+    };
+    if (schoolYear) attendanceQuery.schoolYear = schoolYear;
+    if (semester) attendanceQuery.semester = semester;
+
+    // Tổng số học sinh
+    const totalStudents = await Student.countDocuments({ status: 'active' });
+
+    // Điểm danh hôm nay
+    const attendances = await Attendance.find(attendanceQuery).lean();
+
+    const absentCount = attendances.filter(a => a.status === 'absent').length;
+    const excusedCount = attendances.filter(a => a.status === 'excused').length;
+    const lateCount = attendances.filter(a => a.status === 'late').length;
+    const totalAbsent = attendances.length;
+    const presentCount = totalStudents > 0 ? totalStudents - totalAbsent : 0;
+    const attendanceRate = totalStudents > 0 
+      ? ((presentCount / totalStudents) * 100).toFixed(1) 
+      : 0;
+
+    // Tìm lớp có tỷ lệ vắng cao nhất hôm nay
+    const classes = await Class.find({}).lean();
+    let topLowAttendanceClass = null;
+    let lowestRate = 100;
+
+    for (const cls of classes) {
+      const clsStudents = await Student.countDocuments({ 
+        classId: cls._id, 
+        status: 'active' 
+      });
+      const clsAttendances = attendances.filter(a => 
+        String(a.classId) === String(cls._id)
+      );
+      const clsTotalAbsent = clsAttendances.length;
+      const clsPresent = clsStudents > 0 ? clsStudents - clsTotalAbsent : 0;
+      const clsRate = clsStudents > 0 
+        ? ((clsPresent / clsStudents) * 100).toFixed(1) 
+        : 100;
+
+      if (parseFloat(clsRate) < lowestRate && clsTotalAbsent > 0) {
+        lowestRate = parseFloat(clsRate);
+        topLowAttendanceClass = {
+          classId: cls._id,
+          className: cls.className,
+          grade: cls.grade,
+          attendanceRate: parseFloat(clsRate),
+          totalAbsent: clsTotalAbsent,
+        };
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        present: presentCount,
+        absent: absentCount,
+        excused: excusedCount,
+        late: lateCount,
+        totalAbsent,
+        attendanceRate: parseFloat(attendanceRate),
+        topLowAttendanceClass,
+      },
+    });
+  } catch (err) {
+    console.error('[getTodayAttendanceStats]', err);
+    res.status(500).json({ success: false, message: 'Lỗi khi lấy thống kê hôm nay', error: err.message });
+  }
+};
+
+/**
+ * 🔔 Lấy danh sách cảnh báo cho BGH
+ * GET /attendance/alerts?schoolYear=xxx&semester=xxx
+ */
+exports.getAttendanceAlerts = async (req, res) => {
+  try {
+    const { schoolYear, semester } = req.query;
+    const { role } = req.user;
+
+    // BGH và Admin đều có quyền xem
+    if (role !== 'admin' && role !== 'teacher') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Chỉ BGH và Admin mới được xem cảnh báo' 
+      });
+    }
+
+    // Kiểm tra nếu là teacher thì phải là BGH (isLeader)
+    if (role === 'teacher') {
+      const Teacher = require('../../models/user/teacher');
+      const teacher = await Teacher.findOne({ accountId: req.user.accountId }).lean();
+      if (!teacher || !teacher.isLeader) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Chỉ BGH mới được xem cảnh báo' 
+        });
+      }
+    }
+
+    const alerts = {
+      lowAttendanceClasses: [],
+      studentsAbsentConsecutive: [],
+      teachersNotSubmitted: [],
+    };
+
+    // 1. Top 5 lớp có tỷ lệ vắng cao (hôm nay)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const attendanceQuery = {
+      date: { $gte: today, $lt: tomorrow },
+    };
+    if (schoolYear) attendanceQuery.schoolYear = schoolYear;
+    if (semester) attendanceQuery.semester = semester;
+
+    const todayAttendances = await Attendance.find(attendanceQuery).lean();
+    const classes = await Class.find({}).lean();
+    const classStats = [];
+
+    for (const cls of classes) {
+      const clsStudents = await Student.countDocuments({ 
+        classId: cls._id, 
+        status: 'active' 
+      });
+      const clsAttendances = todayAttendances.filter(a => 
+        String(a.classId) === String(cls._id)
+      );
+      const clsTotalAbsent = clsAttendances.length;
+      const clsPresent = clsStudents > 0 ? clsStudents - clsTotalAbsent : 0;
+      const clsRate = clsStudents > 0 
+        ? ((clsPresent / clsStudents) * 100).toFixed(1) 
+        : 100;
+
+      if (clsTotalAbsent > 0 && parseFloat(clsRate) < 95) {
+        classStats.push({
+          classId: cls._id,
+          className: cls.className,
+          grade: cls.grade,
+          attendanceRate: parseFloat(clsRate),
+          totalAbsent: clsTotalAbsent,
+          present: clsPresent,
+        });
+      }
+    }
+
+    alerts.lowAttendanceClasses = classStats
+      .sort((a, b) => a.attendanceRate - b.attendanceRate)
+      .slice(0, 5);
+
+    // 2. Học sinh vắng nhiều ngày liên tiếp (3+ ngày)
+    const last7Days = [];
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      last7Days.push(date.toISOString().split('T')[0]);
+    }
+
+    const last7DaysQuery = {
+      date: {
+        $gte: new Date(last7Days[6]),
+        $lt: tomorrow,
+      },
+      status: 'absent',
+    };
+    if (schoolYear) last7DaysQuery.schoolYear = schoolYear;
+    if (semester) last7DaysQuery.semester = semester;
+
+    const absentRecords = await Attendance.find(last7DaysQuery)
+      .populate('studentId', 'name studentCode')
+      .populate('classId', 'className')
+      .lean();
+
+    // Group by student
+    const studentAbsentMap = {};
+    absentRecords.forEach(record => {
+      const studentId = String(record.studentId._id || record.studentId);
+      if (!studentAbsentMap[studentId]) {
+        studentAbsentMap[studentId] = {
+          student: record.studentId,
+          class: record.classId,
+          dates: [],
+        };
+      }
+      const dateStr = new Date(record.date).toISOString().split('T')[0];
+      if (!studentAbsentMap[studentId].dates.includes(dateStr)) {
+        studentAbsentMap[studentId].dates.push(dateStr);
+      }
+    });
+
+    // Tìm học sinh vắng 3+ ngày liên tiếp
+    Object.values(studentAbsentMap).forEach((item) => {
+      const dates = item.dates.sort();
+      let consecutiveCount = 1;
+      let maxConsecutive = 1;
+
+      for (let i = 1; i < dates.length; i++) {
+        const prevDate = new Date(dates[i - 1]);
+        const currDate = new Date(dates[i]);
+        const diffDays = Math.floor((currDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24));
+
+        if (diffDays === 1) {
+          consecutiveCount++;
+          maxConsecutive = Math.max(maxConsecutive, consecutiveCount);
+        } else {
+          consecutiveCount = 1;
+        }
+      }
+
+      if (maxConsecutive >= 3) {
+        alerts.studentsAbsentConsecutive.push({
+          student: item.student,
+          class: item.class,
+          consecutiveDays: maxConsecutive,
+          dates: dates.slice(-maxConsecutive),
+        });
+      }
+    });
+
+    alerts.studentsAbsentConsecutive = alerts.studentsAbsentConsecutive
+      .sort((a, b) => b.consecutiveDays - a.consecutiveDays)
+      .slice(0, 10);
+
+    // 3. Giáo viên chưa nhập điểm danh (cần kiểm tra theo lịch dạy)
+    // Tạm thời bỏ qua phần này vì cần thông tin từ schedule
+
+    res.json({
+      success: true,
+      data: alerts,
+    });
+  } catch (err) {
+    console.error('[getAttendanceAlerts]', err);
+    res.status(500).json({ success: false, message: 'Lỗi khi lấy cảnh báo', error: err.message });
+  }
+};
+
+/**
+ * 📋 Lấy điểm danh theo lớp hôm nay cho BGH
+ * GET /attendance/class/:classId/today?schoolYear=xxx&semester=xxx
+ */
+exports.getTodayAttendanceByClass = async (req, res) => {
+  try {
+    const { classId } = req.params;
+    const { schoolYear, semester } = req.query;
+    const { role } = req.user;
+
+    // BGH và Admin đều có quyền xem
+    if (role !== 'admin' && role !== 'teacher') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Chỉ BGH và Admin mới được xem điểm danh theo lớp' 
+      });
+    }
+
+    // Kiểm tra nếu là teacher thì phải là BGH (isLeader)
+    if (role === 'teacher') {
+      const Teacher = require('../../models/user/teacher');
+      const teacher = await Teacher.findOne({ accountId: req.user.accountId }).lean();
+      if (!teacher || !teacher.isLeader) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Chỉ BGH mới được xem điểm danh theo lớp' 
+        });
+      }
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Lấy tất cả học sinh trong lớp
+    const students = await Student.find({ classId, status: 'active' })
+      .select('name studentCode avatarUrl')
+      .sort({ name: 1 })
+      .lean();
+
+    // Lấy điểm danh hôm nay
+    const attendanceQuery = {
+      classId,
+      date: { $gte: today, $lt: tomorrow },
+    };
+    if (schoolYear) attendanceQuery.schoolYear = schoolYear;
+    if (semester) attendanceQuery.semester = semester;
+
+    const attendances = await Attendance.find(attendanceQuery)
+      .populate('studentId', 'name studentCode avatarUrl')
+      .lean();
+
+    // Tạo danh sách điểm danh đầy đủ (có mặt + vắng)
+    const attendanceList = students.map(student => {
+      const attendance = attendances.find(a => 
+        String(a.studentId._id || a.studentId) === String(student._id)
+      );
+
+      return {
+        student: {
+          _id: student._id,
+          name: student.name,
+          studentCode: student.studentCode,
+          avatarUrl: student.avatarUrl,
+        },
+        status: attendance ? attendance.status : 'present',
+        notes: attendance?.notes || null,
+        session: attendance?.session || null,
+      };
+    });
+
+    res.json({
+      success: true,
+      data: attendanceList,
+    });
+  } catch (err) {
+    console.error('[getTodayAttendanceByClass]', err);
+    res.status(500).json({ success: false, message: 'Lỗi khi lấy điểm danh theo lớp', error: err.message });
+  }
+};
 
 
