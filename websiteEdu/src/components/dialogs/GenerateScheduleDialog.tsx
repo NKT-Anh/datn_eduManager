@@ -7,6 +7,7 @@ import {
   DialogTitle,
   DialogFooter,
   DialogTrigger,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { autoScheduleApi } from "@/services/autoScheduleApi";
 import { toast } from "sonner";
@@ -14,11 +15,28 @@ import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useSchoolYears } from "@/hooks";
 
+type StatusDialogMode = "loading" | "success";
+
+interface StatusDialogState {
+  open: boolean;
+  mode: StatusDialogMode;
+  title: string;
+  description?: string;
+}
+
 interface GenerateScheduleDialogProps {
-  onGenerate?: (grades: string[], year: string, semester: string) => void;
+  onGenerate?: (grades: string[], year: string, semester: string) => Promise<void> | void;
   currentYear?: string;
   currentSemester?: string;
   onSuccess?: () => void; // ✅ Callback khi tạo thành công
+  customGenerate?: (params: {
+    grades: string[];
+    year: string;
+    semester: string;
+    includeActivities: boolean;
+  }) => Promise<any>;
+  triggerLabel?: string;
+  generateButtonText?: string;
 }
 
 export const GenerateScheduleDialog = ({
@@ -26,6 +44,9 @@ export const GenerateScheduleDialog = ({
   currentYear,
   currentSemester,
   onSuccess,
+  customGenerate,
+  triggerLabel = "📅 Tạo lịch tự động",
+  generateButtonText = "Tạo lịch",
 }: GenerateScheduleDialogProps) => {
   const [open, setOpen] = useState(false);
   const [selectedGrades, setSelectedGrades] = useState<string[]>([]);
@@ -35,6 +56,12 @@ export const GenerateScheduleDialog = ({
   const [isValidating, setIsValidating] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [validationResult, setValidationResult] = useState<any>(null);
+  const [statusDialog, setStatusDialog] = useState<StatusDialogState>({
+    open: false,
+    mode: "loading",
+    title: "",
+    description: "",
+  });
   
   // ✅ Lấy danh sách năm học từ API
   const { schoolYears, isLoading: isLoadingYears } = useSchoolYears();
@@ -118,15 +145,84 @@ export const GenerateScheduleDialog = ({
       return;
     }
 
+    const targetLabel = `Khối ${selectedGrades.join(", ")} • ${selectedYear} • HK${selectedSemester}`;
+    const showLoadingDialog = (message?: string) => {
+      setStatusDialog({
+        open: true,
+        mode: "loading",
+        title: message || "Đang tạo thời khóa biểu...",
+        description: targetLabel,
+      });
+    };
+    const showSuccessDialog = (message?: string, description?: string) => {
+      setStatusDialog({
+        open: true,
+        mode: "success",
+        title: message || "Hoàn tất!",
+        description: description || `Đã tạo thời khóa biểu cho ${targetLabel}`,
+      });
+    };
+    const closeStatusDialog = () => {
+      setStatusDialog((prev) => ({ ...prev, open: false }));
+    };
+
     // ✅ Nếu có callback cũ, gọi nó
     if (onGenerate) {
-      // ✅ Hiển thị toast khi bắt đầu tạo
-      toast.info("⏳ Đang tạo lịch tự động...", {
-        duration: 3000,
-        description: `Đang tạo lịch cho khối ${selectedGrades.join(", ")} - ${selectedYear} HK${selectedSemester}`,
+      showLoadingDialog();
+      setIsGenerating(true);
+      try {
+        await Promise.resolve(onGenerate(selectedGrades, selectedYear, selectedSemester));
+        showSuccessDialog("Đã tạo thành công!");
+        setOpen(false);
+      } catch (error: any) {
+        closeStatusDialog();
+        console.error("❌ Lỗi khi tạo lịch (callback):", error);
+        if (!error?.__handled && error?.message) {
+          toast.error(`❌ Lỗi: ${error.message}`);
+        }
+      } finally {
+        setIsGenerating(false);
+      }
+      return;
+    }
+
+    if (customGenerate) {
+      const toastId = toast.loading("⏳ Đang chạy thuật toán...", {
+        description: `Đang tạo lịch cho khối ${selectedGrades.join(", ")} - ${selectedYear} HK${selectedSemester}. Vui lòng đợi...`,
+        duration: Infinity,
       });
-      onGenerate(selectedGrades, selectedYear, selectedSemester);
-      setOpen(false);
+      setIsGenerating(true);
+      showLoadingDialog("Đang chạy thuật toán...");
+      try {
+        const result = await customGenerate({
+          grades: selectedGrades,
+          year: selectedYear,
+          semester: selectedSemester,
+          includeActivities,
+        });
+        toast.dismiss(toastId);
+        toast.success(
+          result?.message ||
+            `✅ Đã tạo thời khóa biểu cho ${selectedGrades.join(", ")}`,
+          {
+            duration: 5000,
+          }
+        );
+        showSuccessDialog(result?.message);
+        if (onSuccess) {
+          onSuccess();
+        }
+        setOpen(false);
+      } catch (error: any) {
+        console.error("❌ Lỗi khi tạo lịch (custom):", error);
+        toast.dismiss(toastId);
+        toast.error(`❌ Lỗi: ${error.response?.data?.message || error.message}`, {
+          duration: 5000,
+        });
+        closeStatusDialog();
+      } finally {
+        setIsGenerating(false);
+      }
       return;
     }
 
@@ -137,6 +233,7 @@ export const GenerateScheduleDialog = ({
     });
 
     setIsGenerating(true);
+    showLoadingDialog();
 
     try {
       const result = await autoScheduleApi.generateSchedule(
@@ -153,6 +250,7 @@ export const GenerateScheduleDialog = ({
           duration: 5000,
         }
       );
+      showSuccessDialog(result.message);
 
       // ✅ Gọi callback khi thành công
       if (onSuccess) {
@@ -167,6 +265,7 @@ export const GenerateScheduleDialog = ({
       toast.error(`❌ Lỗi: ${error.response?.data?.message || error.message}`, {
         duration: 5000,
       });
+      closeStatusDialog();
     } finally {
       setIsGenerating(false);
     }
@@ -179,6 +278,7 @@ export const GenerateScheduleDialog = ({
   }));
 
   return (
+    <>
     <Dialog 
       open={open} 
       onOpenChange={(newOpen) => {
@@ -191,7 +291,7 @@ export const GenerateScheduleDialog = ({
       }}
     >
       <DialogTrigger asChild>
-        <Button>📅 Tạo lịch tự động</Button>
+        <Button>{triggerLabel}</Button>
       </DialogTrigger>
       <DialogContent 
         className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto relative"
@@ -214,6 +314,9 @@ export const GenerateScheduleDialog = ({
         )}
         <DialogHeader>
           <DialogTitle className="text-center">Chọn khối, năm học và học kỳ để tạo lịch</DialogTitle>
+          <DialogDescription className="sr-only">
+            Hộp thoại cho phép bạn tạo thời khóa biểu tự động theo khối, năm học, học kỳ và lựa chọn thuật toán.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 mt-4">
@@ -364,11 +467,42 @@ export const GenerateScheduleDialog = ({
                 Đang tạo lịch...
               </>
             ) : (
-              "Tạo lịch"
+              generateButtonText
             )}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    <Dialog
+        open={statusDialog.open}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && statusDialog.mode === "loading") {
+            return;
+          }
+          setStatusDialog((prev) => ({ ...prev, open: nextOpen }));
+        }}
+      >
+        <DialogContent className="sm:max-w-[320px] text-center">
+          <div className="flex flex-col items-center gap-3 py-6">
+            {statusDialog.mode === "loading" ? (
+              <Loader2 className="h-10 w-10 text-primary animate-spin" />
+            ) : (
+              <CheckCircle2 className="h-10 w-10 text-green-600" />
+            )}
+            <div className="space-y-1">
+              <p className="text-base font-semibold">{statusDialog.title}</p>
+              {statusDialog.description && (
+                <p className="text-sm text-muted-foreground">{statusDialog.description}</p>
+              )}
+            </div>
+            {statusDialog.mode === "success" && (
+              <Button variant="default" onClick={() => setStatusDialog((prev) => ({ ...prev, open: false }))}>
+                Đóng
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };

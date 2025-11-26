@@ -47,6 +47,7 @@ import ExamRoomAssignmentPage from "./pages/admin/exam/ExamRoomAssignmentPage.ts
 import ExamSupervisorAssignmentPage from "./pages/admin/exam/ExamSupervisorAssignmentPage.tsx";
 import ProposalHistoryPage from "./pages/admin/ProposalHistoryPage.tsx";
 import ClassPeriodsPage from "./pages/admin/ClassPeriodsPage.tsx";
+import BackupManagementPage from "./pages/admin/BackupManagementPage.tsx";
 import HomeroomClassPage from "./pages/gvcn/HomeroomClassPage.tsx";
 import HomeroomGradesPage from "./pages/gvcn/HomeroomGradesPage.tsx";
 import HomeroomAttendancePage from "./pages/gvcn/HomeroomAttendancePage.tsx";
@@ -140,6 +141,7 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/admin/statistics", element: <StatisticsDashboardPage /> },
     { path: "/admin/audit-logs", element: <AuditLogPage /> },
     { path: "/admin/init-grades", element: <InitGradeTablePage /> },
+    { path: "/admin/backup", element: <BackupManagementPage /> },
     { path: "/admin/exam/exam-list", element: <ExamListPage /> },
     // { path: "/admin/exam/new", element: <ExamForm /> },
     { path: "/admin/exam/:examId", element: <ExamDetailPage /> },
@@ -158,7 +160,6 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/teacher/schedule", element: <TeacherSchedulePage /> },
     { path: "/teacher/grades", element: <TeacherEnterGradesPage /> },
     { path: "/teacher/profile", element: <ProfilePage /> },
-    { path: "/teacher/settings", element: <SettingsPage /> },
     { path: "/teacher/exams/supervisor-schedule", element: <SupervisorSchedule /> },
     { path: "/teacher/exams/supervisor-rooms", element: <SupervisorRooms /> },
   ],
@@ -172,7 +173,6 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/student/notifications/:id", element: <NotificationDetailPage /> },
     { path: "/student/incidents", element: <StudentIncidentsPage /> },
     { path: "/student/profile", element: <ProfilePage /> },
-    { path: "/student/settings", element: <SettingsPage /> },
     { path: "/student/exams/student-schedule", element: <StudentSchedule /> },
     { path: "/student/exams/exam-room", element: <ExamRoom /> },
   ],

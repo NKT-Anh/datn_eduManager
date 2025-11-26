@@ -1,6 +1,6 @@
 const Backup = require('../models/backup');
 const Setting = require('../models/settings');
-const { createMongoBackup, restoreMongoBackup, cleanupOldBackups } = require('../utils/backupHelper');
+const { createMongoBackup, createMongoBackupJSON, restoreMongoBackup, restoreMongoBackupJSON, cleanupOldBackups } = require('../utils/backupHelper');
 const path = require('path');
 const fs = require('fs').promises;
 
@@ -40,64 +40,101 @@ exports.createBackup = async (req, res) => {
       dbName = uriParts[uriParts.length - 1].split('?')[0];
     }
 
-    // Tạo backup record với status 'creating'
-    const backup = new Backup({
-      filename: '', // Sẽ cập nhật sau
-      filePath: '',
-      fileSize: 0,
-      storageType: uploadToDrive ? 'both' : 'local',
-      status: 'creating',
-      createdBy: userId,
-      isAutoBackup: false,
-      backupType: 'manual',
-      description,
-    });
-    await backup.save();
-
+    let backup = null;
     try {
-      // Tạo backup file
-      const backupResult = await createMongoBackup(backupDir, dbName);
+      // ✅ Tạo backup file bằng JSON export (không cần mongodump)
+      console.log(`🔄 [Backup] Bắt đầu tạo backup cho database: ${dbName}`);
       
-      backup.filename = backupResult.filename;
-      backup.filePath = backupResult.filePath;
-      backup.fileSize = backupResult.fileSize;
-      backup.status = uploadToDrive ? 'uploading' : 'completed';
+      // Sử dụng phương pháp JSON export (không cần mongodump)
+      const backupResult = await createMongoBackupJSON(backupDir, {
+        // Có thể tùy chỉnh: chỉ backup một số collections cụ thể
+        // collections: ['users', 'classes', 'subjects'],
+        // excludeCollections: ['auditlogs', 'emaillogs'] // Loại bỏ logs nếu muốn
+      });
+      
+      console.log(`✅ [Backup] Đã tạo backup file: ${backupResult.filename}`);
+      
+      // ✅ Tạo backup record sau khi đã có file
+      backup = new Backup({
+        filename: backupResult.filename,
+        filePath: backupResult.filePath,
+        fileSize: backupResult.fileSize,
+        storageType: uploadToDrive ? 'both' : 'local',
+        status: uploadToDrive ? 'uploading' : 'completed',
+        createdBy: userId,
+        isAutoBackup: false,
+        backupType: 'manual',
+        description,
+      });
       await backup.save();
+      console.log(`✅ [Backup] Đã lưu backup record vào database`);
 
-      // Upload lên Google Drive nếu được yêu cầu
-      if (uploadToDrive && process.env.GOOGLE_DRIVE_CREDENTIALS) {
-        const gdHelper = getGoogleDriveHelper();
-        if (gdHelper) {
-          try {
-            // Tạo hoặc lấy folder backup trên Drive
-            let driveFolderId = process.env.GOOGLE_DRIVE_BACKUP_FOLDER_ID;
-            if (!driveFolderId) {
-              driveFolderId = await gdHelper.createFolderOnGoogleDrive('EduManage Backups');
-              // Có thể lưu vào settings hoặc env
-            }
-
-            const driveResult = await gdHelper.uploadToGoogleDrive(
-              backupResult.filePath,
-              backupResult.filename,
-              driveFolderId
-            );
-
-            backup.googleDriveFileId = driveResult.fileId;
-            backup.googleDriveUrl = driveResult.webViewLink;
-            backup.storageType = 'both';
-            backup.status = 'completed';
-            await backup.save();
-          } catch (driveError) {
-            console.error('❌ [Backup] Lỗi khi upload lên Google Drive:', driveError);
-            backup.error = `Upload Drive thất bại: ${driveError.message}`;
-            backup.status = 'completed'; // Vẫn giữ backup local
-            await backup.save();
-          }
-        } else {
-          console.warn('⚠️ [Backup] Google Drive helper không khả dụng, chỉ lưu local');
+      // ✅ Upload lên Google Drive nếu được yêu cầu
+      if (uploadToDrive) {
+        if (!process.env.GOOGLE_DRIVE_CREDENTIALS) {
+          console.warn('⚠️ [Backup] GOOGLE_DRIVE_CREDENTIALS chưa được cấu hình, chỉ lưu local');
+          backup.error = 'Google Drive chưa được cấu hình trong môi trường';
           backup.status = 'completed';
           await backup.save();
+        } else {
+          const gdHelper = getGoogleDriveHelper();
+          if (gdHelper) {
+            try {
+              console.log(`🔄 [Backup] Bắt đầu upload lên Google Drive...`);
+              // Tạo hoặc lấy folder backup trên Drive
+              let driveFolderId = process.env.GOOGLE_DRIVE_BACKUP_FOLDER_ID;
+              if (!driveFolderId) {
+                console.log(`📁 [Backup] Tạo folder mới trên Google Drive...`);
+                driveFolderId = await gdHelper.createFolderOnGoogleDrive('EduManage Backups');
+                console.log(`✅ [Backup] Đã tạo folder với ID: ${driveFolderId}`);
+                // Có thể lưu vào settings hoặc env
+              }
+
+              console.log(`📤 [Backup] Đang upload file: ${backupResult.filename} (${(backupResult.fileSize / 1024 / 1024).toFixed(2)} MB)...`);
+              try {
+                const driveResult = await gdHelper.uploadToGoogleDrive(
+                  backupResult.filePath,
+                  backupResult.filename,
+                  driveFolderId
+                );
+
+                backup.googleDriveFileId = driveResult.fileId;
+                backup.googleDriveUrl = driveResult.webViewLink;
+                backup.storageType = 'both';
+                backup.status = 'completed';
+                await backup.save();
+                
+                console.log(`✅ [Backup] Đã upload lên Google Drive thành công!`);
+                console.log(`   - File ID: ${driveResult.fileId}`);
+                console.log(`   - URL: ${driveResult.webViewLink}`);
+              } catch (driveError) {
+                // Nếu lỗi upload Google Drive, vẫn lưu backup local
+                console.warn(`⚠️ [Backup] Không thể upload lên Google Drive: ${driveError.message}`);
+                console.log(`ℹ️ [Backup] Backup đã được lưu local tại: ${backupResult.filePath}`);
+                console.warn(`ℹ️ [Backup] Để upload lên Google Drive, vui lòng kiểm tra file credentials: ${process.env.GOOGLE_DRIVE_CREDENTIALS || 'chưa cấu hình'}`);
+                backup.storageType = 'local';
+                backup.status = 'completed';
+                backup.error = `Upload Google Drive thất bại: ${driveError.message}`;
+                await backup.save();
+              }
+            } catch (driveError) {
+              console.error('❌ [Backup] Lỗi khi upload lên Google Drive:', driveError);
+              console.warn(`⚠️ [Backup] Backup vẫn được lưu local tại: ${backupResult.filePath}`);
+              console.warn(`ℹ️ [Backup] Để upload lên Google Drive, vui lòng kiểm tra file credentials: ${process.env.GOOGLE_DRIVE_CREDENTIALS || 'chưa cấu hình'}`);
+              backup.error = `Upload Drive thất bại: ${driveError.message}`;
+              backup.status = 'completed'; // Vẫn giữ backup local
+              backup.storageType = 'local'; // Chỉ lưu local
+              await backup.save();
+            }
+          } else {
+            console.warn('⚠️ [Backup] Google Drive helper không khả dụng, chỉ lưu local');
+            backup.error = 'Google Drive helper không khả dụng';
+            backup.status = 'completed';
+            await backup.save();
+          }
         }
+      } else {
+        console.log(`ℹ️ [Backup] Không upload lên Google Drive (uploadToDrive = false)`);
       }
 
       // Cleanup backup cũ
@@ -118,9 +155,18 @@ exports.createBackup = async (req, res) => {
         },
       });
     } catch (error) {
-      backup.status = 'failed';
-      backup.error = error.message;
-      await backup.save();
+      console.error('❌ [Backup] Lỗi khi tạo backup:', error);
+      
+      // ✅ Nếu đã tạo backup record nhưng chưa hoàn thành, cập nhật status
+      if (backup && backup._id) {
+        backup.status = 'failed';
+        backup.error = error.message;
+        try {
+          await backup.save();
+        } catch (saveError) {
+          console.error('❌ [Backup] Lỗi khi lưu trạng thái failed:', saveError);
+        }
+      }
 
       res.status(500).json({
         message: 'Lỗi khi tạo backup',
@@ -232,16 +278,25 @@ exports.restoreBackup = async (req, res) => {
       return res.status(404).json({ message: 'File backup không tồn tại trên server' });
     }
 
-    // Lấy database name
-    const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/eduschool';
-    let dbName = 'eduschool';
-    if (mongoUri.includes('/')) {
-      const uriParts = mongoUri.split('/');
-      dbName = uriParts[uriParts.length - 1].split('?')[0];
+    // ✅ Restore backup - sử dụng phương pháp JSON nếu là file JSON backup
+    if (backup.filename.includes('json-') || backup.filename.endsWith('.json.tar.gz')) {
+      // Sử dụng phương pháp JSON restore
+      console.log(`🔄 [Restore] Sử dụng phương pháp JSON restore`);
+      await restoreMongoBackupJSON(backup.filePath, {
+        dropExisting: true, // Xóa dữ liệu cũ trước khi restore
+        // Có thể chỉ định collections cụ thể: collections: ['users', 'classes']
+      });
+    } else {
+      // Sử dụng phương pháp mongorestore (cho backup cũ)
+      console.log(`🔄 [Restore] Sử dụng phương pháp mongorestore`);
+      const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/eduschool';
+      let dbName = 'eduschool';
+      if (mongoUri.includes('/')) {
+        const uriParts = mongoUri.split('/');
+        dbName = uriParts[uriParts.length - 1].split('?')[0];
+      }
+      await restoreMongoBackup(backup.filePath, dbName);
     }
-
-    // Restore backup
-    await restoreMongoBackup(backup.filePath, dbName);
 
     res.json({ message: 'Restore backup thành công' });
   } catch (error) {
@@ -328,6 +383,146 @@ exports.getBackupStats = async (req, res) => {
   } catch (error) {
     console.error('❌ [Backup] Lỗi khi lấy thống kê:', error);
     res.status(500).json({ message: 'Lỗi khi lấy thống kê', error: error.message });
+  }
+};
+
+/**
+ * ✅ Upload backup file từ web
+ */
+exports.uploadBackupFile = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'Không có file được upload' });
+    }
+
+    const userId = req.user?.accountId || null;
+    const { description = '' } = req.body;
+
+    // Lấy thông tin file
+    const filePath = req.file.path;
+    const originalName = req.file.originalname;
+    const fileSize = req.file.size;
+
+    // Tạo tên file mới (giữ extension)
+    const ext = path.extname(originalName);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const newFilename = `backup-uploaded-${timestamp}${ext}`;
+
+    // Đổi tên file để có format chuẩn
+    const newFilePath = path.join(path.dirname(filePath), newFilename);
+    await fs.rename(filePath, newFilePath);
+
+    // Tạo backup record
+    const backup = new Backup({
+      filename: newFilename,
+      filePath: newFilePath,
+      fileSize: fileSize,
+      storageType: 'local',
+      status: 'completed',
+      createdBy: userId,
+      isAutoBackup: false,
+      backupType: 'manual',
+      description: description || `Upload từ web: ${originalName}`,
+    });
+    await backup.save();
+
+    console.log(`✅ [Backup] Đã upload backup file: ${newFilename} (${(fileSize / 1024 / 1024).toFixed(2)} MB)`);
+
+    res.status(201).json({
+      message: 'Upload backup thành công',
+      backup: {
+        _id: backup._id,
+        filename: backup.filename,
+        fileSize: backup.fileSize,
+        storageType: backup.storageType,
+        status: backup.status,
+        createdAt: backup.createdAt,
+        originalName: originalName,
+      },
+    });
+  } catch (error) {
+    console.error('❌ [Backup] Lỗi khi upload backup file:', error);
+    
+    // Xóa file nếu đã upload nhưng lỗi khi lưu record
+    if (req.file && req.file.path) {
+      try {
+        await fs.unlink(req.file.path);
+      } catch (unlinkError) {
+        console.error('❌ [Backup] Lỗi khi xóa file tạm:', unlinkError);
+      }
+    }
+
+    res.status(500).json({
+      message: 'Lỗi khi upload backup file',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * ✅ Restore từ file backup đã upload
+ */
+exports.restoreUploadedBackup = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { confirm = false } = req.body;
+
+    if (!confirm) {
+      return res.status(400).json({ message: 'Cần xác nhận restore (confirm: true)' });
+    }
+
+    const backup = await Backup.findById(id);
+    if (!backup) {
+      return res.status(404).json({ message: 'Không tìm thấy backup' });
+    }
+
+    if (backup.status !== 'completed') {
+      return res.status(400).json({ message: 'Backup chưa hoàn thành' });
+    }
+
+    // Kiểm tra file có tồn tại không
+    try {
+      await fs.access(backup.filePath);
+    } catch (error) {
+      return res.status(404).json({ message: 'File backup không tồn tại trên server' });
+    }
+
+    console.log(`🔄 [Restore] Bắt đầu restore từ file đã upload: ${backup.filename}`);
+
+    // ✅ Restore backup - tự động phát hiện loại file
+    if (backup.filename.includes('json-') || backup.filename.endsWith('.json.tar.gz')) {
+      // Sử dụng phương pháp JSON restore
+      console.log(`🔄 [Restore] Sử dụng phương pháp JSON restore`);
+      await restoreMongoBackupJSON(backup.filePath, {
+        dropExisting: true,
+      });
+    } else {
+      // Sử dụng phương pháp mongorestore (cho backup cũ)
+      console.log(`🔄 [Restore] Sử dụng phương pháp mongorestore`);
+      const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/eduschool';
+      let dbName = 'eduschool';
+      if (mongoUri.includes('/')) {
+        const uriParts = mongoUri.split('/');
+        dbName = uriParts[uriParts.length - 1].split('?')[0];
+      }
+      await restoreMongoBackup(backup.filePath, dbName);
+    }
+
+    console.log(`✅ [Restore] Restore từ file upload thành công`);
+
+    res.json({ 
+      message: 'Restore backup thành công',
+      backup: {
+        _id: backup._id,
+        filename: backup.filename,
+      }
+    });
+  } catch (error) {
+    console.error('❌ [Backup] Lỗi khi restore:', error);
+    res.status(500).json({ 
+      message: 'Lỗi khi restore backup', 
+      error: error.message 
+    });
   }
 };
 

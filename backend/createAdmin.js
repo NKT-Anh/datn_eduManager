@@ -13,7 +13,7 @@ async function createAdmin() {
       email: 'teacher1@gmail.com',
       password: '123456',
       displayName: 'teacher1',
-      phoneNumber: '+84123456789',
+      phoneNumber: '0397090096',
     });
 
     const newAdmin = new Admin({

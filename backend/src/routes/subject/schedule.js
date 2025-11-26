@@ -102,4 +102,30 @@ router.get("/teacher/:teacherName/:year/:semester",
   scheduleController.getScheduleByTeacher
 );
 
+// ✅ Khóa/Mở khóa thời khóa biểu - Chỉ Admin
+router.patch("/:id/lock", 
+  authMiddleware, 
+  checkPermission(PERMISSIONS.SCHEDULE_UPDATE),
+  auditLog({
+    action: 'UPDATE',
+    resource: 'SCHEDULE',
+    getResourceId: (req) => req.params.id,
+    getDescription: (req) => `${req.body.isLocked ? 'Khóa' : 'Mở khóa'} thời khóa biểu: ${req.params.id}`,
+  }),
+  scheduleController.lockSchedule
+);
+
+// ✅ Khóa tất cả lịch trong năm học + học kỳ - Chỉ Admin
+router.post("/lock-all", 
+  authMiddleware, 
+  checkPermission(PERMISSIONS.SCHEDULE_UPDATE),
+  auditLog({
+    action: 'UPDATE',
+    resource: 'SCHEDULE',
+    getResourceId: () => 'all',
+    getDescription: (req) => `Khóa tất cả thời khóa biểu: ${req.body.year} - HK ${req.body.semester}`,
+  }),
+  scheduleController.lockAllSchedules
+);
+
 module.exports = router;

@@ -16,8 +16,7 @@ import {
   Calendar,
   ClipboardList,
   GraduationCap,
-  User,
-  Settings
+  User
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -38,7 +37,6 @@ export function TeacherSidebar() {
     { title: "Quản lý điểm", url: `${prefix}/grades`, icon: ClipboardList },
     { title: "Điểm danh", url: `${prefix}/attendance`, icon: GraduationCap },
     { title: "Hồ sơ", url: `${prefix}/profile`, icon: User },
-    { title: "Cài đặt", url: `${prefix}/settings`, icon: Settings },
   ];
 
   const getNavCls = ({ isActive }: { isActive: boolean }) =>

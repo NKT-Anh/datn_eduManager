@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -9,12 +9,32 @@ import {
 } from "@/components/ui/dialog";
 import { scheduleApi } from "@/services/scheduleApi";
 
-export default function DeleteScheduleDialog({ onDeleted }: { onDeleted?: () => void }) {
+interface DeleteScheduleDialogProps {
+  onDeleted?: () => void;
+  disabled?: boolean;
+  defaultYear?: string;
+  defaultSemester?: string;
+  defaultGrade?: string;
+}
+
+export default function DeleteScheduleDialog({
+  onDeleted,
+  disabled = false,
+  defaultYear = "",
+  defaultSemester = "1",
+  defaultGrade = "10",
+}: DeleteScheduleDialogProps) {
   const [open, setOpen] = useState(false);
-  const [year, setYear] = useState("");
-  const [semester, setSemester] = useState("1");
-  const [grade, setGrade] = useState("10");
+  const [year, setYear] = useState(defaultYear);
+  const [semester, setSemester] = useState(defaultSemester);
+  const [grade, setGrade] = useState(defaultGrade);
   const [isDeleting, setIsDeleting] = useState(false);
+  
+  useEffect(() => {
+    setYear(defaultYear);
+    setSemester(defaultSemester);
+    setGrade(defaultGrade);
+  }, [defaultYear, defaultSemester, defaultGrade]);
 
   const handleDelete = async () => {
     if (!year || !semester || !grade) {
@@ -37,7 +57,12 @@ export default function DeleteScheduleDialog({ onDeleted }: { onDeleted?: () => 
 
   return (
     <>
-      <Button variant="destructive" onClick={() => setOpen(true)}>
+      <Button 
+        variant="destructive" 
+        onClick={() => setOpen(true)}
+        disabled={disabled}
+        title={disabled ? "Thời khóa biểu đã khóa. Vui lòng mở khóa trước khi xóa." : ""}
+      >
         Xóa toàn bộ TKB
       </Button>
 

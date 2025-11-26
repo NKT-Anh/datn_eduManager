@@ -20,6 +20,7 @@ const teachingAssignmentProposal = require('./subject/teachingAssignmentProposal
 const scheduleConfig = require('./subject/scheduleConfig');
 const schedule = require('./subject/schedule');
 const autoSchedule = require('./subject/autoSchedule');
+const constraintSolverRoutes = require('./subject/constraintSolver');
 const grade = require("./classes/grade");
 const setting = require("./settingRoutes")
 const batchAccountRoutes = require('./user/batchAccountRoutes')
@@ -67,6 +68,7 @@ const routers = [
   { group: 'scheduleConfig', router: scheduleConfig, description: 'Cấu hình thời khóa biểu' },
   { group: 'schedules', router: schedule, description: 'Thời khóa biểu' },
   { group: 'auto-schedule', router: autoSchedule, description: 'Tự động sắp thời khóa biểu' },
+  { group: 'constraint-solver', router: constraintSolverRoutes, description: 'Thuật toán Backtracking cho TKB' },
   { group: 'grade', router: grade, description: 'Quản lý khối lớp' },
     { group: 'rooms', router: roomRoutes, description: 'Quản lý phòng' },
   { group: 'settings', router: setting, description: 'Cài đặt hệ thống' },

@@ -36,6 +36,12 @@ const ScheduleSchema = new mongoose.Schema(
     year: { type: String, required: true, index: true }, // "2024-2025"
     semester: { type: String, required: true, index: true }, // "1" hoặc "2"
     timetable: [TimetableSchema],
+    // ✅ Trạng thái khóa: true = đã khóa (học sinh/GV có thể xem), false = chưa khóa (chỉ admin xem)
+    isLocked: { 
+      type: Boolean, 
+      default: false,
+      index: true 
+    },
   },
   { timestamps: true }
 );
@@ -48,16 +54,27 @@ ScheduleSchema.index({ year: 1, semester: 1 });
 ScheduleSchema.index({ 'timetable.periods.teacherId': 1, year: 1, semester: 1 });
 
 // ✅ Static method: Kiểm tra conflict teacherId + timeslot
+// Kiểm tra chính xác: cùng teacherId, cùng day, cùng period (tiết cụ thể)
 ScheduleSchema.statics.checkTeacherConflict = async function(teacherId, day, period, year, semester, excludeClassId = null) {
   if (!teacherId) return false;
   
-  // ✅ Tìm các schedule có teacherId được gán vào timeslot này
+  // ✅ Query chính xác: sử dụng $elemMatch để đảm bảo cùng một entry trong timetable
+  // có cả day và period với teacherId
+  // Tránh trường hợp match sai khi có nhiều entries trong timetable
   const query = {
     year,
     semester,
-    'timetable.day': day,
-    'timetable.periods.period': period,
-    'timetable.periods.teacherId': teacherId
+    timetable: {
+      $elemMatch: {
+        day: day,
+        periods: {
+          $elemMatch: {
+            period: period,
+            teacherId: teacherId
+          }
+        }
+      }
+    }
   };
   
   if (excludeClassId) {

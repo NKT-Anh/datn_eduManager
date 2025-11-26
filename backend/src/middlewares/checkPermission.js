@@ -272,6 +272,18 @@ async function checkContextPermissions(role, accountId, permissions, req) {
     return { allowed: true, context: { role } };
   }
 
+  // ✅ BGH (isLeader) có quyền xem tất cả - kiểm tra trước khi load user
+  if (role === 'teacher') {
+    const Teacher = require('../models/user/teacher');
+    const teacher = await Teacher.findOne({ accountId })
+      .select('isLeader')
+      .lean();
+    if (teacher && teacher.isLeader) {
+      // BGH có quyền xem tất cả, không cần kiểm tra context chi tiết
+      return { allowed: true, context: { role, isLeader: true } };
+    }
+  }
+
   // ✅ Lấy thông tin user chi tiết
   let user = null;
   if (role === 'teacher') {
@@ -521,6 +533,19 @@ async function checkSinglePermissionContext(permission, role, user, req, context
     // attendance:view_all - Admin và BGH xem tất cả (không cần kiểm tra context)
   }
 
+  // ✅ Quyền xem học sinh (STUDENT_VIEW)
+  // Admin và BGH (isLeader) có thể xem tất cả học sinh
+  if (permission === PERMISSIONS.STUDENT_VIEW) {
+    if (role === 'admin') {
+      // Admin có quyền xem tất cả, không cần kiểm tra context
+      return { allowed: true, context };
+    } else if (role === 'teacher' && (user?._effectiveFlags?.isLeader)) {
+      // BGH (isLeader) có quyền xem tất cả học sinh
+      return { allowed: true, context };
+    }
+    // Các trường hợp khác sẽ được xử lý bởi các permission cụ thể (homeroom, teaching, self)
+  }
+
   // ✅ Quyền xem bản thân (student)
   if (permission.includes('self')) {
     if (role === 'student') {
@@ -530,6 +555,23 @@ async function checkSinglePermissionContext(permission, role, user, req, context
       const studentId = (req.params && req.params.studentId) 
         || (req.query && req.query.studentId) 
         || (req.body && req.body.studentId);
+      
+      // ✅ Nếu là route /students/:id, lấy id từ params
+      if (!studentId && req.params && req.params.id) {
+        const idFromParams = req.params.id;
+        if (String(user._id) !== String(idFromParams)) {
+          return { 
+            allowed: false, 
+            message: 'Chỉ có thể xem thông tin của chính mình',
+            context: { ...context, studentId: idFromParams }
+          };
+        }
+        context.studentId = user._id;
+        context.classId = (user.classId && (user.classId._id || user.classId)) 
+          ? String(user.classId._id || user.classId) 
+          : null;
+        return { allowed: true, context };
+      }
       
       if (studentId && String(user._id) !== String(studentId)) {
         return { 

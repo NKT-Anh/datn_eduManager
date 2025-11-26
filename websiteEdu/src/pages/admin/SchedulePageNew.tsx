@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   DndContext,
   closestCenter,
@@ -25,7 +25,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { BookOpen, Save } from "lucide-react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { BookOpen, Save, Lock, Unlock, Sparkles, Calendar, ChevronDown, CheckCircle2, XCircle } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // ✅ Sử dụng hooks thay vì API trực tiếp
 import { useSubjects, useAssignments, useSchoolYears } from "@/hooks";
@@ -36,9 +47,12 @@ import DeleteScheduleDialog from "@/components/dialogs/DeleteScheduleSection";
 import { Subject, ClassType, TeachingAssignment } from "@/types/class";
 import { ScheduleConfig, ClassSchedule } from "@/types/schedule";
 import { ScheduleConfigForm } from "@/components/forms/ScheduleConfigForm";
+import { GenerateScheduleDialog } from "@/components/dialogs/GenerateScheduleDialog";
 import { toast } from "@/components/ui/use-toast";
 import { Teacher } from "@/types/auth";
 import { Loader2 } from "lucide-react";
+import { autoScheduleApi } from "@/services/autoScheduleApi";
+import { constraintSolverApi } from "@/services/constraintSolverApi";
 // Hàm tạo màu từ tên môn học
 const getSubjectColor = (subjectName: string) => {
   const colors: Record<string, string> = {
@@ -68,6 +82,12 @@ interface ScheduleGridCellProps {
   assignments?: TeachingAssignment[];
   onTeacherChange?: (teacherName: string) => void;
 }
+
+type ScheduleStatusInfo = {
+  hasSchedule: boolean;
+  isLocked: boolean;
+  scheduleId?: string;
+};
 
 export const ScheduleGridCell = ({ p, isAfternoon, assignments = [], onTeacherChange }: ScheduleGridCellProps) => {
   const [showDialog, setShowDialog] = useState(false);
@@ -154,16 +174,17 @@ const SortableCell = ({ id, children }: { id: string; children: React.ReactNode 
     background: isDragging ? "#e0f2fe" : undefined,
   };
 
+  // ✅ Sử dụng div thay vì TableCell vì đang dùng trong grid layout, không phải table
   return (
-    <TableCell
+    <div
       ref={setNodeRef}
       style={style}
       {...attributes}
       {...listeners}
-      className="cursor-move relative overflow-visible"
+      className="cursor-move relative overflow-visible p-2 border-r last:border-r-0 min-h-[60px]"
     >
       {children}
-    </TableCell>
+    </div>
   );
 };
 
@@ -177,6 +198,8 @@ export default function SchedulePageNew() {
   const [schedule, setSchedule] = useState<ClassSchedule | null>(null);
   const [classes, setClasses] = useState<ClassType[]>([]);
   const [isLoadingClasses, setIsLoadingClasses] = useState(false);
+  // ✅ Map để lưu trạng thái schedule cho mỗi lớp: { classId: { hasSchedule: boolean, isLocked: boolean } }
+  const [scheduleStatusMap, setScheduleStatusMap] = useState<Record<string, ScheduleStatusInfo>>({});
 
   const [selectedYear, setSelectedYear] = useState<string>("");
   const [selectedSemester, setSelectedSemester] = useState<string>("1");
@@ -186,6 +209,26 @@ export default function SchedulePageNew() {
 
   const [days, setDays] = useState<{ key: string; label: string }[]>([]);
   const sensors = useSensors(useSensor(PointerSensor));
+  
+  // ✅ State cho AlertDialog xác nhận tạo TKB cho 1 lớp
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [pendingClass, setPendingClass] = useState<{ id: string; name: string } | null>(null);
+  
+  // ✅ State để quản lý các khối đang mở trong Accordion
+  const [openGrades, setOpenGrades] = useState<string[]>([]);
+  const [lockingClassId, setLockingClassId] = useState<string | null>(null);
+
+  const hasYearAndSemester = Boolean(selectedYear && selectedSemester);
+
+  const allSchedulesLocked =
+    hasYearAndSemester &&
+    classes.length > 0 &&
+    classes.every((cls) => {
+      const status = scheduleStatusMap[String((cls as any)._id)];
+      return status?.isLocked === true;
+    });
+
+  const lockAllButtonLabel = allSchedulesLocked ? "🔓 Mở khóa tất cả lịch" : "🔒 Khóa tất cả lịch";
 
   // ✅ Load năm học từ API và set năm học mặc định
   useEffect(() => {
@@ -245,6 +288,17 @@ export default function SchedulePageNew() {
           setSelectedClassId(null);
           setSchedule(null);
         }
+        
+        // ✅ Mở tất cả các khối mặc định khi load lớp
+        const grades = Array.from(new Set(classesData.map((c: ClassType) => c.grade).filter(Boolean))) as string[];
+        const sortedGrades = grades.sort((a, b) => {
+          const numA = parseInt(a) || 999;
+          const numB = parseInt(b) || 999;
+          return numA - numB;
+        });
+        if (sortedGrades.length > 0 && openGrades.length === 0) {
+          setOpenGrades(sortedGrades);
+        }
       } catch (err) {
         console.error("Lỗi tải danh sách lớp:", err);
         toast({
@@ -260,6 +314,61 @@ export default function SchedulePageNew() {
     
     loadClasses();
   }, [selectedYear]);
+
+  const loadScheduleStatus = useCallback(async () => {
+    if (!selectedYear || !selectedSemester) {
+      setScheduleStatusMap({});
+      return;
+    }
+
+    try {
+      const schedules = await scheduleApi.getSchedulesByYearSemester(selectedYear, selectedSemester);
+      const statusMap: Record<string, ScheduleStatusInfo> = {};
+
+      if (Array.isArray(schedules)) {
+        schedules.forEach((schedule: any) => {
+          const classId =
+            typeof schedule.classId === "string"
+              ? schedule.classId
+              : schedule.classId?._id?.toString() || schedule.classId?.toString() || "";
+
+          if (classId) {
+            statusMap[classId] = {
+              hasSchedule: true,
+              isLocked: schedule.isLocked || false,
+              scheduleId: schedule._id,
+            };
+          }
+        });
+      }
+
+      setScheduleStatusMap(statusMap);
+    } catch (err: any) {
+      if (err.response?.status !== 404) {
+        console.warn("⚠️ Không thể tải trạng thái lịch học:", err);
+      }
+      setScheduleStatusMap({});
+    }
+  }, [selectedYear, selectedSemester]);
+
+  // ✅ Load trạng thái schedule cho tất cả lớp khi thay đổi năm học/học kỳ
+  useEffect(() => {
+    loadScheduleStatus();
+  }, [loadScheduleStatus]);
+
+  // ✅ Cập nhật trạng thái schedule khi schedule được tạo/cập nhật/xóa
+  useEffect(() => {
+    if (!schedule || !selectedClassId) return;
+    
+    setScheduleStatusMap(prev => ({
+      ...prev,
+      [selectedClassId]: {
+        hasSchedule: true,
+        isLocked: schedule.isLocked || false,
+        scheduleId: (schedule as any)?._id,
+      }
+    }));
+  }, [schedule, selectedClassId]);
 
   useEffect(() => {
     const fetchConfig = async () => {
@@ -335,6 +444,16 @@ export default function SchedulePageNew() {
   const handleTeacherChange = (dayKey: string, periodIdx: number, teacher: string) => {
     if (!schedule) return;
 
+    // ✅ Không cho phép thay đổi giáo viên nếu schedule đã khóa
+    if (schedule.isLocked === true) {
+      toast({
+        title: "🔒 Thời khóa biểu đã khóa",
+        description: "Không thể chỉnh sửa thời khóa biểu đã khóa. Vui lòng mở khóa trước.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!isTeacherAvailable(teacher, dayKey, periodIdx)) {
       toast({ title: "❌ Giáo viên bận", description: `${teacher} đã có lớp khác trong tiết này`, variant: "destructive" });
       return;
@@ -351,6 +470,16 @@ export default function SchedulePageNew() {
     const { active, over } = event;
     if (!over || !schedule) return;
 
+    // ✅ Không cho phép drag-and-drop nếu schedule đã khóa
+    if (schedule.isLocked === true) {
+      toast({
+        title: "🔒 Thời khóa biểu đã khóa",
+        description: "Không thể chỉnh sửa thời khóa biểu đã khóa. Vui lòng mở khóa trước.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const newSchedule = { ...schedule };
 
     if (active.id.toString().startsWith("unassigned-")) {
@@ -358,7 +487,66 @@ export default function SchedulePageNew() {
       const [day, idx] = over.id.toString().split("-");
       const dayEntry = newSchedule.timetable.find(d => d.day === day);
       if (!dayEntry) return;
-      dayEntry.periods[+idx] = { period: +idx, subject, teacher: undefined };
+      
+      // ✅ Tìm giáo viên được phân công cho môn này trong lớp này
+      let teacherName: string | undefined = undefined;
+      let teacherId: string | undefined = undefined;
+      let subjectId: string | undefined = undefined;
+      
+      if (selectedClassId && selectedYear && selectedSemester) {
+        // ✅ Tìm subjectId từ tên môn học
+        const subjectObj = subjects.find(s => s.name === subject);
+        if (subjectObj?._id) {
+          const subjectIdValue = subjectObj._id;
+          subjectId = typeof subjectIdValue === 'string' ? subjectIdValue : (subjectIdValue as any)?.toString?.() || String(subjectIdValue);
+        }
+        
+        // ✅ Lấy assignments cho lớp này
+        const classAssignments = assignments.filter(a => {
+          if (!a.classId || !selectedClassId) return false;
+          const classId = typeof a.classId === 'string' ? a.classId : (a.classId as any)?._id;
+          return classId === selectedClassId && 
+                 a.year === selectedYear && 
+                 a.semester === selectedSemester;
+        });
+        
+        // ✅ Tìm assignment cho môn học này (ưu tiên so sánh subjectId, fallback so sánh tên)
+        const assignment = classAssignments.find(a => {
+          const assignmentSubjectId = typeof a.subjectId === 'string' 
+            ? a.subjectId 
+            : (a.subjectId as any)?._id?.toString();
+          const assignmentSubjectName = typeof a.subjectId === 'string' 
+            ? subjects.find(s => {
+                const sId = typeof s._id === 'string' ? s._id : (s._id as any)?._id?.toString() || String(s._id);
+                return sId === a.subjectId;
+              })?.name
+            : (a.subjectId as any)?.name;
+          
+          // Ưu tiên so sánh ID, nếu không có thì so sánh tên
+          if (subjectId && assignmentSubjectId) {
+            return assignmentSubjectId === subjectId;
+          }
+          return assignmentSubjectName === subject;
+        });
+        
+        if (assignment?.teacherId) {
+          teacherName = typeof assignment.teacherId === 'string'
+            ? undefined // Nếu chỉ có ID, không có tên
+            : (assignment.teacherId as any)?.name;
+          teacherId = typeof assignment.teacherId === 'string'
+            ? assignment.teacherId
+            : (assignment.teacherId as any)?._id?.toString();
+        }
+      }
+      
+      // ✅ Gán môn học và giáo viên vào period
+      dayEntry.periods[+idx] = { 
+        period: +idx, 
+        subject, 
+        teacher: teacherName,
+        teacherId: teacherId,
+        subjectId: subjectId
+      };
       setSchedule(newSchedule);
       return;
     }
@@ -376,8 +564,175 @@ export default function SchedulePageNew() {
     setSchedule(newSchedule);
   };
 
+  // ✅ Xử lý tạo lịch tự động cho các lớp theo khối
+  const handleGenerateSchedule = async (
+    targetGrades: string[],
+    year: string,
+    semester: string
+  ) => {
+    try {
+      toast({
+        title: "⏳ Đang tạo lịch tự động...",
+        description: `Đang tạo lịch cho khối ${targetGrades.join(", ")} - ${year} HK${semester}`,
+      });
+
+      const result = await autoScheduleApi.generateSchedule(
+        targetGrades,
+        year,
+        semester
+      );
+
+      console.log("📥 Kết quả tạo lịch:", result);
+
+      toast({
+        title: "✅ Tạo lịch thành công",
+        description: `Đã tạo lịch cho ${result.schedules?.length || 0} lớp`,
+      });
+
+      // ✅ Reload schedules nếu đang xem lớp trong khối đã tạo
+      if (selectedClassId && selectedYear === year && selectedSemester === semester) {
+        const fetchSchedule = async () => {
+          try {
+            const data = await scheduleApi.getScheduleByClass(
+              selectedClassId,
+              year,
+              semester
+            );
+            setSchedule(data);
+          } catch (err: any) {
+            if (err.response?.status !== 404) {
+              console.error("Lỗi tải thời khóa biểu:", err);
+            }
+          }
+        };
+        await fetchSchedule();
+      }
+
+      // ✅ Reload danh sách lớp để cập nhật
+      if (selectedYear === year) {
+        const classesData = await classApi.getByYear(selectedYear);
+        setClasses(classesData);
+      }
+    } catch (err: any) {
+      console.error("❌ Lỗi tạo thời khóa biểu:", err);
+      toast({
+        title: "❌ Lỗi",
+        description: err.response?.data?.message || "Không thể tạo thời khóa biểu",
+        variant: "destructive",
+      });
+      (err as any).__handled = true;
+      throw err;
+    }
+  };
+
+  const handleToggleClassLock = async (
+    classId: string,
+    className: string,
+    status?: ScheduleStatusInfo
+  ) => {
+    if (!status?.scheduleId) {
+      toast({
+        title: "⚠️ Chưa có thời khóa biểu",
+        description: "Vui lòng tạo thời khóa biểu trước khi khóa/mở khóa.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const nextLockState = !status.isLocked;
+    setLockingClassId(classId);
+    try {
+      await scheduleApi.lockSchedule(status.scheduleId, nextLockState);
+      setScheduleStatusMap((prev) => ({
+        ...prev,
+        [classId]: {
+          hasSchedule: true,
+          isLocked: nextLockState,
+          scheduleId: status.scheduleId,
+        },
+      }));
+
+      if (schedule && selectedClassId === classId) {
+        setSchedule({ ...schedule, isLocked: nextLockState });
+      }
+
+      toast({
+        title: nextLockState ? "🔒 Đã khóa lớp" : "🔓 Đã mở khóa lớp",
+        description: `Lớp ${className} ${nextLockState ? "không thể chỉnh sửa" : "có thể chỉnh sửa lại"}.`,
+      });
+    } catch (err: any) {
+      console.error("❌ Lỗi khi khóa/mở khóa lớp:", err);
+      toast({
+        title: "❌ Lỗi",
+        description:
+          err.response?.data?.message ||
+          err.message ||
+          "Không thể cập nhật trạng thái khóa. Vui lòng thử lại.",
+        variant: "destructive",
+      });
+    } finally {
+      setLockingClassId(null);
+    }
+  };
+
+  const reloadSchedulesAfterGenerate = async () => {
+    if (selectedClassId && selectedYear && selectedSemester) {
+      try {
+        const data = await scheduleApi.getScheduleByClass(
+          selectedClassId,
+          selectedYear,
+          selectedSemester
+        );
+        setSchedule(data);
+      } catch (err: any) {
+        if (err.response?.status !== 404) {
+          console.error("Lỗi tải thời khóa biểu:", err);
+        }
+      }
+    }
+
+    if (selectedYear) {
+      try {
+        const classesData = await classApi.getByYear(selectedYear);
+        setClasses(classesData);
+      } catch (err) {
+        console.error("Lỗi tải danh sách lớp:", err);
+      }
+    }
+
+    await loadScheduleStatus();
+  };
+
+  const handleBacktrackingGenerate = async ({
+    grades,
+    year,
+    semester,
+  }: {
+    grades: string[];
+    year: string;
+    semester: string;
+    includeActivities: boolean;
+  }) => {
+    return constraintSolverApi.solveWithBacktracking({
+      grades,
+      year,
+      semester,
+    });
+  };
+
   const handleSaveSchedule = async () => {
     if (!schedule) return;
+    
+    // ✅ Kiểm tra nếu schedule đã khóa thì không cho phép lưu
+    if (schedule.isLocked === true) {
+      toast({
+        title: "🔒 Thời khóa biểu đã khóa",
+        description: "Thời khóa biểu này đã được khóa. Vui lòng mở khóa trước khi chỉnh sửa.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     try {
       await scheduleApi.saveOrUpdateSchedule({
         ...schedule,
@@ -388,12 +743,23 @@ export default function SchedulePageNew() {
         title: "✅ Lưu thành công",
         description: `Thời khóa biểu lớp ${schedule.className} đã được cập nhật.`,
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error("Lỗi lưu thời khóa biểu:", err);
+      
+      // ✅ Kiểm tra nếu lỗi là do trùng giáo viên
+      const errorMessage = err?.message || err?.response?.data?.message || "Không thể lưu thời khóa biểu";
+      const isConflictError = errorMessage.includes("trùng giáo viên") || errorMessage.includes("Phát hiện trùng");
+      const isLockedError = errorMessage.includes("khóa") || errorMessage.includes("locked");
+      
       toast({
-        title: "❌ Lỗi lưu",
-        description: "Không thể lưu thời khóa biểu. Vui lòng thử lại.",
+        title: isLockedError ? "🔒 Thời khóa biểu đã khóa" : isConflictError ? "⚠️ Xung đột giáo viên" : "❌ Lỗi lưu",
+        description: isLockedError
+          ? "Thời khóa biểu này đã được khóa. Vui lòng mở khóa trước khi chỉnh sửa."
+          : isConflictError 
+          ? `Không thể lưu thời khóa biểu do xung đột:\n\n${errorMessage.replace("Phát hiện trùng giáo viên:\n", "")}\n\nVui lòng kiểm tra và điều chỉnh thời khóa biểu để tránh xung đột.`
+          : errorMessage,
         variant: "destructive",
+        duration: isConflictError ? 10000 : 5000, // Hiển thị lâu hơn nếu là conflict
       });
     }
   };
@@ -407,6 +773,15 @@ export default function SchedulePageNew() {
 
     const grade = selectedClass.grade as "10" | "11" | "12";
     if (!grade || !["10", "11", "12"].includes(grade)) return [];
+
+    // ✅ Lấy assignments cho lớp này và năm học/học kỳ hiện tại
+    const classAssignments = assignments.filter(a => {
+      if (!a.classId || !selectedClassId) return false;
+      const classId = typeof a.classId === 'string' ? a.classId : (a.classId as any)?._id;
+      return classId === selectedClassId && 
+             a.year === selectedYear && 
+             a.semester === selectedSemester;
+    });
 
     // ✅ Lấy cấu hình môn học từ gradeConfigs
     const gradeConfig = scheduleConfig.gradeConfigs?.[grade];
@@ -422,7 +797,7 @@ export default function SchedulePageNew() {
       });
     });
 
-    const unassigned: { subject: string; remaining: number }[] = [];
+    const unassigned: { subject: string; remaining: number; teacher?: string }[] = [];
 
     // ✅ Sử dụng cấu trúc mới: gradeConfigs[grade].subjects
     for (const [subjectId, subjectConfig] of Object.entries(gradeConfig.subjects)) {
@@ -440,7 +815,19 @@ export default function SchedulePageNew() {
       
       const remaining = periodsPerWeek - count;
       if (remaining > 0) {
-        unassigned.push({ subject: subjectName, remaining });
+        // ✅ Tìm giáo viên được phân công cho môn này trong lớp này
+        const assignment = classAssignments.find(a => {
+          const assignmentSubjectId = typeof a.subjectId === 'string' 
+            ? a.subjectId 
+            : (a.subjectId as any)?._id?.toString();
+          return assignmentSubjectId === subjectId;
+        });
+        
+        // ✅ Lấy tên giáo viên từ assignment
+        const teacherName = assignment?.teacherId?.name || 
+                           (assignment?.teacherId ? 'Chưa có tên' : 'Chưa phân công');
+        
+        unassigned.push({ subject: subjectName, remaining, teacher: teacherName });
       }
     }
 
@@ -484,13 +871,16 @@ export default function SchedulePageNew() {
     )}`;
   };
 
-  const UnassignedSubjectItem = ({ subject }: { subject: string }) => {
+  const UnassignedSubjectItem = ({ subject, teacher }: { subject: string; teacher?: string }) => {
     return (
       <div
         className="cursor-move px-4 py-2 mb-2 rounded shadow text-white text-center"
         style={{ backgroundColor: getSubjectColor(subject) }}
       >
-        {subject}
+        <div className="font-semibold text-sm">{subject}</div>
+        {teacher && (
+          <div className="text-xs mt-1 opacity-90">GV: {teacher}</div>
+        )}
       </div>
     );
   };
@@ -564,6 +954,164 @@ export default function SchedulePageNew() {
                   ))}
               </select>
             </div>
+            
+            {/* ✅ Dialog tạo lịch tự động cho các lớp theo khối */}
+            <GenerateScheduleDialog
+              currentYear={selectedYear}
+              currentSemester={selectedSemester}
+              onSuccess={reloadSchedulesAfterGenerate}
+              onGenerate={handleGenerateSchedule}
+            />
+            <GenerateScheduleDialog
+              triggerLabel="🧠 Thuật toán Backtracking"
+              generateButtonText="Chạy Backtracking"
+              currentYear={selectedYear}
+              currentSemester={selectedSemester}
+              onSuccess={reloadSchedulesAfterGenerate}
+              customGenerate={handleBacktrackingGenerate}
+            />
+            
+            {/* ✅ Nút tạo lịch cho TẤT CẢ các lớp */}
+            <Button
+              variant="default"
+              className="bg-blue-600 hover:bg-blue-700"
+              onClick={async () => {
+                if (!selectedYear || !selectedSemester) {
+                  toast({
+                    title: "⚠️ Thiếu thông tin",
+                    description: "Vui lòng chọn năm học và học kỳ trước",
+                    variant: "destructive"
+                  });
+                  return;
+                }
+                
+                // ✅ Lấy tất cả các khối từ danh sách lớp
+                const allGrades = Array.from(new Set(classes.map(c => c.grade).filter(Boolean))) as string[];
+                
+                if (allGrades.length === 0) {
+                  toast({
+                    title: "⚠️ Không có lớp",
+                    description: "Không tìm thấy lớp nào để tạo lịch",
+                    variant: "destructive"
+                  });
+                  return;
+                }
+                
+                if (!window.confirm(
+                  `Bạn có chắc muốn tạo thời khóa biểu tự động cho TẤT CẢ các lớp?\n\n` +
+                  `- Năm học: ${selectedYear}\n` +
+                  `- Học kỳ: ${selectedSemester}\n` +
+                  `- Khối: ${allGrades.join(", ")}\n` +
+                  `- Tổng số lớp: ${classes.length}\n\n` +
+                  `⚠️ Lưu ý: Thời khóa biểu cũ của TẤT CẢ các lớp sẽ bị xóa và thay thế bằng lịch mới.`
+                )) {
+                  return;
+                }
+                
+                try {
+                  toast({
+                    title: "⏳ Đang tạo lịch...",
+                    description: `Đang tạo thời khóa biểu cho TẤT CẢ ${classes.length} lớp (${allGrades.length} khối)`,
+                  });
+                  
+                  const result = await autoScheduleApi.generateSchedule(
+                    allGrades,
+                    selectedYear,
+                    selectedSemester
+                  );
+                  
+                  toast({
+                    title: "✅ Thành công",
+                    description: result.message || `Đã tạo thời khóa biểu cho ${result.schedules?.length || 0} lớp`,
+                  });
+                  
+                  // ✅ Reload schedule nếu đang xem một lớp
+                  if (selectedClassId) {
+                    try {
+                      const data = await scheduleApi.getScheduleByClass(
+                        selectedClassId,
+                        selectedYear,
+                        selectedSemester
+                      );
+                      setSchedule(data || null);
+                    } catch (err: any) {
+                      if (err.response?.status !== 404) {
+                        console.error("Lỗi khi reload schedule:", err);
+                      }
+                    }
+                  }
+                } catch (error: any) {
+                  console.error("❌ Lỗi khi tạo lịch:", error);
+                  toast({
+                    title: "❌ Lỗi",
+                    description: error.response?.data?.message || error.message || "Không thể tạo thời khóa biểu",
+                    variant: "destructive"
+                  });
+                }
+              }}
+              disabled={!selectedYear || !selectedSemester || classes.length === 0}
+              title="Tạo thời khóa biểu tự động cho TẤT CẢ các lớp trong năm học (sẽ xóa lịch cũ)"
+            >
+              🚀 Tạo lịch cho TẤT CẢ
+            </Button>
+            
+            {/* ✅ Nút khóa tất cả lịch trong năm học + học kỳ */}
+            {selectedYear && selectedSemester && (
+              <Button
+                variant="outline"
+                className="border-green-600 text-green-700 hover:bg-green-50"
+                disabled={classes.length === 0}
+                onClick={async () => {
+                  if (!selectedYear || !selectedSemester) {
+                    toast({
+                      title: "⚠️ Thiếu thông tin",
+                      description: "Vui lòng chọn năm học và học kỳ trước",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+
+                  const nextLockState = !allSchedulesLocked;
+
+                  try {
+                    toast({
+                      title: nextLockState ? "⏳ Đang khóa lịch..." : "⏳ Đang mở khóa lịch...",
+                      description: `${nextLockState ? "Đang khóa" : "Đang mở khóa"} tất cả thời khóa biểu trong ${selectedYear} - HK ${selectedSemester}`,
+                    });
+
+                    const result = await scheduleApi.lockAllSchedules(
+                      selectedYear,
+                      selectedSemester,
+                      nextLockState
+                    );
+
+                    toast({
+                      title: "✅ Thành công",
+                      description:
+                        result.message ||
+                        (nextLockState
+                          ? `Đã khóa toàn bộ thời khóa biểu trong ${selectedYear} - HK ${selectedSemester}`
+                          : `Đã mở khóa toàn bộ thời khóa biểu trong ${selectedYear} - HK ${selectedSemester}`),
+                    });
+
+                    await loadScheduleStatus();
+                    await reloadSchedulesAfterGenerate();
+                  } catch (error: any) {
+                    console.error("❌ Lỗi khi khóa/mở khóa lịch:", error);
+                    toast({
+                      title: "❌ Lỗi",
+                      description:
+                        error.response?.data?.message ||
+                        error.message ||
+                        "Không thể cập nhật trạng thái thời khóa biểu",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+              >
+                {lockAllButtonLabel}
+              </Button>
+            )}
           </div>
 
           {/* Class list */}
@@ -576,22 +1124,168 @@ export default function SchedulePageNew() {
             <div className="mb-4 text-muted-foreground italic">
               {selectedYear ? `Không có lớp nào trong năm học ${selectedYear}` : "Vui lòng chọn năm học"}
             </div>
-          ) : (
-            <ul className="flex flex-wrap gap-2 mb-4">
-              {filteredClasses.map((cls) => (
-                <li key={cls._id}>
-                  <button
-                    className={`px-4 py-2 rounded border ${
-                      selectedClassId === cls._id ? "bg-blue-600 text-white" : "bg-gray-100"
-                    }`}
-                    onClick={() => setSelectedClassId(cls._id)}
-                  >
-                    {cls.className} (Khối {cls.grade})
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+          ) : (() => {
+            // ✅ Nhóm các lớp theo khối
+            const classesByGrade = filteredClasses.reduce((acc, cls) => {
+              const grade = cls.grade || "Khác";
+              if (!acc[grade]) {
+                acc[grade] = [];
+              }
+              acc[grade].push(cls);
+              return acc;
+            }, {} as Record<string, ClassType[]>);
+            
+            // ✅ Sắp xếp các khối theo thứ tự (10, 11, 12, ...)
+            const sortedGrades = Object.keys(classesByGrade).sort((a, b) => {
+              const numA = parseInt(a) || 999;
+              const numB = parseInt(b) || 999;
+              return numA - numB;
+            });
+            
+            return (
+              <Accordion
+                type="multiple"
+                value={openGrades}
+                onValueChange={setOpenGrades}
+                className="mb-4 space-y-2"
+              >
+                {sortedGrades.map((grade) => {
+                  const gradeClasses = classesByGrade[grade];
+                  return (
+                    <AccordionItem key={grade} value={grade} className="border rounded-lg px-4">
+                      <AccordionTrigger className="hover:no-underline">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-lg">Khối {grade}</span>
+                          <span className="text-sm text-muted-foreground">
+                            ({gradeClasses.length} lớp)
+                          </span>
+                        </div>
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+                          {gradeClasses.map((cls) => {
+                            const classIdStr = cls._id.toString();
+                            const scheduleStatus = scheduleStatusMap[classIdStr];
+                            const hasSchedule = scheduleStatus?.hasSchedule || false;
+                            const isLocked = scheduleStatus?.isLocked || false;
+                            
+                            return (
+                              <div
+                                key={cls._id}
+                                className={`flex items-center justify-between p-3 rounded-lg border-2 transition-all ${
+                                  selectedClassId === cls._id
+                                    ? "border-blue-500 bg-blue-50 shadow-md"
+                                    : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm"
+                                }`}
+                              >
+                                <button
+                                  className={`flex-1 text-left ${
+                                    selectedClassId === cls._id ? "text-blue-700 font-semibold" : "text-gray-700"
+                                  }`}
+                                  onClick={() => setSelectedClassId(cls._id)}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <Calendar className={`h-4 w-4 ${selectedClassId === cls._id ? "text-blue-600" : "text-gray-500"}`} />
+                                    <span className="font-medium">{cls.className}</span>
+                                    {/* ✅ Badge trạng thái lịch học */}
+                                    {hasSchedule ? (
+                                      <div className="flex items-center gap-1">
+                                        <CheckCircle2 className={`h-3.5 w-3.5 ${isLocked ? "text-green-600" : "text-blue-600"}`} />
+                                        {isLocked && <Lock className="h-3 w-3 text-green-600" />}
+                                      </div>
+                                    ) : (
+                                      <XCircle className="h-3.5 w-3.5 text-gray-400" />
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <span className="text-xs text-muted-foreground ml-6">Khối {cls.grade}</span>
+                                    {hasSchedule && (
+                                      <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                        isLocked 
+                                          ? "bg-green-100 text-green-700" 
+                                          : "bg-blue-100 text-blue-700"
+                                      }`}>
+                                        {isLocked ? "Đã khóa" : "Chưa khóa"}
+                                      </span>
+                                    )}
+                                    {!hasSchedule && (
+                                      <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
+                                        Chưa có lịch
+                                      </span>
+                                    )}
+                                  </div>
+                                </button>
+                              {isLocked ? (
+                                <div className="flex items-center gap-1 text-green-600 text-sm ml-3">
+                                  <Lock className="h-4 w-4" />
+                                  <span>Đã khóa</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1 text-yellow-600 text-sm ml-3">
+                                  <Unlock className="h-4 w-4" />
+                                  <span>Chưa khóa</span>
+                                </div>
+                              )}
+                              
+                              {/* ✅ Nút tạo thời khóa biểu + nút khóa nhanh */}
+                              <div className="flex items-center gap-2 ml-2">
+                                <Button
+                                  variant={selectedClassId === cls._id ? "default" : "outline"}
+                                  size="sm"
+                                  className={`${isLocked ? "opacity-40 pointer-events-none" : ""}`}
+                                  onClick={() => {
+                                    if (!selectedYear || !selectedSemester || isLocked) {
+                                      return;
+                                    }
+                                    
+                                    // ✅ Mở AlertDialog thay vì window.confirm
+                                    setPendingClass({ id: cls._id, name: cls.className });
+                                    setConfirmDialogOpen(true);
+                                  }}
+                                  disabled={isLocked || !selectedYear || !selectedSemester}
+                                  title={
+                                    isLocked
+                                      ? "Lớp đã khóa thời khóa biểu, không thể tạo lại."
+                                      : "Tạo thời khóa biểu tự động cho lớp này (sẽ xóa lịch cũ)"
+                                  }
+                                >
+                                  <Sparkles className="h-3 w-3 mr-1" />
+                                  Tạo TKB
+                                </Button>
+                                <Button
+                                  variant={isLocked ? "default" : "outline"}
+                                  size="icon"
+                                  className={`${!hasSchedule ? "opacity-40 cursor-not-allowed" : ""}`}
+                                  disabled={!hasSchedule || lockingClassId === classIdStr}
+                                  onClick={() => handleToggleClassLock(classIdStr, cls.className, scheduleStatus)}
+                                  title={
+                                    !hasSchedule
+                                      ? "Chưa có thời khóa biểu để khóa/mở khóa."
+                                      : isLocked
+                                      ? "Mở khóa thời khóa biểu của lớp này."
+                                      : "Khóa thời khóa biểu của lớp này."
+                                  }
+                                >
+                                  {lockingClassId === classIdStr ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : isLocked ? (
+                                    <Unlock className="h-4 w-4" />
+                                  ) : (
+                                    <Lock className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
+                            );
+                          })}
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  );
+                })}
+              </Accordion>
+            );
+          })()}
 
           {/* Schedule grid */}
           {schedule && scheduleConfig ? (
@@ -608,10 +1302,54 @@ export default function SchedulePageNew() {
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" onClick={handleSaveSchedule}>
+                  <Button 
+                    variant="outline" 
+                    onClick={handleSaveSchedule}
+                    disabled={schedule.isLocked === true}
+                    title={schedule.isLocked === true ? "Thời khóa biểu đã khóa. Vui lòng mở khóa trước khi chỉnh sửa." : ""}
+                  >
                     <Save className="h-4 w-4 mr-2" /> Lưu thời khóa biểu
                   </Button>
-                  <DeleteScheduleDialog onDeleted={() => setSchedule(null)} />
+                  {schedule?._id && (
+                    <Button 
+                      variant={schedule.isLocked ? "default" : "outline"}
+                      onClick={async () => {
+                        if (!schedule?._id) return;
+                        try {
+                          const newLockStatus = !schedule.isLocked;
+                          await scheduleApi.lockSchedule(schedule._id, newLockStatus);
+                          setSchedule({ ...schedule, isLocked: newLockStatus });
+                          toast({
+                            title: newLockStatus ? "🔒 Đã khóa" : "🔓 Đã mở khóa",
+                            description: newLockStatus 
+                              ? "Học sinh và giáo viên có thể xem thời khóa biểu này."
+                              : "Thời khóa biểu đã được mở khóa. Học sinh và giáo viên không thể xem.",
+                          });
+                        } catch (err: any) {
+                          console.error("Lỗi khóa/mở khóa:", err);
+                          toast({
+                            title: "❌ Lỗi",
+                            description: err.response?.data?.message || "Không thể khóa/mở khóa thời khóa biểu",
+                            variant: "destructive",
+                          });
+                        }
+                      }}
+                    >
+                      {schedule.isLocked ? (
+                        <>
+                          <Lock className="h-4 w-4 mr-2" /> Đã khóa
+                        </>
+                      ) : (
+                        <>
+                          <Unlock className="h-4 w-4 mr-2" /> Chưa khóa
+                        </>
+                      )}
+                    </Button>
+                  )}
+                  <DeleteScheduleDialog 
+                    onDeleted={() => setSchedule(null)} 
+                    disabled={schedule.isLocked === true}
+                  />
                 </div>
               </div>
 
@@ -626,7 +1364,7 @@ export default function SchedulePageNew() {
                     >
                       {getUnassignedSubjects().map(s => (
                         <SortableCell key={`unassigned-${s.subject}`} id={`unassigned-${s.subject}`}>
-                          <UnassignedSubjectItem subject={s.subject} />
+                          <UnassignedSubjectItem subject={s.subject} teacher={s.teacher} />
                         </SortableCell>
                       ))}
                     </SortableContext>
@@ -734,6 +1472,75 @@ export default function SchedulePageNew() {
           <ScheduleConfigForm />
         </TabsContent>
       </Tabs>
+
+      {/* ✅ AlertDialog xác nhận tạo TKB cho 1 lớp */}
+      <AlertDialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>⚠️ Xác nhận tạo thời khóa biểu</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>Bạn có chắc muốn tạo thời khóa biểu tự động cho lớp <strong>{pendingClass?.name}</strong>?</p>
+              <div className="bg-yellow-50 border border-yellow-200 rounded p-3 mt-3">
+                <p className="text-sm font-semibold text-yellow-800">⚠️ Lưu ý quan trọng:</p>
+                <p className="text-sm text-yellow-700 mt-1">
+                  Thời khóa biểu cũ của lớp này sẽ bị <strong>xóa hoàn toàn</strong> và thay thế bằng lịch mới được tạo tự động.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!pendingClass || !selectedYear || !selectedSemester) return;
+                
+                setConfirmDialogOpen(false);
+                
+                try {
+                  toast({
+                    title: "⏳ Đang tạo lịch...",
+                    description: `Đang tạo thời khóa biểu cho lớp ${pendingClass.name}`,
+                  });
+                  
+                  const result = await autoScheduleApi.generateScheduleForSingleClass(
+                    pendingClass.id,
+                    selectedYear,
+                    selectedSemester
+                  );
+                  
+                  toast({
+                    title: "✅ Thành công",
+                    description: result.message || `Đã tạo thời khóa biểu cho lớp ${pendingClass.name}`,
+                  });
+                  
+                  // ✅ Load lại lịch nếu đang xem lớp này
+                  if (selectedClassId === pendingClass.id) {
+                    const data = await scheduleApi.getScheduleByClass(
+                      pendingClass.id,
+                      selectedYear,
+                      selectedSemester
+                    );
+                    setSchedule(data || null);
+                  }
+                  
+                  setPendingClass(null);
+                } catch (error: any) {
+                  console.error("❌ Lỗi khi tạo lịch:", error);
+                  toast({
+                    title: "❌ Lỗi",
+                    description: error.response?.data?.message || error.message || "Không thể tạo thời khóa biểu",
+                    variant: "destructive"
+                  });
+                  setPendingClass(null);
+                }
+              }}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              Xác nhận tạo
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

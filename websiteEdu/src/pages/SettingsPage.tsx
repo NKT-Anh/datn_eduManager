@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import settingApi from '@/services/settingApi';
+import backupApi from '@/services/backupApi';
 import { useSchoolYears } from '@/hooks';
 import { Info } from 'lucide-react';
 
@@ -28,6 +29,9 @@ const SettingsPage = () => {
   const { toast } = useToast();
   const { schoolYears, currentYearData } = useSchoolYears();
   const [loading, setLoading] = useState(false);
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [uploadToDrive, setUploadToDrive] = useState(false); // Tùy chọn upload lên Google Drive
 
   // settings state
   const [settings, setSettings] = useState<any>({
@@ -65,7 +69,11 @@ const SettingsPage = () => {
     setLoading(true);
     settingApi.getSettings()
       .then((data) => {
-        if (data) setSettings((s: any) => ({ ...s, ...data }));
+        if (data) {
+          setSettings((s: any) => ({ ...s, ...data }));
+          // Load giá trị autoUploadToDrive từ settings
+          setUploadToDrive(data.autoUploadToDrive || false);
+        }
       })
       .catch((err) => {
         console.error(err);
@@ -102,6 +110,29 @@ const SettingsPage = () => {
     });
   };
 
+  // ✅ Tự động lưu autoUploadToDrive khi thay đổi
+  const handleUploadToDriveChange = async (checked: boolean) => {
+    setUploadToDrive(checked);
+    try {
+      // Lưu ngay vào database
+      const settingsToSave = { ...settings, autoUploadToDrive: checked };
+      delete settingsToSave.currentSchoolYear;
+      delete settingsToSave.termStart;
+      delete settingsToSave.termEnd;
+      await settingApi.updateSettings(settingsToSave);
+      handleChange('autoUploadToDrive', checked);
+    } catch (err: any) {
+      console.error('Lỗi khi lưu autoUploadToDrive:', err);
+      // Revert nếu lỗi
+      setUploadToDrive(!checked);
+      toast({
+        title: 'Lỗi',
+        description: 'Không thể lưu cài đặt upload Google Drive',
+        variant: 'destructive'
+      });
+    }
+  };
+
   const handleSave = async () => {
     try {
       setLoading(true);
@@ -110,6 +141,9 @@ const SettingsPage = () => {
       delete settingsToSave.currentSchoolYear;
       delete settingsToSave.termStart;
       delete settingsToSave.termEnd;
+      
+      // ✅ Lưu giá trị autoUploadToDrive vào settings
+      settingsToSave.autoUploadToDrive = uploadToDrive;
       
       await settingApi.updateSettings(settingsToSave);
       toast({ title: 'Lưu thành công', description: 'Cấu hình đã được cập nhật.' });
@@ -140,6 +174,121 @@ const SettingsPage = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ✅ Xử lý sao lưu ngay
+  const handleBackupNow = async () => {
+    try {
+      setBackupLoading(true);
+      const backup = await backupApi.createBackup({
+        uploadToDrive: uploadToDrive, // Sử dụng giá trị từ checkbox
+        description: 'Sao lưu thủ công từ trang cài đặt',
+      });
+      
+      toast({
+        title: 'Đang tạo sao lưu',
+        description: `Đang tạo backup: ${backup.filename || 'Đang xử lý...'}`,
+      });
+
+      // Poll để kiểm tra status (nếu cần)
+      const checkStatus = async () => {
+        try {
+          const backups = await backupApi.getBackups();
+          // Đảm bảo backups là array
+          const backupsArray = Array.isArray(backups) ? backups : [];
+          const currentBackup = backupsArray.find((b) => b._id === backup._id);
+          if (currentBackup) {
+            if (currentBackup.status === 'completed') {
+              toast({
+                title: 'Sao lưu thành công',
+                description: `Backup đã được tạo: ${currentBackup.filename}`,
+              });
+            } else if (currentBackup.status === 'failed') {
+              toast({
+                title: 'Sao lưu thất bại',
+                description: currentBackup.error || 'Có lỗi xảy ra khi tạo backup',
+                variant: 'destructive',
+              });
+            }
+          }
+        } catch (err) {
+          console.error('Lỗi khi kiểm tra status backup:', err);
+        }
+      };
+
+      // Kiểm tra sau 2 giây
+      setTimeout(checkStatus, 2000);
+    } catch (err: any) {
+      console.error('Lỗi khi tạo backup:', err);
+      toast({
+        title: 'Lỗi',
+        description: err.response?.data?.message || 'Không thể tạo sao lưu',
+        variant: 'destructive',
+      });
+    } finally {
+      setBackupLoading(false);
+    }
+  };
+
+  // ✅ Xử lý xuất dữ liệu (tạo backup và download)
+  const handleExportData = async () => {
+    try {
+      setExportLoading(true);
+      
+      // Tạo backup mới
+      const backup = await backupApi.createBackup({
+        uploadToDrive: false,
+        description: 'Xuất dữ liệu từ trang cài đặt',
+      });
+
+      toast({
+        title: 'Đang tạo backup để xuất',
+        description: 'Đang tạo file backup...',
+      });
+
+      // Đợi một chút để backup hoàn thành
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      // Kiểm tra status và download
+      const backups = await backupApi.getBackups();
+      // Đảm bảo backups là array
+      const backupsArray = Array.isArray(backups) ? backups : [];
+      const currentBackup = backupsArray.find((b) => b._id === backup._id);
+      
+      if (currentBackup && currentBackup.status === 'completed') {
+        // Download file
+        const blob = await backupApi.downloadBackup(currentBackup._id);
+        
+        // Tạo link download
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = currentBackup.filename || 'backup.tar.gz';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+        toast({
+          title: 'Xuất dữ liệu thành công',
+          description: `Đã tải xuống file: ${currentBackup.filename}`,
+        });
+      } else {
+        toast({
+          title: 'Đang xử lý',
+          description: 'Backup đang được tạo, vui lòng thử lại sau vài giây',
+        });
+      }
+    } catch (err: any) {
+      console.error('Lỗi khi xuất dữ liệu:', err);
+      toast({
+        title: 'Lỗi',
+        description: err.response?.data?.message || 'Không thể xuất dữ liệu',
+        variant: 'destructive',
+      });
+    } finally {
+      setExportLoading(false);
     }
   };
 
@@ -466,7 +615,24 @@ const SettingsPage = () => {
           <CardContent className="space-y-4">
             <div>
               <Label>Sao lưu tự động</Label>
-              <select value={settings.autoBackup} onChange={(e) => handleChange('autoBackup', e.target.value)} className="w-full px-3 py-2 border rounded">
+              <select 
+                value={settings.autoBackup} 
+                onChange={(e) => {
+                  handleChange('autoBackup', e.target.value);
+                  // Tự động lưu khi thay đổi
+                  setTimeout(() => {
+                    const updatedSettings = { ...settings, autoBackup: e.target.value };
+                    const settingsToSave = { ...updatedSettings };
+                    delete settingsToSave.currentSchoolYear;
+                    delete settingsToSave.termStart;
+                    delete settingsToSave.termEnd;
+                    settingApi.updateSettings(settingsToSave).catch((err) => {
+                      console.error('Lỗi khi lưu cài đặt backup:', err);
+                    });
+                  }, 500);
+                }} 
+                className="w-full px-3 py-2 border rounded"
+              >
                 <option value="daily">Hàng ngày</option>
                 <option value="weekly">Hàng tuần</option>
                 <option value="monthly">Hàng tháng</option>
@@ -475,11 +641,57 @@ const SettingsPage = () => {
             </div>
             <div>
               <Label>Thời gian lưu (tháng)</Label>
-              <Input type="number" value={settings.retentionMonths} onChange={(e) => handleChange('retentionMonths', Number(e.target.value))} />
+              <Input 
+                type="number" 
+                value={settings.retentionMonths} 
+                onChange={(e) => {
+                  const value = Number(e.target.value);
+                  handleChange('retentionMonths', value);
+                  // Tự động lưu khi thay đổi
+                  setTimeout(() => {
+                    const updatedSettings = { ...settings, retentionMonths: value };
+                    const settingsToSave = { ...updatedSettings };
+                    delete settingsToSave.currentSchoolYear;
+                    delete settingsToSave.termStart;
+                    delete settingsToSave.termEnd;
+                    settingApi.updateSettings(settingsToSave).catch((err) => {
+                      console.error('Lỗi khi lưu cài đặt backup:', err);
+                    });
+                  }, 500);
+                }} 
+                min="1"
+                max="60"
+              />
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline"><RefreshCw className="h-4 w-4 mr-2" />Sao lưu ngay</Button>
-              <Button variant="outline"><Download className="h-4 w-4 mr-2" />Xuất dữ liệu</Button>
+            <div className="space-y-3">
+              <div className="flex items-center space-x-2">
+                <Switch 
+                  id="upload-drive" 
+                  checked={uploadToDrive}
+                  onCheckedChange={handleUploadToDriveChange}
+                />
+                <Label htmlFor="upload-drive" className="text-sm cursor-pointer">
+                  Tự động upload lên Google Drive
+                </Label>
+              </div>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  onClick={handleBackupNow}
+                  disabled={backupLoading}
+                >
+                  <RefreshCw className={`h-4 w-4 mr-2 ${backupLoading ? 'animate-spin' : ''}`} />
+                  {backupLoading ? 'Đang sao lưu...' : 'Sao lưu ngay'}
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={handleExportData}
+                  disabled={exportLoading}
+                >
+                  <Download className={`h-4 w-4 mr-2 ${exportLoading ? 'animate-spin' : ''}`} />
+                  {exportLoading ? 'Đang xuất...' : 'Xuất dữ liệu'}
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

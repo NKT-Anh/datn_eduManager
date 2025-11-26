@@ -3,7 +3,7 @@ import axios from "axios";
 const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 export const autoScheduleApi = {
-  // 🧩 Tự động tạo thời khóa biểu
+  // 🧩 Tự động tạo thời khóa biểu cho nhiều lớp (theo khối)
   generateSchedule: async (
     grades: string[],
     year: string,
@@ -16,6 +16,24 @@ export const autoScheduleApi = {
     });
     const res = await axios.post(`${API_BASE}/auto-schedule/generate`, {
       grades,
+      year,
+      semester,
+    });
+    return res.data;
+  },
+
+  // 🧩 Tự động tạo thời khóa biểu cho 1 lớp
+  generateScheduleForSingleClass: async (
+    classId: string,
+    year: string,
+    semester: string
+  ) => {
+    console.log("➡️ Gọi API /auto-schedule/generate/:classId với dữ liệu:", {
+      classId,
+      year,
+      semester,
+    });
+    const res = await axios.post(`${API_BASE}/auto-schedule/generate/${classId}`, {
       year,
       semester,
     });

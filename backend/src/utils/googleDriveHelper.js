@@ -29,6 +29,8 @@ async function uploadToGoogleDrive(filePath, fileName, folderId = null) {
       throw new Error('GOOGLE_DRIVE_CREDENTIALS không được cấu hình trong .env');
     }
 
+    console.log(`🔍 [Google Drive] Credentials path: ${credentials}`);
+
     const google = getGoogleApis();
 
     // Parse credentials (có thể là JSON string hoặc path to file)
@@ -41,8 +43,42 @@ async function uploadToGoogleDrive(filePath, fileName, folderId = null) {
       const credPath = path.isAbsolute(credentials) 
         ? path.normalize(credentials.replace(/\\/g, '/'))
         : path.resolve(process.cwd(), credentials.replace(/\\/g, '/'));
-      const credContent = await fs.readFile(credPath, 'utf8');
-      credentialsObj = JSON.parse(credContent);
+      
+      console.log(`🔍 [Google Drive] Resolved credentials path: ${credPath}`);
+      
+      // Kiểm tra file có tồn tại không
+      try {
+        await fs.access(credPath);
+        console.log(`✅ [Google Drive] File credentials tồn tại`);
+      } catch (accessError) {
+        console.error(`❌ [Google Drive] File credentials không tồn tại: ${credPath}`);
+        throw new Error(`File credentials không tồn tại: ${credPath}`);
+      }
+      
+      let credContent = await fs.readFile(credPath, 'utf8');
+      
+      // Loại bỏ BOM và whitespace thừa
+      credContent = credContent.replace(/^\uFEFF/, '').trim();
+      
+      // Kiểm tra file có rỗng không
+      if (!credContent || credContent.length === 0) {
+        console.error(`❌ [Google Drive] File credentials rỗng: ${credPath}`);
+        throw new Error(`File credentials rỗng: ${credPath}`);
+      }
+      
+      console.log(`✅ [Google Drive] Đã đọc file credentials (${credContent.length} ký tự)`);
+      
+      try {
+        credentialsObj = JSON.parse(credContent);
+        console.log(`✅ [Google Drive] Đã parse JSON credentials thành công`);
+        console.log(`✅ [Google Drive] Project ID: ${credentialsObj.project_id || 'N/A'}`);
+        console.log(`✅ [Google Drive] Client Email: ${credentialsObj.client_email || 'N/A'}`);
+      } catch (parseError) {
+        console.error(`❌ [Google Drive] Lỗi parse JSON: ${parseError.message}`);
+        console.error(`❌ [Google Drive] Nội dung file (200 ký tự đầu): ${credContent.substring(0, 200)}`);
+        console.error(`❌ [Google Drive] Nội dung file (200 ký tự cuối): ${credContent.substring(Math.max(0, credContent.length - 200))}`);
+        throw new Error(`File credentials không phải JSON hợp lệ: ${credPath}. Lỗi: ${parseError.message}`);
+      }
     }
 
     // Khởi tạo OAuth2 client
@@ -58,9 +94,12 @@ async function uploadToGoogleDrive(filePath, fileName, folderId = null) {
     const fileStats = await fs.stat(filePath);
 
     // Metadata cho file
+    // ✅ Service Account cần upload vào Shared Drive hoặc folder được chia sẻ
     const fileMetadata = {
       name: fileName,
       ...(folderId && { parents: [folderId] }),
+      // Thêm supportsAllDrives để hỗ trợ Shared Drive
+      supportsAllDrives: true,
     };
 
     // Upload file
@@ -75,6 +114,7 @@ async function uploadToGoogleDrive(filePath, fileName, folderId = null) {
       requestBody: fileMetadata,
       media: media,
       fields: 'id, webViewLink, webContentLink',
+      supportsAllDrives: true, // ✅ Hỗ trợ Shared Drive
     });
 
     console.log(`✅ [Google Drive] Upload thành công: ${response.data.id}`);
@@ -111,8 +151,26 @@ async function deleteFromGoogleDrive(fileId) {
       const credPath = path.isAbsolute(credentials) 
         ? path.normalize(credentials.replace(/\\/g, '/'))
         : path.resolve(process.cwd(), credentials.replace(/\\/g, '/'));
+      
+      // Kiểm tra file có tồn tại không
+      try {
+        await fs.access(credPath);
+      } catch (accessError) {
+        throw new Error(`File credentials không tồn tại: ${credPath}`);
+      }
+      
       const credContent = await fs.readFile(credPath, 'utf8');
-      credentialsObj = JSON.parse(credContent);
+      
+      // Kiểm tra file có rỗng không
+      if (!credContent || credContent.trim().length === 0) {
+        throw new Error(`File credentials rỗng: ${credPath}`);
+      }
+      
+      try {
+        credentialsObj = JSON.parse(credContent);
+      } catch (parseError) {
+        throw new Error(`File credentials không phải JSON hợp lệ: ${credPath}. Lỗi: ${parseError.message}`);
+      }
     }
 
     const auth = new google.auth.GoogleAuth({
@@ -153,8 +211,26 @@ async function createFolderOnGoogleDrive(folderName, parentFolderId = null) {
       const credPath = path.isAbsolute(credentials) 
         ? path.normalize(credentials.replace(/\\/g, '/'))
         : path.resolve(process.cwd(), credentials.replace(/\\/g, '/'));
+      
+      // Kiểm tra file có tồn tại không
+      try {
+        await fs.access(credPath);
+      } catch (accessError) {
+        throw new Error(`File credentials không tồn tại: ${credPath}`);
+      }
+      
       const credContent = await fs.readFile(credPath, 'utf8');
-      credentialsObj = JSON.parse(credContent);
+      
+      // Kiểm tra file có rỗng không
+      if (!credContent || credContent.trim().length === 0) {
+        throw new Error(`File credentials rỗng: ${credPath}`);
+      }
+      
+      try {
+        credentialsObj = JSON.parse(credContent);
+      } catch (parseError) {
+        throw new Error(`File credentials không phải JSON hợp lệ: ${credPath}. Lỗi: ${parseError.message}`);
+      }
     }
 
     const auth = new google.auth.GoogleAuth({

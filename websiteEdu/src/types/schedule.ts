@@ -2,7 +2,9 @@ import { Activity } from "./class";
 export interface PeriodEntry {
   period: number;
   subject: string; 
-  teacher: string;  
+  teacher?: string;
+  teacherId?: string;
+  subjectId?: string;
 }
 export interface TimetableEntry{
     day: string;
@@ -10,12 +12,13 @@ export interface TimetableEntry{
 }
 
 export interface ClassSchedule {
-    // _id?: string;
+    _id?: string;
     classId: string;
     className?: string;
     year: string; // "2023-2024"
     timetable: TimetableEntry[];
     semester: string;
+    isLocked?: boolean; // ✅ Trạng thái khóa: true = đã khóa (học sinh/GV có thể xem), false = chưa khóa (chỉ admin xem)
 }
 export interface SchedulePayload{
     classId: string;
@@ -152,6 +155,7 @@ export interface ScheduleGradeConfig {
   subjects: Record<string, SubjectHour>; // Map<subjectId, SubjectHour>
   activities: ActivitySlot[]; // Array<ActivitySlot>
   rules: GradeSessionRule | null; // Quy tắc phân buổi cho khối này
+  restPeriods?: Array<{ day: string; period: number }>; // ✅ Các tiết được nghỉ (không xếp môn học vào) - ví dụ: [{ day: "Monday", period: 5 }]
 }
 
 export interface ScheduleConfig {

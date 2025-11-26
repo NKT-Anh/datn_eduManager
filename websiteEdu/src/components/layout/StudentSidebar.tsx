@@ -14,8 +14,7 @@ import {
   Home,
   Calendar,
   ClipboardList,
-  User,
-  Settings
+  User
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -34,7 +33,6 @@ export function StudentSidebar() {
     { title: "Thời khóa biểu", url: `${prefix}/schedule`, icon: Calendar },
     { title: "Xem điểm", url: `${prefix}/grades`, icon: ClipboardList },
     { title: "Hồ sơ", url: `${prefix}/profile`, icon: User },
-    { title: "Cài đặt", url: `${prefix}/settings`, icon: Settings },
   ];
 
   const getNavCls = ({ isActive }: { isActive: boolean }) =>

@@ -36,6 +36,7 @@ const SettingSchema = new mongoose.Schema({
 
   autoBackup: { type: String, enum: ['daily', 'weekly', 'monthly', 'never'], default: 'weekly' },
   retentionMonths: { type: Number, default: 12 },
+  autoUploadToDrive: { type: Boolean, default: false }, // Tự động upload backup lên Google Drive
 
   sessionTimeoutMinutes: { type: Number, default: 30 },
   passwordPolicy: { type: String, enum: ['basic', 'medium', 'strong'], default: 'medium' },

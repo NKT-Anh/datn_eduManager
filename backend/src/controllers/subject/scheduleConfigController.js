@@ -82,6 +82,13 @@ exports.getScheduleConfig = async (req, res) => {
         // Rules (giữ nguyên)
         normalized.rules = gradeConfig.rules || null;
         
+        // ✅ Convert restPeriods (giữ nguyên format: [{ day: string, period: number }])
+        if (Array.isArray(gradeConfig.restPeriods)) {
+          normalized.restPeriods = gradeConfig.restPeriods;
+        } else {
+          normalized.restPeriods = [];
+        }
+        
         gradeConfigsObj[grade] = normalized;
       }
       configObj.gradeConfigs = gradeConfigsObj;
@@ -391,6 +398,16 @@ exports.upsertScheduleConfig = async (req, res) => {
           };
         } else {
           normalized.rules = null;
+        }
+        
+        // ✅ Xử lý restPeriods (format: [{ day: string, period: number }])
+        if (Array.isArray(gradeConfig.restPeriods)) {
+          // ✅ Validate và filter restPeriods
+          normalized.restPeriods = gradeConfig.restPeriods.filter((r) => {
+            return r && typeof r === 'object' && typeof r.day === 'string' && typeof r.period === 'number';
+          });
+        } else {
+          normalized.restPeriods = [];
         }
         
         gradeConfigsMap.set(grade, normalized);

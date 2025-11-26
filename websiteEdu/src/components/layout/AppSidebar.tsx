@@ -437,7 +437,6 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
           label: "Cá nhân",
           items: [
             { id: "profile", title: "Hồ sơ", url: `${prefix}/profile`, icon: User },
-            { id: "settings", title: "Cài đặt", url: `${prefix}/settings`, icon: Settings },
           ],
         },
       ];

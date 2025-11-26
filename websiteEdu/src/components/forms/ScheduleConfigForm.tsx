@@ -582,6 +582,7 @@ function ScheduleConfigForm() {
                 subjects: subjectsObj,
                 activities: normalizedActivities,
                 rules: rulesForGrade,
+                restPeriods: gradeConfig.restPeriods || [], // ✅ Load restPeriods từ config
               };
             });
                 } else {
@@ -600,6 +601,7 @@ function ScheduleConfigForm() {
                 subjects: {},
                 activities: [],
                 rules: rulesForGrade,
+                restPeriods: [], // ✅ Khởi tạo restPeriods rỗng nếu chưa có
               };
             });
           }
@@ -1008,6 +1010,16 @@ function ScheduleConfigForm() {
                 fixedSlots: isValidActivityFixedSlots(act.fixedSlots) ? act.fixedSlots : null,
               }));
           }
+          // ✅ Đảm bảo restPeriods được giữ lại
+          if (gradeConfig.restPeriods && Array.isArray(gradeConfig.restPeriods)) {
+            // ✅ Validate restPeriods format: [{ day: string, period: number }]
+            gradeConfig.restPeriods = gradeConfig.restPeriods.filter((r: any) => {
+              return r && typeof r === 'object' && typeof r.day === 'string' && typeof r.period === 'number';
+            });
+          } else {
+            gradeConfig.restPeriods = [];
+          }
+          
           cleanedGradeConfigs[grade] = gradeConfig;
         }
       });
@@ -1063,6 +1075,7 @@ function ScheduleConfigForm() {
     }),
     sessions: (payload: any) => ({
       gradeSessionRules: payload.gradeSessionRules,
+      gradeConfigs: payload.gradeConfigs, // ✅ Lưu cả restPeriods trong gradeConfigs
     }),
   }), []);
 
@@ -1432,37 +1445,133 @@ function ScheduleConfigForm() {
             <Card className="p-6">
               <h2 className="text-2xl font-bold mb-6">Phân buổi học theo khối</h2>
               <div className="space-y-6">
-                {GRADES.map((g, i) => (
-                  <div key={g} className="flex items-center gap-6">
-                    <Label className="w-32 font-medium">Khối {g}</Label>
-                    <Controller
-                      name={`gradeSessionRules.${i}.session`}
-                      control={control}
-                      render={({ field }) => (
-                        <Select 
-                          value={field.value} 
-                          onValueChange={(value) => {
-                            // ✅ Tự động set cả grade khi thay đổi session
-                            setValue(`gradeSessionRules.${i}.grade`, g);
-                            setValue(`gradeSessionRules.${i}.session`, value);
-                            // ✅ Tự động sync với gradeConfigs[grade].rules
-                            setValue(`gradeConfigs.${g}.rules`, { grade: g, session: value }, { shouldDirty: true });
-                            field.onChange(value);
-                          }}
-                        >
-                          <SelectTrigger className="w-64">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="morning">Chỉ buổi sáng</SelectItem>
-                            <SelectItem value="afternoon">Chỉ buổi chiều</SelectItem>
-                            <SelectItem value="both">Cả hai buổi</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-              </div>
-            ))}
+                {GRADES.map((g, i) => {
+                  // ✅ Lấy số tiết tối đa từ config
+                  const daysData = watch("days") || [];
+                  const firstDay = daysData[0] || { morningPeriods: 5, afternoonPeriods: 5 };
+                  const maxPeriods = (firstDay.morningPeriods || 5) + (firstDay.afternoonPeriods || 5);
+                  
+                  // ✅ Lấy restPeriods hiện tại
+                  const restPeriods = watch(`gradeConfigs.${g}.restPeriods`) || [];
+                  
+                  return (
+                    <div key={g} className="space-y-4 border-b pb-6 last:border-b-0">
+                      <div className="flex items-center gap-6">
+                        <Label className="w-32 font-medium">Khối {g}</Label>
+                        <Controller
+                          name={`gradeSessionRules.${i}.session`}
+                          control={control}
+                          render={({ field }) => (
+                            <Select 
+                              value={field.value} 
+                              onValueChange={(value) => {
+                                // ✅ Tự động set cả grade khi thay đổi session
+                                setValue(`gradeSessionRules.${i}.grade`, g);
+                                setValue(`gradeSessionRules.${i}.session`, value);
+                                // ✅ Tự động sync với gradeConfigs[grade].rules
+                                setValue(`gradeConfigs.${g}.rules`, { grade: g, session: value }, { shouldDirty: true });
+                                field.onChange(value);
+                              }}
+                            >
+                              <SelectTrigger className="w-64">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="morning">Chỉ buổi sáng</SelectItem>
+                                <SelectItem value="afternoon">Chỉ buổi chiều</SelectItem>
+                                <SelectItem value="both">Cả hai buổi</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                        />
+                      </div>
+                      
+                      {/* ✅ Phần chọn tiết nghỉ theo thứ và tiết */}
+                      <div className="ml-40 space-y-3">
+                        <Label className="text-sm font-medium text-muted-foreground">
+                          Tiết được nghỉ (không xếp môn học vào) - Chọn theo thứ và tiết:
+                        </Label>
+                        <div className="border rounded-lg p-4 bg-muted/30">
+                          <div className="overflow-x-auto">
+                            <table className="w-full border-collapse">
+                              <thead>
+                                <tr>
+                                  <th className="border p-2 text-xs font-medium text-left">Thứ</th>
+                                  {Array.from({ length: maxPeriods }, (_, i) => (
+                                    <th key={i + 1} className="border p-2 text-xs font-medium text-center min-w-[60px]">
+                                      Tiết {i + 1}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {WEEKDAYS.map((dayObj) => {
+                                  const dayKey = dayObj.key;
+                                  const isChecked = (day: string, period: number) => {
+                                    return restPeriods.some(r => r.day === day && r.period === period);
+                                  };
+                                  
+                                  return (
+                                    <tr key={dayKey}>
+                                      <td className="border p-2 text-sm font-medium">{dayObj.label}</td>
+                                      {Array.from({ length: maxPeriods }, (_, i) => {
+                                        const periodNumber = i + 1;
+                                        const checked = isChecked(dayKey, periodNumber);
+                                        
+                                        return (
+                                          <td key={periodNumber} className="border p-1 text-center">
+                                            <Checkbox
+                                              id={`rest-${g}-${dayKey}-${periodNumber}`}
+                                              checked={checked}
+                                              onCheckedChange={(isChecked) => {
+                                                const currentRestPeriods = watch(`gradeConfigs.${g}.restPeriods`) || [];
+                                                let newRestPeriods;
+                                                
+                                                if (isChecked) {
+                                                  // ✅ Thêm { day, period } vào danh sách nghỉ
+                                                  newRestPeriods = [
+                                                    ...currentRestPeriods,
+                                                    { day: dayKey, period: periodNumber }
+                                                  ];
+                                                } else {
+                                                  // ✅ Xóa { day, period } khỏi danh sách nghỉ
+                                                  newRestPeriods = currentRestPeriods.filter(
+                                                    r => !(r.day === dayKey && r.period === periodNumber)
+                                                  );
+                                                }
+                                                
+                                                setValue(`gradeConfigs.${g}.restPeriods`, newRestPeriods, { shouldDirty: true });
+                                              }}
+                                            />
+                                          </td>
+                                        );
+                                      })}
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                        {restPeriods.length > 0 && (
+                          <div className="text-xs text-muted-foreground mt-2 space-y-1">
+                            <p className="font-medium">Khối {g} sẽ nghỉ:</p>
+                            <ul className="list-disc list-inside space-y-0.5">
+                              {restPeriods.map((r, idx) => {
+                                const dayLabel = WEEKDAYS.find(d => d.key === r.day)?.label || r.day;
+                                return (
+                                  <li key={idx}>
+                                    {dayLabel} - Tiết {r.period}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </Card>
           </TabsContent>

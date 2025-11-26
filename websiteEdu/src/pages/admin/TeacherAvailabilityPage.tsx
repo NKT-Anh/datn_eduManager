@@ -1,11 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 // ✅ Sử dụng hooks thay vì API trực tiếp
 import { useTeachers, useUpdateTeacherAvailability, useTeacherAvailability } from "@/hooks";
 import { Teacher } from "@/types/auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Edit2, Save, X } from "lucide-react";
+import { Edit2, Save, X, Search } from "lucide-react";
 
 const days = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
 const slots = [
@@ -29,6 +31,8 @@ export default function TeacherAvailabilityPage() {
   
   const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null);
   const [teacherAvailabilityMap, setTeacherAvailabilityMap] = useState<Record<string, boolean[][]>>({});
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [selectedSubject, setSelectedSubject] = useState<string>("all");
 
   // ✅ Log để debug
   useEffect(() => {
@@ -139,9 +143,71 @@ export default function TeacherAvailabilityPage() {
     return "Chưa có môn";
   };
 
+  // Lấy danh sách môn học từ tất cả giáo viên (để làm select filter)
+  const allSubjects = useMemo(() => {
+    const subjectSet = new Set<string>();
+    teachers.forEach((teacher) => {
+      const subjects = getTeacherSubjects(teacher);
+      if (subjects && subjects !== "Chưa có môn") {
+        subjects.split(", ").forEach((subject) => subjectSet.add(subject));
+      }
+    });
+    return Array.from(subjectSet).sort();
+  }, [teachers]);
+
+  // Filter giáo viên dựa trên search và subject
+  const filteredTeachers = useMemo(() => {
+    return teachers.filter((teacher) => {
+      // Filter theo tên
+      const nameMatch = searchQuery === "" || 
+        teacher.name?.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      // Filter theo môn học
+      const subjectMatch = selectedSubject === "all" || 
+        getTeacherSubjects(teacher).toLowerCase().includes(selectedSubject.toLowerCase());
+      
+      return nameMatch && subjectMatch;
+    });
+  }, [teachers, searchQuery, selectedSubject]);
+
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold">📅 Lịch rảnh của giáo viên</h1>
+
+      {/* Tìm kiếm và Filter */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-wrap gap-3 items-center">
+            <div className="relative flex-1 min-w-[250px]">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <Input
+                placeholder="🔍 Tìm kiếm theo tên giáo viên..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+
+            <Select value={selectedSubject} onValueChange={setSelectedSubject}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Tất cả môn học" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tất cả môn học</SelectItem>
+                {allSubjects.map((subject) => (
+                  <SelectItem key={subject} value={subject.toLowerCase()}>
+                    {subject}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="text-sm text-muted-foreground">
+              Hiển thị: {filteredTeachers.length} / {teachers.length} giáo viên
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {isLoadingTeachers ? (
         <div className="text-center py-4">
@@ -155,9 +221,13 @@ export default function TeacherAvailabilityPage() {
         <div className="text-center py-4 text-muted-foreground">
           <p>Chưa có giáo viên nào trong hệ thống.</p>
         </div>
+      ) : filteredTeachers.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground">
+          <p>Không tìm thấy giáo viên nào phù hợp với bộ lọc.</p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {teachers.map((teacher) => {
+          {filteredTeachers.map((teacher) => {
             const isEditing = editingTeacherId === teacher._id;
             const availability = teacherAvailabilityMap[teacher._id!] || 
               Array(days.length).fill(null).map(() => Array(slots.length).fill(true));

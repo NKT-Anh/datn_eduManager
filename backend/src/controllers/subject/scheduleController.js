@@ -3,7 +3,16 @@ const TeachingAssignment = require("../../models/subject/teachingAssignment");
 const Class = require("../../models/class/class");
 exports.getAllSchedules = async (req, res) => {
   try {
-    const schedules = await Schedule.find()
+    // ✅ Kiểm tra quyền: Admin/BGH có thể xem tất cả, Student/Teacher chỉ xem lịch đã khóa
+    const userRole = req.user?.role;
+    const isAdmin = userRole === 'admin' || userRole === 'bgh';
+    
+    const query = {};
+    if (!isAdmin) {
+      query.isLocked = true;
+    }
+    
+    const schedules = await Schedule.find(query)
       .populate("classId", "className grade")
       .populate("timetable.periods.subject", "name")
       .populate("timetable.periods.teacher", "name");
@@ -23,17 +32,39 @@ exports.getScheduleByClass = async (req, res) => {
       return res.status(400).json({ message: "Thiếu tham số: classId, year, semester là bắt buộc." });
     }
     
-    const schedule = await Schedule.findOne({ 
+    // ✅ Kiểm tra quyền: Admin/BGH có thể xem tất cả (kể cả chưa khóa), Student/Teacher chỉ xem lịch đã khóa
+    const userRole = req.user?.role;
+    const isAdmin = userRole === 'admin' || userRole === 'bgh';
+    
+    const query = { 
       classId: classId,
       year: year,
       semester: semester 
-    })
+    };
+    
+    // ✅ Nếu không phải Admin/BGH → chỉ lấy lịch đã khóa
+    if (!isAdmin) {
+      query.isLocked = true;
+    }
+    
+    const schedule = await Schedule.findOne(query)
       .populate("classId", "className classCode grade")
       .populate("timetable.periods.subject", "name code")
       .populate("timetable.periods.teacher", "name");
     
-    // ✅ Nếu không tìm thấy schedule, trả về 404 nhưng với message rõ ràng
+    // ✅ Nếu không tìm thấy schedule
     if (!schedule) {
+      // ✅ Nếu không phải Admin và không tìm thấy → có thể là lịch chưa khóa
+      if (!isAdmin) {
+        return res.status(404).json({ 
+          message: "Thời khóa biểu chưa được công bố.",
+          classId,
+          year,
+          semester,
+          hint: "Lịch học của lớp này chưa được khóa và công bố. Vui lòng liên hệ quản trị viên."
+        });
+      }
+      
       return res.status(404).json({ 
         message: "Không tìm thấy thời khóa biểu.",
         classId,
@@ -104,6 +135,13 @@ exports.updateSchedule = async (req, res) => {
     const existingSchedule = await Schedule.findById(id);
     if (!existingSchedule) {
       return res.status(404).json({ message: "Không tìm thấy thời khóa biểu." });
+    }
+
+    // ✅ Kiểm tra nếu schedule đã khóa thì không cho phép cập nhật
+    if (existingSchedule.isLocked === true) {
+      return res.status(403).json({ 
+        message: "Thời khóa biểu đã được khóa. Không thể chỉnh sửa. Vui lòng mở khóa trước khi chỉnh sửa." 
+      });
     }
 
     // ✅ Validate: Kiểm tra môn học và giáo viên phải khớp với TeachingAssignment
@@ -255,7 +293,16 @@ exports.getSchedulesByYearSemester = async (req, res) => {
       return res.status(400).json({ message: "Thiếu thông tin year/semester" });
     }
 
-    const schedules = await Schedule.find({ year, semester })
+    // ✅ Kiểm tra quyền: Admin/BGH có thể xem tất cả, Student/Teacher chỉ xem lịch đã khóa
+    const userRole = req.user?.role;
+    const isAdmin = userRole === 'admin' || userRole === 'bgh';
+    
+    const query = { year, semester };
+    if (!isAdmin) {
+      query.isLocked = true;
+    }
+
+    const schedules = await Schedule.find(query)
       .populate("classId", "className grade")
       .populate("timetable.periods.subject", "name")
       .populate("timetable.periods.teacher", "name");
@@ -283,12 +330,21 @@ exports.getSchedulesByGrade = async (req, res) => {
 
     const classIds = classes.map((c) => c._id);
 
-    // Lấy tất cả TKB của các lớp thuộc khối đó
-    const schedules = await Schedule.find({
+    // ✅ Kiểm tra quyền: Admin/BGH có thể xem tất cả, Student/Teacher chỉ xem lịch đã khóa
+    const userRole = req.user?.role;
+    const isAdmin = userRole === 'admin' || userRole === 'bgh';
+    
+    const query = {
       classId: { $in: classIds },
       year,
       semester,
-    })
+    };
+    if (!isAdmin) {
+      query.isLocked = true;
+    }
+    
+    // Lấy tất cả TKB của các lớp thuộc khối đó
+    const schedules = await Schedule.find(query)
       .populate("classId", "className grade")
       .populate("timetable.periods.subject", "name")
       .populate("timetable.periods.teacher", "name");
@@ -309,8 +365,17 @@ exports.getScheduleByTeacher = async (req, res) => {
       return res.status(400).json({ message: 'Thiếu thông tin teacherName/year/semester' });
     }
 
+    // ✅ Kiểm tra quyền: Admin/BGH có thể xem tất cả, Student/Teacher chỉ xem lịch đã khóa
+    const userRole = req.user?.role;
+    const isAdmin = userRole === 'admin' || userRole === 'bgh';
+    
+    const query = { year, semester };
+    if (!isAdmin) {
+      query.isLocked = true;
+    }
+    
     // Lấy tất cả TKB theo năm và học kỳ
-    const allSchedules = await Schedule.find({ year, semester })
+    const allSchedules = await Schedule.find(query)
       .populate("classId", "className grade classCode")
       .lean();
 
@@ -350,6 +415,60 @@ exports.getScheduleByTeacher = async (req, res) => {
     res.status(200).json(teacherSchedules);
   } catch (err) {
     console.error("❌ Lỗi khi lấy TKB theo giáo viên:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ✅ Khóa/Mở khóa thời khóa biểu - Chỉ Admin
+exports.lockSchedule = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isLocked } = req.body; // true = khóa, false = mở khóa
+    
+    const schedule = await Schedule.findById(id);
+    if (!schedule) {
+      return res.status(404).json({ message: "Không tìm thấy thời khóa biểu." });
+    }
+    
+    schedule.isLocked = isLocked !== undefined ? isLocked : true;
+    await schedule.save();
+    
+    res.status(200).json({
+      message: isLocked ? "Đã khóa thời khóa biểu. Học sinh và giáo viên có thể xem." : "Đã mở khóa thời khóa biểu.",
+      schedule
+    });
+  } catch (err) {
+    console.error("❌ Lỗi khi khóa/mở khóa thời khóa biểu:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ✅ Khóa/Mở khóa tất cả lịch trong năm học + học kỳ - Chỉ Admin
+exports.lockAllSchedules = async (req, res) => {
+  try {
+    const { year, semester, isLocked } = req.body;
+    
+    if (!year || !semester) {
+      return res.status(400).json({ message: "Thiếu thông tin: year và semester là bắt buộc." });
+    }
+
+    const lockValue = typeof isLocked === "boolean" ? isLocked : true;
+    
+    const result = await Schedule.updateMany(
+      { year, semester },
+      { $set: { isLocked: lockValue } }
+    );
+    
+    res.status(200).json({
+      message: lockValue
+        ? `Đã khóa ${result.modifiedCount} thời khóa biểu trong năm học ${year}, học kỳ ${semester}.`
+        : `Đã mở khóa ${result.modifiedCount} thời khóa biểu trong năm học ${year}, học kỳ ${semester}.`,
+      modifiedCount: result.modifiedCount,
+      matchedCount: result.matchedCount,
+      isLocked: lockValue
+    });
+  } catch (err) {
+    console.error("❌ Lỗi khi khóa/mở khóa tất cả lịch:", err);
     res.status(500).json({ message: err.message });
   }
 };

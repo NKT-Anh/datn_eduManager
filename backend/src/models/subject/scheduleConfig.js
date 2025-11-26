@@ -123,6 +123,15 @@ const ScheduleGradeConfigSchema = new mongoose.Schema(
       type: GradeSessionRuleSchema,
       default: null,
     },
+
+    // ✅ Các tiết được nghỉ (không xếp môn học vào) - format: [{ day: "Monday", period: 5 }]
+    restPeriods: {
+      type: [{
+        day: { type: String, required: true }, // "Monday", "Tuesday", etc.
+        period: { type: Number, required: true }, // 1, 2, 3, ...
+      }],
+      default: [],
+    },
   },
   { _id: false }
 );

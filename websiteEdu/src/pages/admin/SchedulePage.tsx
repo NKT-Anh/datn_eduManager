@@ -39,6 +39,7 @@ import DragDropSchedule from "@/components/schedule/DragDropSchedule";
 import ModernTimetable from "@/components/schedule/ModernTimetable";
 import CreateClassesDialog from "@/components/dialogs/CreateClassesDialog";
 import { autoScheduleApi } from "@/services/autoScheduleApi";
+import { constraintSolverApi } from "@/services/constraintSolverApi";
 
 const DAY_LABELS = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
 
@@ -185,6 +186,8 @@ export default function SchedulePage() {
     } catch (err) {
       console.error("❌ Lỗi tạo thời khóa biểu:", err);
       alert("Lỗi khi tạo thời khóa biểu!");
+      (err as any).__handled = true;
+      throw err;
     }
   };
   

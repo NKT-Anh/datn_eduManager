@@ -3,6 +3,7 @@ const Teacher = require('../../models/user/teacher');
 const Class = require('../../models/class/class');
 const Subject = require('../../models/subject/subject');
 const ScheduleConfig = require('../../models/subject/scheduleConfig');
+const Schedule = require('../../models/subject/schedule');
 
 /**
  * ✅ Helper: Lấy số tiết/tuần của môn học theo khối từ ScheduleConfig
@@ -122,7 +123,7 @@ exports.autoAssignTeaching = async (req, res) => {
     // ✅ Lấy dữ liệu từ database
     const TeachingAssignmentProposal = require('../../models/subject/teachingAssignmentProposal');
     
-    const [classes, allSubjects, teachers, existingAssignments, scheduleConfig, proposals] = await Promise.all([
+    const [classes, allSubjects, teachers, existingAssignments, scheduleConfig, proposals, lockedSchedules] = await Promise.all([
       Class.find({ year, grade: { $in: grades } }).lean(),
       Subject.find({ isActive: { $ne: false } }).lean(), // Lấy tất cả môn (isActive không phải false, bao gồm null/undefined)
       Teacher.find({ 
@@ -138,8 +139,24 @@ exports.autoAssignTeaching = async (req, res) => {
             semester, 
             status: 'approved' 
           }).populate('teacherId subjectId classId').lean()
-        : Promise.resolve([])
+        : Promise.resolve([]),
+      Schedule.find({ year, semester, isLocked: true }).select('classId')
     ]);
+    
+    const lockedClassIds = new Set(
+      lockedSchedules
+        .map((s) => s.classId?.toString())
+        .filter(Boolean)
+    );
+    const lockedClasses = classes.filter((c) => lockedClassIds.has(c._id.toString()));
+    const unlockedClasses = classes.filter((c) => !lockedClassIds.has(c._id.toString()));
+    if (lockedClasses.length > 0) {
+      console.log(
+        `🔒 Bỏ qua ${lockedClasses.length} lớp đã khóa thời khóa biểu: ${lockedClasses
+          .map((c) => c.className)
+          .join(", ")}`
+      );
+    }
     
     // ✅ Nếu áp dụng proposal, thêm vào existingAssignments để tôn trọng phân công đề xuất
     let assignmentsToRespect = [...existingAssignments];
@@ -176,6 +193,14 @@ exports.autoAssignTeaching = async (req, res) => {
         message: `Không có lớp nào cho năm học ${year} và khối ${grades.join(", ")}`,
       });
     }
+
+    if (unlockedClasses.length === 0) {
+      return res.status(400).json({
+        message: `Tất cả lớp thuộc khối ${grades.join(
+          ", "
+        )} đã bị khóa thời khóa biểu trong năm ${year}, học kỳ ${semester}. Không thể phân công.`,
+      });
+    }
     
     if (subjects.length === 0) {
       console.warn(`⚠️ Không tìm thấy môn học cho khối ${grades.join(", ")}`);
@@ -205,9 +230,12 @@ exports.autoAssignTeaching = async (req, res) => {
     
     // ✅ Xóa phân công cũ nếu cần
     if (shouldDeleteOld) {
-      const classIds = classes.map(c => c._id);
+      const classIds = new Set(unlockedClasses.map((c) => c._id.toString()));
       const assignmentsToDelete = existingAssignments.filter(a => 
-        classIds.some(id => id.toString() === a.classId?._id?.toString())
+        {
+          const classId = a.classId?._id?.toString() || a.classId?.toString();
+          return classId && classIds.has(classId);
+        }
       );
       
       if (assignmentsToDelete.length > 0) {
@@ -226,7 +254,7 @@ exports.autoAssignTeaching = async (req, res) => {
       : shouldSupplement
         ? (applyProposals ? assignmentsToRespect : existingAssignments).filter(a => {
             const classId = a.classId?._id?.toString() || a.classId?.toString();
-            return classes.some(c => c._id.toString() === classId);
+            return classId && !lockedClassIds.has(classId) && unlockedClasses.some(c => c._id.toString() === classId);
           })
         : applyProposals 
           ? assignmentsToRespect 
@@ -237,8 +265,8 @@ exports.autoAssignTeaching = async (req, res) => {
     // ✅ Tính toán phân công tự động
     // Nếu applyProposals = true, sẽ tôn trọng proposal (chỉ phân công phần còn trống)
     // Nếu applyProposals = false, sẽ phân công toàn quyền (ghi đè proposal)
-    const newAssignments = await calculateAutoAssignments(
-      classes,
+    let newAssignments = await calculateAutoAssignments(
+      unlockedClasses,
       subjects,
       teachers,
       assignmentsToUse,
@@ -248,6 +276,8 @@ exports.autoAssignTeaching = async (req, res) => {
       scheduleConfig
     );
     
+    newAssignments = newAssignments.filter((a) => !lockedClassIds.has(a.classId.toString()));
+
     if (newAssignments.length === 0) {
       return res.json({
         message: 'Không có phân công mới nào được tạo',
