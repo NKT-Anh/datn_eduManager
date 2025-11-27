@@ -116,6 +116,11 @@ export default function ExamDetailPage() {
               <Tag color={statusMap[exam.status || "draft"]?.color}>
                 {statusMap[exam.status || "draft"]?.label}
               </Tag>
+              {typeof exam.gradesPublished !== "undefined" && (
+                <Tag color={exam.gradesPublished ? "green" : "red"}>
+                  {exam.gradesPublished ? "Đã công bố điểm" : "Chưa công bố điểm"}
+                </Tag>
+              )}
             </Space>
           </Space>
 

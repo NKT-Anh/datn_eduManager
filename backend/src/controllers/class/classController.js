@@ -1636,23 +1636,41 @@ exports.getHomeroomClassStudents = async (req, res) => {
       return res.json({ success: true, data: [], message: `Nhiệm kỳ này thầy/cô không có lớp chủ nhiệm` });
     }
 
-    // ✅ Lấy danh sách học sinh trong lớp
+    // ✅ Lấy thông tin lớp để lấy năm học
+    const classInfo = await Class.findById(homeroomClassId).select('year').lean();
+    if (!classInfo) {
+      return res.json({ success: true, data: [], message: 'Không tìm thấy lớp học' });
+    }
+    
+    // ✅ Lấy danh sách học sinh trong lớp - CHỈ lấy học sinh của niên khóa tương ứng
     const Student = require('../../models/user/student');
     const students = await Student.find({ 
       classId: homeroomClassId, 
-      status: 'active' 
+      status: 'active',
+      currentYear: classInfo.year || targetYear // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
     })
       .populate('accountId', 'email phone')
-      .populate('classId', 'className classCode grade year')
+      .populate({
+        path: 'classId',
+        select: 'className classCode grade year',
+        match: { year: classInfo.year || targetYear } // ✅ Đảm bảo lớp thuộc năm học đúng
+      })
       .populate('parentIds', 'name phone relation occupation')
       .sort({ name: 1 })
       .lean();
+    
+    // ✅ Lọc lại để chỉ lấy học sinh có classId hợp lệ và đúng năm học
+    const validStudents = students.filter(s => {
+      if (!s.classId) return false;
+      const classYear = s.classId.year || classInfo.year;
+      return String(classYear) === String(targetYear);
+    });
 
     // ✅ Lấy thông tin điểm số và hạnh kiểm cho từng học sinh
     const StudentYearRecord = require('../../models/user/studentYearRecord');
     const GradeSummary = require('../../models/grade/gradeSummary');
     
-    const studentsWithDetails = await Promise.all(students.map(async (student) => {
+    const studentsWithDetails = await Promise.all(validStudents.map(async (student) => {
       // Lấy hạnh kiểm và học lực
       const yearRecords = await StudentYearRecord.find({
         studentId: student._id,
@@ -1779,11 +1797,18 @@ exports.getHomeroomClassGrades = async (req, res) => {
       return res.json({ success: true, data: null, message: `Nhiệm kỳ này thầy/cô không có lớp chủ nhiệm` });
     }
 
-    // ✅ Lấy danh sách học sinh trong lớp
+    // ✅ Lấy thông tin lớp để lấy năm học
+    const classInfoForGrades = await Class.findById(homeroomClassId).select('year').lean();
+    if (!classInfoForGrades) {
+      return res.json({ success: true, data: null, message: 'Không tìm thấy lớp học' });
+    }
+    
+    // ✅ Lấy danh sách học sinh trong lớp - CHỈ lấy học sinh của niên khóa tương ứng
     const Student = require('../../models/user/student');
     const students = await Student.find({ 
       classId: homeroomClassId, 
-      status: 'active' 
+      status: 'active',
+      currentYear: classInfoForGrades.year || targetYear // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
     })
       .select('_id name studentCode')
       .sort({ name: 1 })
@@ -1800,7 +1825,7 @@ exports.getHomeroomClassGrades = async (req, res) => {
     const StudentYearRecord = require('../../models/user/studentYearRecord');
     const GradeSummary = require('../../models/grade/gradeSummary');
 
-    const gradeTable = await Promise.all(students.map(async (student, index) => {
+    const gradeTable = await Promise.all(validStudents.map(async (student, index) => {
       // Lấy điểm tất cả môn học
       const gradeSummaries = await GradeSummary.find({
         studentId: student._id,

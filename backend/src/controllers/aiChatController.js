@@ -836,7 +836,12 @@ async function findStudentsByClass(query, user) {
     // Lấy danh sách học sinh từ các lớp
     let allStudents = [];
     for (const cls of classes) {
-      const students = await Student.find({ classId: cls._id, status: 'active' })
+      // ✅ Lấy học sinh - CHỈ lấy học sinh của niên khóa tương ứng
+      const students = await Student.find({ 
+        classId: cls._id, 
+        status: 'active',
+        currentYear: cls.year // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+      })
         .select('name studentCode')
         .limit(50)
         .sort('name');

@@ -134,12 +134,35 @@ async function validateTeachingAssignment(teacherId, subjectId, classId, year, s
 exports.getAllAssignments = async (req, res) => {
   try {
     // ✅ Lọc theo năm học nếu có query parameter
-    const { year } = req.query;
+    const { year, semester } = req.query;
     const query = {};
     
     if (year) {
       query.year = year;
     }
+    
+    if (semester) {
+      query.semester = semester;
+    }
+    
+    // ✅ Kiểm tra quyền: giáo viên thường chỉ xem phân công đã công bố của mình
+    const user = req.user;
+    const role = user?.role;
+    const accountId = user?.accountId || user?._id;
+    
+    // Nếu là giáo viên thường (không phải admin, QLBM, BGH), chỉ xem phân công đã công bố
+    if (role === 'teacher' && !user?.teacherFlags?.isDepartmentHead && !user?.teacherFlags?.isLeader) {
+      // Lấy teacherId từ accountId
+      const teacher = await Teacher.findOne({ accountId }).lean();
+      if (teacher) {
+        query.teacherId = teacher._id;
+        query.isPublished = true; // Chỉ xem phân công đã công bố
+      } else {
+        // Nếu không tìm thấy teacher, trả về mảng rỗng
+        return res.status(200).json([]);
+      }
+    }
+    // Admin, QLBM, BGH xem tất cả (không filter isPublished)
     
     const assignments = await TeachingAssignment.find(query)
       .populate('teacherId', 'name availableMatrix')
@@ -1068,6 +1091,41 @@ exports.getLockStatus = async (req, res) => {
     console.error('❌ Lỗi khi kiểm tra trạng thái khóa:', err);
     res.status(500).json({
       error: 'Lỗi khi kiểm tra trạng thái khóa',
+      details: err.message,
+    });
+  }
+};
+
+/**
+ * ✅ Công bố phân công giảng dạy cho giáo viên xem
+ */
+exports.publishAssignments = async (req, res) => {
+  try {
+    const { year, semester } = req.body;
+    const accountId = req.user?.accountId || req.user?._id;
+    
+    if (!year || !semester) {
+      return res.status(400).json({ error: 'Vui lòng cung cấp năm học và học kỳ' });
+    }
+    
+    // Cập nhật tất cả phân công của năm học và học kỳ này thành đã công bố
+    const result = await TeachingAssignment.updateMany(
+      { year, semester },
+      {
+        isPublished: true,
+        publishedAt: new Date(),
+        publishedBy: accountId,
+      }
+    );
+    
+    res.json({
+      message: `Đã công bố ${result.modifiedCount} phân công giảng dạy cho năm ${year}, học kỳ ${semester}`,
+      publishedCount: result.modifiedCount,
+    });
+  } catch (err) {
+    console.error('❌ Lỗi khi công bố phân công:', err);
+    res.status(500).json({
+      error: 'Lỗi khi công bố phân công',
       details: err.message,
     });
   }

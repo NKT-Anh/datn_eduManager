@@ -64,8 +64,18 @@ exports.takeAttendance = async (req, res) => {
       currentSchoolYear = settings?.currentSchoolYear || '2024-2025';
     }
 
-    // Lấy tất cả học sinh trong lớp
-    const allStudents = await Student.find({ classId, status: 'active' }).lean();
+    // ✅ Lấy thông tin lớp để lấy năm học
+    const classInfo = await Class.findById(classId).select('year').lean();
+    if (!classInfo) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy lớp học' });
+    }
+    
+    // ✅ Lấy tất cả học sinh trong lớp - CHỈ lấy học sinh của niên khóa tương ứng
+    const allStudents = await Student.find({ 
+      classId, 
+      status: 'active',
+      currentYear: classInfo.year // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+    }).lean();
     const allStudentIds = allStudents.map(s => String(s._id));
 
     // Danh sách học sinh vắng mặt (từ request)
@@ -268,8 +278,15 @@ exports.getAttendance = async (req, res) => {
     // ✅ Lấy danh sách học sinh có mặt (không có trong danh sách vắng mặt)
     let presentStudents = [];
     if (classId && date && session) {
-      // Lấy tất cả học sinh trong lớp
-      const allStudents = await Student.find({ classId, status: 'active' })
+      // ✅ Lấy thông tin lớp để lấy năm học
+      const classInfo2 = await Class.findById(classId).select('year').lean();
+      
+      // ✅ Lấy tất cả học sinh trong lớp - CHỈ lấy học sinh của niên khóa tương ứng
+      const allStudents = await Student.find({ 
+        classId, 
+        status: 'active',
+        currentYear: classInfo2?.year // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+      })
         .select('name studentCode')
         .sort({ name: 1 })
         .lean();
@@ -701,7 +718,18 @@ exports.getStudentsForAttendance = async (req, res) => {
       }
     }
 
-    const students = await Student.find({ classId, status: 'active' })
+    // ✅ Lấy thông tin lớp để lấy năm học
+    const classInfo3 = await Class.findById(classId).select('year').lean();
+    if (!classInfo3) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy lớp học' });
+    }
+    
+    // ✅ Lấy tất cả học sinh trong lớp - CHỈ lấy học sinh của niên khóa tương ứng
+    const students = await Student.find({ 
+      classId, 
+      status: 'active',
+      currentYear: classInfo3.year // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+    })
       .select('name studentCode')
       .sort({ name: 1 })
       .lean();
@@ -1508,8 +1536,18 @@ exports.getTodayAttendanceByClass = async (req, res) => {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // Lấy tất cả học sinh trong lớp
-    const students = await Student.find({ classId, status: 'active' })
+    // ✅ Lấy thông tin lớp để lấy năm học
+    const classInfo4 = await Class.findById(classId).select('year').lean();
+    if (!classInfo4) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy lớp học' });
+    }
+    
+    // ✅ Lấy tất cả học sinh trong lớp - CHỈ lấy học sinh của niên khóa tương ứng
+    const students = await Student.find({ 
+      classId, 
+      status: 'active',
+      currentYear: classInfo4.year // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+    })
       .select('name studentCode avatarUrl')
       .sort({ name: 1 })
       .lean();

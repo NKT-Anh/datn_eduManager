@@ -86,6 +86,9 @@ export interface TeachingAssignment {
   };
   year: string;
   semester: '1' | '2';
+  isPublished?: boolean;
+  publishedAt?: string;
+  publishedBy?: string;
   createdAt?: string;
   updatedAt?: string;
 }

@@ -40,13 +40,26 @@ exports.addStudentsToExam = async (req, res) => {
       return res.status(400).json({ error: "Kỳ thi chưa cấu hình khối tham gia." });
     }
 
-    // 🔍 Lấy danh sách học sinh theo currentYear và grades
+    // ✅ Lấy tất cả lớp thuộc năm học hiện tại
+    const Class = require('../../models/class/class');
+    const classesInCurrentYear = await Class.find({
+      year: exam.year // ✅ Chỉ lấy lớp của năm học hiện tại
+    }).select("_id").lean();
+    
+    const classIdsInCurrentYear = classesInCurrentYear.map(c => c._id);
+
+    // 🔍 Lấy danh sách học sinh theo currentYear, grades và lớp của năm học hiện tại
     const students = await Student.find({
       status: "active",
       currentYear: exam.year, // ✅ Lấy học sinh có currentYear trùng với năm của kỳ thi
       grade: { $in: targetGrades }, // ✅ Lấy theo grades của kỳ thi
+      classId: { $in: classIdsInCurrentYear }, // ✅ Chỉ lấy học sinh ở lớp của năm học hiện tại
     })
-      .populate("classId", "_id")
+      .populate({
+        path: "classId",
+        select: "_id year className", // ✅ Populate để kiểm tra year
+        match: { year: exam.year } // ✅ Đảm bảo lớp thuộc năm học hiện tại
+      })
       .select("_id classId grade")
       .lean();
 
@@ -75,11 +88,13 @@ exports.addStudentsToExam = async (req, res) => {
     // 🔢 Sinh SBD duy nhất (prefix theo khối)
     const startNumber = await ExamStudent.countDocuments({ exam: examId });
 
-    // ✅ Lọc bỏ học sinh chưa có lớp (vì ExamStudent.class là required)
-    const studentsWithClass = newStudents.filter((s) => s.classId?._id);
+    // ✅ Lọc bỏ học sinh chưa có lớp hoặc lớp không thuộc năm học hiện tại
+    const studentsWithClass = newStudents.filter((s) => {
+      return s.classId && s.classId._id && s.classId.year === exam.year;
+    });
     if (studentsWithClass.length < newStudents.length) {
       const withoutClass = newStudents.length - studentsWithClass.length;
-      console.warn(`⚠️ Có ${withoutClass} học sinh chưa được gán vào lớp, sẽ bỏ qua.`);
+      console.warn(`⚠️ Có ${withoutClass} học sinh chưa được gán vào lớp hoặc lớp không thuộc năm học ${exam.year}, sẽ bỏ qua.`);
     }
 
     const examStudents = studentsWithClass.map((s, i) => ({
@@ -133,14 +148,27 @@ exports.addMultipleStudents = async (req, res) => {
       return res.status(400).json({ error: "Kỳ thi chưa có năm học." });
     }
 
+    // ✅ Lấy tất cả lớp thuộc năm học hiện tại
+    const Class = require('../../models/class/class');
+    const classesInCurrentYear = await Class.find({
+      year: exam.year // ✅ Chỉ lấy lớp của năm học hiện tại
+    }).select("_id").lean();
+    
+    const classIdsInCurrentYear = classesInCurrentYear.map(c => c._id);
+
     // 🔍 Lấy thông tin học sinh
     const students = await Student.find({
       _id: { $in: studentIds },
       status: "active",
       currentYear: exam.year, // ✅ Chỉ lấy học sinh cùng năm học
       grade: { $in: exam.grades }, // ✅ Chỉ lấy học sinh thuộc khối tham gia
+      classId: { $in: classIdsInCurrentYear }, // ✅ Chỉ lấy học sinh ở lớp của năm học hiện tại
     })
-      .populate("classId", "_id")
+      .populate({
+        path: "classId",
+        select: "_id year className", // ✅ Populate để kiểm tra year
+        match: { year: exam.year } // ✅ Đảm bảo lớp thuộc năm học hiện tại
+      })
       .select("_id classId grade")
       .lean();
 
@@ -166,16 +194,18 @@ exports.addMultipleStudents = async (req, res) => {
       });
     }
 
-    // ✅ Lọc bỏ học sinh chưa có lớp (vì ExamStudent.class là required)
-    const studentsWithClass = newStudents.filter((s) => s.classId?._id);
+    // ✅ Lọc bỏ học sinh chưa có lớp hoặc lớp không thuộc năm học hiện tại
+    const studentsWithClass = newStudents.filter((s) => {
+      return s.classId && s.classId._id && s.classId.year === exam.year;
+    });
     if (studentsWithClass.length < newStudents.length) {
       const withoutClass = newStudents.length - studentsWithClass.length;
-      console.warn(`⚠️ Có ${withoutClass} học sinh chưa được gán vào lớp, sẽ bỏ qua.`);
+      console.warn(`⚠️ Có ${withoutClass} học sinh chưa được gán vào lớp hoặc lớp không thuộc năm học ${exam.year}, sẽ bỏ qua.`);
     }
 
     if (studentsWithClass.length === 0) {
       return res.status(400).json({
-        error: "Tất cả học sinh được chọn đều chưa được gán vào lớp. Vui lòng gán lớp cho học sinh trước.",
+        error: `Tất cả học sinh được chọn đều chưa được gán vào lớp hoặc lớp không thuộc năm học ${exam.year}. Vui lòng gán lớp cho học sinh trước.`,
       });
     }
 
@@ -252,10 +282,19 @@ exports.getCandidatesForExam = async (req, res) => {
 
     const gradeStrings = targetGrades; // Đã là String rồi
 
+    // ✅ Lấy tất cả lớp thuộc năm học hiện tại
+    const Class = require('../../models/class/class');
+    const classesInCurrentYear = await Class.find({
+      year: exam.year // ✅ Chỉ lấy lớp của năm học hiện tại
+    }).select("_id").lean();
+    
+    const classIdsInCurrentYear = classesInCurrentYear.map(c => c._id);
+
     const filter = {
       status: "active",
       currentYear: exam.year,
       grade: { $in: gradeStrings },
+      classId: { $in: classIdsInCurrentYear }, // ✅ Chỉ lấy học sinh ở lớp của năm học hiện tại
     };
 
     if (keyword && typeof keyword === "string" && keyword.trim()) {
@@ -267,7 +306,11 @@ exports.getCandidatesForExam = async (req, res) => {
     }
 
     let query = Student.find(filter)
-      .populate("classId", "className classCode grade year") // ✅ Populate classId với className (đúng field trong Class model)
+      .populate({
+        path: "classId",
+        select: "className classCode grade year", // ✅ Populate classId với className (đúng field trong Class model)
+        match: { year: exam.year } // ✅ Đảm bảo lớp thuộc năm học hiện tại
+      })
       .sort({ name: 1 });
 
     if (limit && !Number.isNaN(Number(limit))) {
@@ -355,8 +398,15 @@ exports.getStudentsByExam = async (req, res) => {
 
     const data = await ExamStudent.find(filter)
       .populate("exam", "name year semester") // ✅ Populate exam để có year
-      .populate("student", "name className gender studentCode") // ✅ Chỉ populate student, không cần nested classId
-      .populate("class", "className classCode grade year") // ✅ Ưu tiên dùng ExamStudent.class (snapshot tại thời điểm thi)
+      .populate({
+        path: "student",
+        select: "name gender studentCode",
+        populate: {
+          path: "classId",
+          select: "className classCode grade year" // ✅ Populate Student.classId (lớp gốc)
+        }
+      })
+      .populate("class", "className classCode grade year") // ✅ ExamStudent.class (nhóm lớp trong kỳ thi)
       .populate("room", "code grade") // ✅ Populate FixedExamRoom (room) để hiển thị phòng nhóm
       .sort({ grade: 1, "student.name": 1 })
       .skip((page - 1) * limit)
@@ -547,13 +597,26 @@ exports.addAllStudentsByGrades = async (req, res) => {
       return res.status(400).json({ error: "Kỳ thi chưa cấu hình khối tham gia." });
     }
 
-    // 🔍 Lấy tất cả học sinh có currentYear trùng với năm của kỳ thi và grades trùng với grades của kỳ thi
+    // ✅ Lấy tất cả lớp thuộc năm học hiện tại
+    const Class = require('../../models/class/class');
+    const classesInCurrentYear = await Class.find({
+      year: exam.year // ✅ Chỉ lấy lớp của năm học hiện tại
+    }).select("_id").lean();
+    
+    const classIdsInCurrentYear = classesInCurrentYear.map(c => c._id);
+
+    // 🔍 Lấy tất cả học sinh có currentYear trùng với năm của kỳ thi, grades trùng với grades của kỳ thi, và lớp thuộc năm học hiện tại
     const students = await Student.find({
       status: "active",
       currentYear: exam.year,
       grade: { $in: targetGrades },
+      classId: { $in: classIdsInCurrentYear }, // ✅ Chỉ lấy học sinh ở lớp của năm học hiện tại
     })
-      .populate("classId", "_id")
+      .populate({
+        path: "classId",
+        select: "_id year className", // ✅ Populate để kiểm tra year
+        match: { year: exam.year } // ✅ Đảm bảo lớp thuộc năm học hiện tại
+      })
       .select("_id classId grade")
       .lean();
 
@@ -588,16 +651,18 @@ exports.addAllStudentsByGrades = async (req, res) => {
       });
     }
 
-    // ✅ Lọc bỏ học sinh chưa có lớp (vì ExamStudent.class là required)
-    const studentsWithClass = newStudents.filter((s) => s.classId?._id);
+    // ✅ Lọc bỏ học sinh chưa có lớp hoặc lớp không thuộc năm học hiện tại
+    const studentsWithClass = newStudents.filter((s) => {
+      return s.classId && s.classId._id && s.classId.year === exam.year;
+    });
     if (studentsWithClass.length < newStudents.length) {
       const withoutClass = newStudents.length - studentsWithClass.length;
-      console.warn(`⚠️ Có ${withoutClass} học sinh chưa được gán vào lớp, sẽ bỏ qua.`);
+      console.warn(`⚠️ Có ${withoutClass} học sinh chưa được gán vào lớp hoặc lớp không thuộc năm học ${exam.year}, sẽ bỏ qua.`);
     }
 
     if (studentsWithClass.length === 0) {
       return res.json({
-        message: `Tất cả học sinh đều chưa được gán vào lớp. Vui lòng gán lớp cho học sinh trước.`,
+        message: `Tất cả học sinh đều chưa được gán vào lớp hoặc lớp không thuộc năm học ${exam.year}. Vui lòng gán lớp cho học sinh trước.`,
         total: students.length,
         added: 0,
         existing: existingExamStudents.length,

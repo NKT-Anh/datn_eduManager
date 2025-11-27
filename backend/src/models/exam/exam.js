@@ -25,7 +25,11 @@ examId: {
   config: {
     autoSplitRoom: { type: Boolean, default: true },
     maxStudentsPerRoom: { type: Number, default: 24 }
-  }
+  },
+  // 🎯 Công bố điểm thi
+  gradesPublished: { type: Boolean, default: false },
+  gradesPublishedAt: { type: Date, default: null },
+  gradesPublishedBy: { type: Schema.Types.ObjectId, ref: 'Account', default: null },
 }, { timestamps: true });
 
 examSchema.pre('save', function(next) {

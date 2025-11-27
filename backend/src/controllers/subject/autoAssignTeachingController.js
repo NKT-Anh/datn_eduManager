@@ -417,6 +417,7 @@ async function calculateAutoAssignments(
   // ✅ Bước 2: Khởi tạo counters và maps
   const teacherLoadMap = new Map(); // Số lớp mỗi giáo viên đang dạy (tổng)
   const teacherWeeklyLessonsMap = new Map(); // Số tiết/tuần mỗi giáo viên đang dạy
+  const teacherSubjectLessonsMap = new Map(); // Số tiết mỗi giáo viên dạy cho mỗi môn (để cân bằng số tiết giữa các giáo viên cùng môn)
   const teacherSubjectGradeCountMap = new Map(); // Số lớp mỗi giáo viên dạy cho mỗi môn/khối (để chia đều)
   const teacherGradeCountMap = new Map(); // Số lớp mỗi giáo viên dạy cho mỗi khối (để kiểm tra maxClassPerGrade)
   // Format: teacherId -> Map(grade -> count)
@@ -425,6 +426,7 @@ async function calculateAutoAssignments(
     const teacherId = t._id.toString();
     teacherLoadMap.set(teacherId, 0);
     teacherWeeklyLessonsMap.set(teacherId, 0);
+    teacherSubjectLessonsMap.set(teacherId, new Map()); // Map(subjectId -> số tiết)
     teacherSubjectGradeCountMap.set(teacherId, new Map());
     teacherGradeCountMap.set(teacherId, new Map());
   });
@@ -449,6 +451,10 @@ async function calculateAutoAssignments(
       teacherId,
       (teacherWeeklyLessonsMap.get(teacherId) || 0) + periodsPerWeek
     );
+    
+    // ✅ Cập nhật số tiết cho môn này (để cân bằng số tiết giữa các giáo viên cùng môn)
+    const subjectLessonsMap = teacherSubjectLessonsMap.get(teacherId);
+    subjectLessonsMap.set(subjectId, (subjectLessonsMap.get(subjectId) || 0) + periodsPerWeek);
     
     // Cập nhật số lớp cho môn/khối cụ thể (để chia đều)
     const subjectGradeKey = `${subjectId}-${classGrade}`;
@@ -620,8 +626,9 @@ async function calculateAutoAssignments(
       
       // Bước 7.3: Sắp xếp và chọn giáo viên
       // ✅ Ưu tiên 1: mainSubject
-      // ✅ Ưu tiên 2: Giáo viên ít lớp nhất (balance load)
+      // ✅ Ưu tiên 2: Giáo viên ít số tiết cho môn này nhất (cân bằng số tiết giữa các giáo viên cùng môn)
       // ✅ Ưu tiên 3: Giáo viên ít lớp cho môn/khối này nhất (chia đều)
+      // ✅ Ưu tiên 4: Giáo viên ít lớp nhất (tổng)
       validTeachers.sort((a, b) => {
         const aId = a._id.toString();
         const bId = b._id.toString();
@@ -634,6 +641,14 @@ async function calculateAutoAssignments(
         
         if (aIsMain && !bIsMain) return -1;
         if (!aIsMain && bIsMain) return 1;
+        
+        // ✅ Ưu tiên giáo viên ít số tiết cho môn này nhất (cân bằng số tiết giữa các giáo viên cùng môn)
+        const aSubjectLessons = teacherSubjectLessonsMap.get(aId)?.get(subjectIdStr) || 0;
+        const bSubjectLessons = teacherSubjectLessonsMap.get(bId)?.get(subjectIdStr) || 0;
+        
+        if (aSubjectLessons !== bSubjectLessons) {
+          return aSubjectLessons - bSubjectLessons;
+        }
         
         // Ưu tiên giáo viên ít lớp cho môn/khối này nhất (chia đều)
         const subjectGradeKey = `${subjectIdStr}-${classGrade}`;
@@ -699,6 +714,10 @@ async function calculateAutoAssignments(
       teacherId,
       (teacherWeeklyLessonsMap.get(teacherId) || 0) + periodsPerWeek
     );
+    
+    // ✅ Cập nhật số tiết cho môn này (để cân bằng số tiết giữa các giáo viên cùng môn)
+    const subjectLessonsMap = teacherSubjectLessonsMap.get(teacherId);
+    subjectLessonsMap.set(subjectIdStr, (subjectLessonsMap.get(subjectIdStr) || 0) + periodsPerWeek);
     
     // Cập nhật số lớp cho môn/khối cụ thể (để chia đều)
     const subjectGradeKey = `${subjectIdStr}-${classGrade}`;

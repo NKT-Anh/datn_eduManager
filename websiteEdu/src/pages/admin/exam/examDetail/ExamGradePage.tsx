@@ -23,11 +23,13 @@ import {
   LockOutlined,
   ReloadOutlined,
   SearchOutlined,
+  SendOutlined,
 } from "@ant-design/icons";
 import { examGradeApi } from "@/services/exams/examGradeApi";
 // ✅ Sử dụng hooks thay vì API trực tiếp
 import { useSubjects } from "@/hooks";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useAuth } from "@/contexts/AuthContext";
 
 const { Option } = Select;
 const { Text } = Typography;
@@ -39,11 +41,15 @@ interface ExamGradePageProps {
 
 export default function ExamGradePage({ examId, exam }: ExamGradePageProps) {
   const { hasPermission, hasAnyPermission, PERMISSIONS } = usePermissions();
+  const { backendUser } = useAuth();
   const [grades, setGrades] = useState<any[]>([]);
   // ✅ Sử dụng hooks
   const { subjects } = useSubjects();
   const [loading, setLoading] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [isPublished, setIsPublished] = useState<boolean>(Boolean(exam?.gradesPublished));
+  const [publishedAt, setPublishedAt] = useState<string | null>(exam?.gradesPublishedAt || null);
 
   // 🔍 Filters
   const [filters, setFilters] = useState({
@@ -51,6 +57,11 @@ export default function ExamGradePage({ examId, exam }: ExamGradePageProps) {
     grade: "Tất cả",
     keyword: "",
   });
+
+  useEffect(() => {
+    setIsPublished(Boolean(exam?.gradesPublished));
+    setPublishedAt(exam?.gradesPublishedAt || null);
+  }, [exam?.gradesPublished, exam?.gradesPublishedAt]);
 
   const fetchGrades = async () => {
     try {
@@ -75,6 +86,27 @@ export default function ExamGradePage({ examId, exam }: ExamGradePageProps) {
       fetchGrades();
     }
   }, [examId]);
+
+  const canPublishGrades =
+    backendUser?.role === "admin" ||
+    backendUser?.teacherFlags?.isLeader ||
+    backendUser?.teacherFlags?.isDepartmentHead;
+
+  const handlePublishGrades = async () => {
+    try {
+      setPublishing(true);
+      const res = await examGradeApi.publish(examId);
+      message.success(res?.message || "✅ Đã công bố điểm thi");
+      setIsPublished(true);
+      setPublishedAt(new Date().toISOString());
+      fetchGrades();
+    } catch (err: any) {
+      console.error("Lỗi công bố điểm:", err);
+      message.error(err?.response?.data?.error || "❌ Lỗi khi công bố điểm");
+    } finally {
+      setPublishing(false);
+    }
+  };
 
   const handleSave = async (record: any, value: number | null) => {
     if (value === null || value === undefined) return;
@@ -219,10 +251,27 @@ export default function ExamGradePage({ examId, exam }: ExamGradePageProps) {
     <Card
       title="📊 Quản lý điểm thi"
       extra={
-        <Space>
+        <Space wrap>
           <Button icon={<ReloadOutlined />} onClick={fetchGrades}>
             Làm mới
           </Button>
+          {canPublishGrades && (
+            <Popconfirm
+              title={isPublished ? "Đồng bộ lại điểm?" : "Công bố điểm kỳ thi?"}
+              description="Điểm sẽ được đồng bộ vào bảng điểm chính của học sinh."
+              onConfirm={handlePublishGrades}
+              okButtonProps={{ loading: publishing }}
+            >
+              <Button
+                type="primary"
+                ghost={isPublished}
+                icon={<SendOutlined />}
+                loading={publishing}
+              >
+                {isPublished ? "Đồng bộ lại điểm" : "Công bố điểm"}
+              </Button>
+            </Popconfirm>
+          )}
           {hasAnyPermission([PERMISSIONS.EXAM_GRADE_ENTER, PERMISSIONS.EXAM_UPDATE]) && (
             <Upload beforeUpload={handleImport} showUploadList={false}>
               <Button icon={<UploadOutlined />} style={{ background: "#2ecc71", color: "#fff" }}>
@@ -253,6 +302,27 @@ export default function ExamGradePage({ examId, exam }: ExamGradePageProps) {
         </Space>
       }
     >
+      <Card
+        style={{
+          marginBottom: 16,
+          background: isPublished ? "#f6ffed" : "#fff1f0",
+          borderColor: isPublished ? "#b7eb8f" : "#ffa39e",
+        }}
+      >
+        <Space direction="vertical" size={4}>
+          <Text strong>
+            {isPublished ? "Đã công bố điểm thi" : "Chưa công bố điểm thi"}
+          </Text>
+          <Text type="secondary">
+            {isPublished
+              ? `Điểm đã được đồng bộ tới bảng điểm học sinh${
+                  publishedAt ? ` (lần cuối: ${new Date(publishedAt).toLocaleString("vi-VN")})` : ""
+                }.`
+              : "Điểm chỉ hiển thị với giáo viên cho tới khi Trưởng bộ môn hoặc BGH công bố."}
+          </Text>
+        </Space>
+      </Card>
+
       {/* 🔍 Bộ lọc và tìm kiếm */}
       <Card style={{ marginBottom: 16, background: "#fafafa" }}>
         <Row gutter={[16, 16]} align="middle">
@@ -302,7 +372,15 @@ export default function ExamGradePage({ examId, exam }: ExamGradePageProps) {
         <Table
           dataSource={filteredGrades}
           columns={columns}
-          rowKey={(r) => r._id}
+          rowKey={(r, index) => {
+            // ✅ Đảm bảo key unique: dùng _id nếu có, nếu không dùng index + studentId + subjectId
+            if (r._id) {
+              return String(r._id);
+            }
+            const studentId = r.student?._id || r.student || '';
+            const subjectId = r.subject?._id || r.subject || '';
+            return `grade_${studentId}_${subjectId}_${index}`;
+          }}
           pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `Tổng ${total} điểm` }}
           bordered
         />

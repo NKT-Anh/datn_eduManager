@@ -93,7 +93,8 @@ router.get("/grade/:grade/year/:year/semester/:semester",
 );
 
 // ✅ Lấy theo giáo viên + năm + học kỳ - Giáo viên xem của mình hoặc Admin
-router.get("/teacher/:teacherName/:year/:semester", 
+// ✅ Sử dụng teacherId thay vì teacherName để tránh trùng tên
+router.get("/teacher/:teacherId/:year/:semester", 
   authMiddleware, 
   checkPermission([
     PERMISSIONS.SCHEDULE_VIEW_ALL,

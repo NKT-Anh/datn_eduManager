@@ -77,15 +77,19 @@ const TeacherWeeklySchedulePage = () => {
   }, []);
 
   useEffect(() => {
-    if (backendUser?.name && schoolYear) {
-      fetchSchedules(backendUser.name, schoolYear, semester);
+    const teacherId = typeof backendUser?.teacherId === 'object' && backendUser?.teacherId !== null
+      ? (backendUser.teacherId as any)._id
+      : backendUser?.teacherId;
+    
+    if (teacherId && schoolYear) {
+      fetchSchedules(teacherId, schoolYear, semester);
     }
   }, [backendUser, schoolYear, semester]);
 
-  const fetchSchedules = async (teacherName: string, year: string, sem: string) => {
+  const fetchSchedules = async (teacherId: string, year: string, sem: string) => {
     try {
       setLoading(true);
-      const data = await scheduleApi.getScheduleByTeacher(teacherName, year, sem);
+      const data = await scheduleApi.getScheduleByTeacher(teacherId, year, sem);
       setSchedules(Array.isArray(data) ? data : []);
     } catch (err: any) {
       console.error('Error fetching schedules:', err);

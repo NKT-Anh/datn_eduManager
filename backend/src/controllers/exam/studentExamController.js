@@ -253,18 +253,37 @@ exports.getRoomByStudent = async (req, res) => {
 
 /* =========================================================
    🧮 LẤY ĐIỂM CỦA HỌC SINH TRONG KỲ THI
+   ✅ Học sinh có thể xem điểm của mình ngay cả khi chưa công bố (để phúc khảo)
 ========================================================= */
 exports.getGradesByStudent = async (req, res) => {
   try {
     const { examId, studentId } = req.params;
+    const { role, accountId } = req.user || {};
+
+    // ✅ Kiểm tra quyền: Học sinh chỉ xem được điểm của mình
+    if (role === 'student') {
+      const Student = require("../../models/user/student");
+      const student = await Student.findOne({ accountId }).lean();
+      if (!student || String(student._id) !== String(studentId)) {
+        return res.status(403).json({ error: "Bạn chỉ có thể xem điểm của chính mình." });
+      }
+    }
 
     const examStudent = await ExamStudent.findOne({ exam: examId, student: studentId });
     if (!examStudent)
       return res.status(404).json({ error: "Không tìm thấy học sinh trong kỳ thi này." });
 
-    const grades = await ExamGrade.find({ exam: examId, examStudent: examStudent._id })
+    // ✅ Lấy điểm - học sinh có thể xem điểm của mình ngay cả khi chưa công bố
+    const grades = await ExamGrade.find({ exam: examId, student: examStudent._id })
       .populate("subject", "name subjectCode")
       .populate("teacher", "name")
+      .populate({
+        path: "student",
+        populate: {
+          path: "student",
+          select: "name studentCode"
+        }
+      })
       .lean();
 
     res.json(grades);

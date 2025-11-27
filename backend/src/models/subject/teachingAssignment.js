@@ -12,6 +12,10 @@ const teachingAssignmentSchema = new mongoose.Schema({
   lockedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null }, // Người khóa
   unlockAt: { type: Date, default: null }, // Thời gian mở khóa (nếu có lịch tự động)
   unlockBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null }, // Người mở khóa
+  // ✅ Công bố phân công cho giáo viên xem
+  isPublished: { type: Boolean, default: false }, // Trạng thái công bố
+  publishedAt: { type: Date, default: null }, // Thời gian công bố
+  publishedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null }, // Người công bố
 }, { timestamps: true });
 
 teachingAssignmentSchema.index(

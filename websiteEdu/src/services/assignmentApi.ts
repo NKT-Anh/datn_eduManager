@@ -113,4 +113,47 @@ export const assignmentApi = {
     return res.data;
   },
 
+  // ✅ Kiểm tra trạng thái khóa
+  getLockStatus: async (params: {
+    year: string;
+    semester: string;
+  }): Promise<{
+    isLocked: boolean;
+    lockedAt?: string;
+    lockedBy?: string;
+    lockedByInfo?: { name: string; email: string };
+    year: string;
+    semester: string;
+  }> => {
+    const res = await api.get(`${API_URL}/lock-status`, { params });
+    return res.data;
+  },
+
+  // ✅ Khóa danh sách phân công
+  lock: async (params: {
+    year: string;
+    semester: string;
+  }): Promise<{ message: string; lockedCount: number }> => {
+    const res = await api.post(`${API_URL}/lock`, params);
+    return res.data;
+  },
+
+  // ✅ Mở khóa danh sách phân công
+  unlock: async (params: {
+    year: string;
+    semester: string;
+  }): Promise<{ message: string; unlockedCount: number }> => {
+    const res = await api.post(`${API_URL}/unlock`, params);
+    return res.data;
+  },
+
+  // ✅ Công bố phân công giảng dạy
+  publish: async (params: {
+    year: string;
+    semester: string;
+  }): Promise<{ message: string; publishedCount: number }> => {
+    const res = await api.post(`${API_URL}/publish`, params);
+    return res.data;
+  },
+
 };

@@ -15,6 +15,9 @@ export interface Exam {
   createdAt?: string;
   updatedAt?: string;
   isArchived?: boolean;
+  gradesPublished?: boolean;
+  gradesPublishedAt?: string;
+  gradesPublishedBy?: string;
 }
 
 export const examApi = {

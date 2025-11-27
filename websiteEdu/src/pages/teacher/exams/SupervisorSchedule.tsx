@@ -8,12 +8,35 @@ import { getExams } from '@/services/examApi';
 const { Title, Text } = Typography;
 const { Option } = Select;
 
+const HIDE_AFTER_DAYS = 7; // number of days to keep finished exams visible
+
+const shouldDisplayExam = (exam: Exam, now: Date) => {
+  if (!exam?.endDate) {
+    return true;
+  }
+
+  const examEnd = new Date(exam.endDate);
+  if (Number.isNaN(examEnd.getTime())) {
+    return true;
+  }
+
+  examEnd.setHours(23, 59, 59, 999);
+
+  const hideAfter = new Date(examEnd);
+  hideAfter.setDate(hideAfter.getDate() + HIDE_AFTER_DAYS);
+
+  return now <= hideAfter;
+};
+
 interface Exam {
   _id: string;
   name: string;
   year: string;
   semester: string;
   status: string;
+  startDate?: string;
+  endDate?: string;
+  type?: string;
 }
 
 const SupervisorSchedule: React.FC = () => {
@@ -38,11 +61,23 @@ const SupervisorSchedule: React.FC = () => {
   const fetchExams = async () => {
     try {
       const res = await getExams();
+      const rawExams: Exam[] = (res.data?.data || res.data || []) as Exam[];
       // ✅ Chỉ lấy kỳ thi đã công bố
-      const publishedExams = (res.data?.data || res.data || []).filter((exam: Exam) => exam.status === 'published');
-      setExams(publishedExams);
-      if (publishedExams.length > 0 && !selectedExamId) {
-        setSelectedExamId(publishedExams[0]._id);
+      const publishedExams = rawExams.filter((exam: Exam) => exam.status === 'published');
+      const now = new Date();
+      const visibleExams = publishedExams.filter((exam) => shouldDisplayExam(exam, now));
+
+      setExams(visibleExams);
+
+      setSelectedExamId((prev) => {
+        if (prev && visibleExams.some((exam) => exam._id === prev)) {
+          return prev;
+        }
+        return visibleExams[0]?._id || '';
+      });
+
+      if (visibleExams.length === 0) {
+        setSchedules([]);
       }
     } catch (err: any) {
       console.error("Lỗi khi tải danh sách kỳ thi:", err);

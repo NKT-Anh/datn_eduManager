@@ -167,14 +167,15 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
         items: [
           { id: "my-classes", title: "Lớp đang dạy", url: `${prefix}/my-classes`, icon: School },
           { id: "schedule", title: "Thời khóa biểu", url: `${prefix}/schedule`, icon: Calendar },
-          { id: "schedule-weekly", title: "Lịch theo tuần", url: `${prefix}/schedule-weekly`, icon: Calendar },
           { id: "grades", title: "Nhập điểm", url: `${prefix}/grades`, icon: BarChart3 },
         ],
       },
       {
         label: "Kỳ thi",
         items: [
-          { id: "exams", title: "Danh sách kỳ thi", url: `${prefix}/exams`, icon: CalendarCheck2Icon },
+          { id: "supervisor-schedule", title: "Lịch coi thi", url: `${prefix}/exams/supervisor-schedule`, icon: Calendar },
+          { id: "supervisor-rooms", title: "Phòng thi đảm nhận", url: `${prefix}/exams/supervisor-rooms`, icon: School },
+          { id: "enter-exam-grades", title: "Nhập điểm thi", url: `${prefix}/exams/enter-grades`, icon: BarChart3 },
         ],
       },
       {
@@ -193,7 +194,6 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
         label: "Cá nhân",
         items: [
           { id: "profile", title: "Hồ sơ", url: `${prefix}/profile`, icon: User },
-          { id: "settings", title: "Cài đặt", url: `${prefix}/settings`, icon: Settings },
         ],
       },
     ];
@@ -219,7 +219,6 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
         items: [
           { id: "my-classes", title: "Lớp đang dạy", url: `${prefix}/my-classes`, icon: School },
           { id: "schedule", title: "Thời khóa biểu", url: `${prefix}/schedule`, icon: Calendar },
-          { id: "schedule-weekly", title: "Lịch theo tuần", url: `${prefix}/schedule-weekly`, icon: Calendar },
           { id: "grades", title: "Nhập điểm", url: `${prefix}/grades`, icon: BarChart3 },
         ],
       },
@@ -227,6 +226,9 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
         label: "Kỳ thi",
         items: [
           { id: "exams", title: "Danh sách kỳ thi", url: `${prefix}/exams`, icon: CalendarCheck2Icon },
+          { id: "supervisor-schedule", title: "Lịch coi thi", url: `${prefix}/exams/supervisor-schedule`, icon: Calendar },
+          { id: "supervisor-rooms", title: "Phòng thi đảm nhận", url: `${prefix}/exams/supervisor-rooms`, icon: School },
+          { id: "enter-exam-grades", title: "Nhập điểm thi", url: `${prefix}/exams/enter-grades`, icon: BarChart3 },
         ],
       },
       {
@@ -239,7 +241,6 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
         label: "Cá nhân",
         items: [
           { id: "profile", title: "Hồ sơ", url: `${prefix}/profile`, icon: User },
-          { id: "settings", title: "Cài đặt", url: `${prefix}/settings`, icon: Settings },
         ],
       },
     ];
@@ -265,6 +266,7 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
             children: [
               { id: "supervisor-schedule", title: "Lịch coi thi", url: `${prefix}/exams/supervisor-schedule`, icon: Calendar },
               { id: "supervisor-rooms", title: "Phòng thi đảm nhận", url: `${prefix}/exams/supervisor-rooms`, icon: School },
+              { id: "enter-exam-grades", title: "Nhập điểm thi", url: `${prefix}/exams/enter-grades`, icon: BarChart3 },
             ],
           },
         ],

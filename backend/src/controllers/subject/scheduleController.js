@@ -356,30 +356,45 @@ exports.getSchedulesByGrade = async (req, res) => {
   }
 };
 
-// 🧩 Lấy TKB theo giáo viên (tên giáo viên)
+// 🧩 Lấy TKB theo giáo viên (theo teacherId để tránh trùng tên)
 exports.getScheduleByTeacher = async (req, res) => {
   try {
-    const { teacherName, year, semester } = req.params;
+    const { teacherId, year, semester } = req.params;
 
-    if (!teacherName || !year || !semester) {
-      return res.status(400).json({ message: 'Thiếu thông tin teacherName/year/semester' });
+    if (!teacherId || !year || !semester) {
+      return res.status(400).json({ message: 'Thiếu thông tin teacherId/year/semester' });
     }
 
-    // ✅ Kiểm tra quyền: Admin/BGH có thể xem tất cả, Student/Teacher chỉ xem lịch đã khóa
+    // ✅ Kiểm tra quyền: Giáo viên chỉ xem lịch của mình, Admin/BGH xem tất cả
     const userRole = req.user?.role;
+    const accountId = req.user?.accountId || req.user?._id;
     const isAdmin = userRole === 'admin' || userRole === 'bgh';
+    
+    // ✅ Nếu là giáo viên, kiểm tra teacherId có phải của mình không
+    if (userRole === 'teacher' && !isAdmin) {
+      const Teacher = require('../../models/user/teacher');
+      const teacher = await Teacher.findOne({ accountId }).lean();
+      if (!teacher || String(teacher._id) !== String(teacherId)) {
+        return res.status(403).json({ message: 'Bạn chỉ có thể xem lịch giảng dạy của chính mình' });
+      }
+    }
     
     const query = { year, semester };
     if (!isAdmin) {
       query.isLocked = true;
     }
     
+    // Lấy tên giáo viên từ teacherId (để fallback nếu period không có teacherId)
+    const Teacher = require('../../models/user/teacher');
+    const teacher = await Teacher.findById(teacherId).select('name').lean();
+    const teacherName = teacher?.name || '';
+
     // Lấy tất cả TKB theo năm và học kỳ
     const allSchedules = await Schedule.find(query)
       .populate("classId", "className grade classCode")
       .lean();
 
-    // Lọc các Schedule có chứa giáo viên này trong timetable
+    // Lọc các Schedule có chứa giáo viên này trong timetable (theo teacherId)
     const teacherSchedules = allSchedules
       .map(schedule => {
         // Tạo bảng TKB mới chỉ chứa các tiết của giáo viên này
@@ -387,8 +402,19 @@ exports.getScheduleByTeacher = async (req, res) => {
           .map(dayEntry => {
             const filteredPeriods = dayEntry.periods
               .map((period, idx) => {
-                // Kiểm tra nếu period có teacher trùng với teacherName
-                if (period.teacher && period.teacher.includes(teacherName)) {
+                // ✅ Kiểm tra theo teacherId (ưu tiên) hoặc teacher name (fallback)
+                const periodTeacherId = period.teacherId?.toString();
+                const periodTeacherName = period.teacher || '';
+                
+                // Ưu tiên kiểm tra theo teacherId
+                if (periodTeacherId && periodTeacherId === String(teacherId)) {
+                  return {
+                    ...period,
+                    periodIndex: idx + 1,
+                  };
+                }
+                // Fallback: Nếu không có teacherId, kiểm tra theo tên (backward compatible)
+                if (!periodTeacherId && periodTeacherName && teacherName && periodTeacherName.includes(teacherName)) {
                   return {
                     ...period,
                     periodIndex: idx + 1,

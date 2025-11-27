@@ -10,13 +10,6 @@ exports.createExam = async (req, res) => {
   try {
     const { name, year, semester, type = "regular", startDate, endDate, grades } = req.body;
 
-    // ✅ Kiểm tra dữ liệu bắt buộc
-    if (!name || !year || !semester || !grades?.length) {
-      return res
-        .status(400)
-        .json({ error: "Thiếu thông tin bắt buộc (name, year, semester, grades)." });
-    }
-
     // 🔒 Ràng buộc: Không được tạo kỳ thi nếu chưa có năm học active
     const SchoolYear = require('../../models/schoolYear');
     const activeYear = await SchoolYear.findOne({ isActive: true });
@@ -26,11 +19,21 @@ exports.createExam = async (req, res) => {
       });
     }
 
+    // ✅ Tự động lấy năm học hiện tại đang active
+    const examYear = year || activeYear.code;
+
     // Kiểm tra năm học được chọn có phải là năm học active không
-    if (year !== activeYear.code) {
+    if (examYear !== activeYear.code) {
       return res.status(400).json({ 
         error: `Chỉ có thể tạo kỳ thi cho năm học đang hoạt động: ${activeYear.name} (${activeYear.code})` 
       });
+    }
+
+    // ✅ Kiểm tra dữ liệu bắt buộc
+    if (!name || !semester || !grades?.length) {
+      return res
+        .status(400)
+        .json({ error: "Thiếu thông tin bắt buộc (name, semester, grades)." });
     }
 
     // ✅ Kiểm tra ngày hợp lệ
@@ -43,7 +46,7 @@ exports.createExam = async (req, res) => {
 
     // ✅ Kiểm tra trùng logic (năm + học kỳ + loại + tên)
     const exists = await Exam.findOne({
-      year,
+      year: examYear,
       semester,
       type,
       name: { $regex: new RegExp(`^${name}$`, "i") }, // so sánh không phân biệt hoa thường
@@ -62,13 +65,13 @@ exports.createExam = async (req, res) => {
       .replace(/[^a-z0-9_]/g, "")
       .trim();
 
-    const examId = `exam_${year}_hk${semester}_${slug}`;
+    const examId = `exam_${examYear}_hk${semester}_${slug}`;
 
     // ✅ Tạo kỳ thi mới
     const exam = await Exam.create({
       examId,
       name,
-      year,
+      year: examYear, // ✅ Dùng năm học active
       semester,
       type,
       startDate,
@@ -81,42 +84,55 @@ exports.createExam = async (req, res) => {
     // Lấy học sinh theo:
     // - Năm học (currentYear): trùng với year của kỳ thi (VD: "2025-2026")
     // - Khối (grade): trong danh sách grades của kỳ thi (VD: ["10", "11", "12"])
+    // - Lớp (classId.year): phải thuộc năm học hiện tại
     // - Trạng thái: active
-    // Lưu ý: Học kỳ (semester) không ảnh hưởng đến việc lấy học sinh, 
-    // vì học sinh sẽ tham gia tất cả các kỳ thi trong năm học đó
+    // ✅ Tránh lấy học sinh của các khóa trước
     let studentsAdded = 0;
     try {
+      const Class = require('../../models/class/class');
+      
+      // ✅ Lấy tất cả lớp thuộc năm học hiện tại
+      const classesInCurrentYear = await Class.find({
+        year: examYear // ✅ Chỉ lấy lớp của năm học hiện tại
+      }).select("_id").lean();
+      
+      const classIdsInCurrentYear = classesInCurrentYear.map(c => c._id);
+
+      // ✅ Lấy học sinh theo năm học hiện tại và lớp hiện tại
       const students = await Student.find({
         status: "active",
-        currentYear: year, // ✅ Lọc theo năm học (VD: "2025-2026")
+        currentYear: examYear, // ✅ Lọc theo năm học (VD: "2025-2026")
         grade: { $in: stringGrades }, // ✅ Lọc theo khối (VD: ["10", "11", "12"])
+        classId: { $in: classIdsInCurrentYear }, // ✅ Chỉ lấy học sinh ở lớp của năm học hiện tại
       })
-        .populate("classId", "_id")
+        .populate({
+          path: "classId",
+          select: "_id year className", // ✅ Populate để kiểm tra year
+          match: { year: examYear } // ✅ Đảm bảo lớp thuộc năm học hiện tại
+        })
         .select("_id classId grade")
         .lean();
 
-      if (students.length > 0) {
-        // ✅ Lọc bỏ học sinh chưa có lớp (vì ExamStudent.class là required)
-        const studentsWithClass = students.filter((s) => s.classId?._id);
-        if (studentsWithClass.length < students.length) {
-          const withoutClass = students.length - studentsWithClass.length;
-          console.warn(`⚠️ Có ${withoutClass} học sinh chưa được gán vào lớp, sẽ bỏ qua.`);
-        }
+      // ✅ Lọc lại để chỉ lấy học sinh có classId hợp lệ (thuộc năm học hiện tại)
+      const studentsWithValidClass = students.filter((s) => {
+        return s.classId && s.classId._id && s.classId.year === examYear;
+      });
 
-        if (studentsWithClass.length > 0) {
-          const examStudents = studentsWithClass.map((s, i) => ({
-            exam: exam._id,
-            student: s._id,
-            class: s.classId._id, // ✅ Lấy từ student.classId, đảm bảo không null
-            grade: String(s.grade),
-            sbd: `${String(s.grade)}${String(i + 1).padStart(4, "0")}`,
-            status: "active",
-          }));
+      if (studentsWithValidClass.length > 0) {
+        const examStudents = studentsWithValidClass.map((s, i) => ({
+          exam: exam._id,
+          student: s._id,
+          class: s.classId._id, // ✅ Lấy từ student.classId, đảm bảo không null và thuộc năm học hiện tại
+          grade: String(s.grade),
+          sbd: `${String(s.grade)}${String(i + 1).padStart(4, "0")}`,
+          status: "active",
+        }));
 
-          await ExamStudent.insertMany(examStudents, { ordered: false });
-          studentsAdded = examStudents.length;
-          console.log(`✅ Đã tự động thêm ${studentsAdded} học sinh vào kỳ thi ${exam.name}`);
-        }
+        await ExamStudent.insertMany(examStudents, { ordered: false });
+        studentsAdded = examStudents.length;
+        console.log(`✅ Đã tự động thêm ${studentsAdded} học sinh vào kỳ thi ${exam.name} (năm học ${examYear})`);
+      } else {
+        console.warn(`⚠️ Không tìm thấy học sinh nào thuộc năm học ${examYear} và khối ${stringGrades.join(', ')}`);
       }
     } catch (studentErr) {
       console.error("⚠️ Lỗi khi tự động thêm học sinh:", studentErr);

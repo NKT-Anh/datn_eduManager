@@ -11,15 +11,75 @@ const mongoose = require('mongoose');
 
 /* =========================================================
    📘 LẤY DANH SÁCH HỌC SINH
+   ✅ Lọc theo classId, year, currentYear để đảm bảo học sinh của các niên khóa là độc lập
 ========================================================= */
 exports.getStudents = async (req, res) => {
   try {
-    const students = await Student.find()
+    const { classId, year, currentYear, status, grade } = req.query;
+    
+    // ✅ Xây dựng query filter
+    const filter = {};
+    
+    // ✅ Lọc theo classId
+    if (classId) {
+      filter.classId = classId;
+    }
+    
+    // ✅ Lọc theo currentYear (niên khóa) - QUAN TRỌNG: đảm bảo học sinh của các niên khóa là độc lập
+    if (currentYear) {
+      filter.currentYear = currentYear;
+    }
+    
+    // ✅ Nếu có classId, cũng cần kiểm tra year của lớp để đảm bảo nhất quán
+    if (classId && (year || currentYear)) {
+      const Class = require('../../models/class/class');
+      const classInfo = await Class.findById(classId).select('year').lean();
+      if (classInfo) {
+        const targetYear = year || currentYear;
+        // ✅ Chỉ lấy học sinh nếu năm học của lớp khớp với filter
+        if (targetYear && String(classInfo.year) !== String(targetYear)) {
+          return res.json([]); // Trả về mảng rỗng nếu năm học không khớp
+        }
+        // ✅ Nếu không có year trong query nhưng có classId, dùng year của lớp
+        if (!currentYear && classInfo.year) {
+          filter.currentYear = classInfo.year;
+        }
+      }
+    }
+    
+    // ✅ Lọc theo status
+    if (status) {
+      filter.status = status;
+    } else {
+      filter.status = 'active'; // Mặc định chỉ lấy học sinh active
+    }
+    
+    // ✅ Lọc theo grade
+    if (grade) {
+      filter.grade = grade;
+    }
+    
+    const students = await Student.find(filter)
+      .populate({ 
+        path: 'classId', 
+        select: 'className classCode grade year',
+        match: year ? { year } : {} // ✅ Đảm bảo lớp thuộc năm học được chỉ định
+      })
       .populate({ path: 'accountId', select: 'email phone role' })
-      .populate({ path: 'classId', select: 'className grade' })
-      .populate({ path: 'parentIds', select: 'name phone relation occupation' });
+      .populate({ path: 'parentIds', select: 'name phone relation occupation' })
+      .sort({ name: 1 })
+      .lean();
 
-    const data = students.map(s => {
+    // ✅ Lọc lại để chỉ lấy học sinh có classId hợp lệ (nếu có filter year)
+    const filteredStudents = students.filter(s => {
+      if (!s.classId) return false; // Bỏ học sinh không có lớp
+      if (year && s.classId.year && String(s.classId.year) !== String(year)) {
+        return false; // Bỏ học sinh có lớp không thuộc năm học được chỉ định
+      }
+      return true;
+    });
+
+    const data = filteredStudents.map(s => {
       const obj = s.toObject();
       obj.parents = obj.parentIds;
       delete obj.parentIds;
@@ -28,8 +88,8 @@ exports.getStudents = async (req, res) => {
 
     res.json(data);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
+    console.error('❌ Lỗi getStudents:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
@@ -631,6 +691,10 @@ exports.promoteStudents = async (req, res) => {
       currentYear, // Năm học hiện tại cần xét (VD: "2024-2025")
       newYear, // Năm học mới (VD: "2025-2026")
       minGPA = 5.0, // Điểm TB tối thiểu để lên lớp
+      minAcademicLevel = 'Yếu', // Học lực tối thiểu (Yếu, Trung bình, Khá, Giỏi) - mặc định: không được Yếu
+      minConduct = 'Yếu', // Hạnh kiểm tối thiểu (Yếu, Trung bình, Khá, Tốt) - mặc định: không được Yếu
+      grade = null, // Khối cụ thể cần xét (10, 11, 12) - null = xét tất cả
+      classId = null, // Lớp cụ thể cần xét - null = xét tất cả
       autoAssignClass = false // Tự động phân lớp cho học sinh lên lớp
     } = req.body;
 
@@ -651,11 +715,21 @@ exports.promoteStudents = async (req, res) => {
 
     console.log(`🚀 [promoteStudents] Bắt đầu xét học sinh lên lớp từ ${currentYear} → ${newYear}`);
 
-    // Lấy tất cả học sinh có currentYear = currentYear và status = active
-    const students = await Student.find({
+    // ✅ Lấy học sinh cần xét: filter theo currentYear, status, grade (nếu có), classId (nếu có)
+    const studentFilter = {
       currentYear: currentYear,
       status: 'active'
-    }).populate('classId', 'className grade year');
+    };
+    
+    if (grade) {
+      studentFilter.grade = String(grade);
+    }
+    
+    if (classId) {
+      studentFilter.classId = classId;
+    }
+    
+    const students = await Student.find(studentFilter).populate('classId', 'className classCode grade year');
 
     if (students.length === 0) {
       return res.status(200).json({
@@ -705,11 +779,29 @@ exports.promoteStudents = async (req, res) => {
 
             const gpa = yearRecord.gpa || 0;
             const academicLevel = yearRecord.academicLevel;
+            const conduct = yearRecord.conduct; // ✅ Hạnh kiểm
 
-            // Điều kiện lên lớp:
+            // ✅ Điều kiện lên lớp (có thể tùy chỉnh qua req.body):
             // 1. GPA >= minGPA (mặc định 5.0)
-            // 2. Học lực không phải "Yếu"
-            const canPromote = gpa >= minGPA && academicLevel !== 'Yếu';
+            // 2. Học lực không phải "Yếu" (hoặc theo yêu cầu)
+            // 3. Hạnh kiểm không phải "Yếu" (hoặc theo yêu cầu)
+            const minAcademicLevel = req.body.minAcademicLevel || 'Yếu'; // Mặc định: không được Yếu
+            const minConduct = req.body.minConduct || 'Yếu'; // Mặc định: không được Yếu
+            
+            // ✅ Kiểm tra học lực: không được thấp hơn minAcademicLevel
+            const academicLevels = ['Yếu', 'Trung bình', 'Khá', 'Giỏi'];
+            const academicLevelIndex = academicLevels.indexOf(academicLevel || 'Yếu');
+            const minAcademicLevelIndex = academicLevels.indexOf(minAcademicLevel);
+            const academicLevelPass = academicLevelIndex >= minAcademicLevelIndex;
+            
+            // ✅ Kiểm tra hạnh kiểm: không được thấp hơn minConduct
+            const conducts = ['Yếu', 'Trung bình', 'Khá', 'Tốt'];
+            const conductIndex = conducts.indexOf(conduct || 'Yếu');
+            const minConductIndex = conducts.indexOf(minConduct);
+            const conductPass = conductIndex >= minConductIndex;
+            
+            // ✅ Điều kiện lên lớp: GPA đạt + Học lực đạt + Hạnh kiểm đạt
+            const canPromote = gpa >= minGPA && academicLevelPass && conductPass;
 
             if (canPromote) {
               // Lên lớp
@@ -729,13 +821,17 @@ exports.promoteStudents = async (req, res) => {
                 student.currentYear = newYear;
                 student.classId = null; // Xóa lớp cũ để phân lớp mới
                 stats.promoted++;
-                console.log(`✅ ${student.name} (${student.studentCode}) - Lớp ${currentGrade} → ${newGrade}, GPA: ${gpa.toFixed(2)}, Học lực: ${academicLevel} → Lên lớp`);
+                console.log(`✅ ${student.name} (${student.studentCode}) - Lớp ${currentGrade} → ${newGrade}, GPA: ${gpa.toFixed(2)}, Học lực: ${academicLevel}, Hạnh kiểm: ${conduct} → Lên lớp`);
               }
             } else {
               // Ở lại lớp
               student.currentYear = newYear;
               stats.retained++;
-              console.log(`⚠️ ${student.name} (${student.studentCode}) - Lớp ${student.grade}, GPA: ${gpa.toFixed(2)}, Học lực: ${academicLevel} → Ở lại lớp`);
+              const reasons = [];
+              if (gpa < minGPA) reasons.push(`GPA ${gpa.toFixed(2)} < ${minGPA}`);
+              if (!academicLevelPass) reasons.push(`Học lực: ${academicLevel}`);
+              if (!conductPass) reasons.push(`Hạnh kiểm: ${conduct}`);
+              console.log(`⚠️ ${student.name} (${student.studentCode}) - Lớp ${student.grade}, GPA: ${gpa.toFixed(2)}, Học lực: ${academicLevel}, Hạnh kiểm: ${conduct} → Ở lại lớp (Lý do: ${reasons.join(', ')})`);
             }
 
             await student.save({ session });

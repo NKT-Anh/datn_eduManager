@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   Select,
@@ -21,40 +20,28 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { assignmentApi } from '@/services/assignmentApi';
 import studentApi from '@/services/studentApi';
+import { classApi } from '@/services/classApi';
 // ✅ Sử dụng hooks thay vì API trực tiếp
 import { useSchoolYears } from '@/hooks';
 import {
   School,
-  Users,
   BookOpen,
-  ChevronDown,
-  ChevronRight,
   Loader2,
-  Hash,
-  AlertCircle,
 } from 'lucide-react';
 import { TeachingAssignment } from '@/types/class';
-
-interface Student {
-  _id: string;
-  name: string;
-  studentCode?: string;
-}
 
 interface ClassWithSubjects {
   classId: string;
   className: string;
   classCode?: string;
   grade: string;
+  year?: string;
+  studentCount?: number;
   subjects: Array<{
     subjectId: string;
     subjectName: string;
     assignmentId: string;
   }>;
-  students?: Student[];
-  isExpanded?: boolean;
-  loadingStudents?: boolean;
-  errorLoadingStudents?: boolean; // ✅ Flag để phân biệt lỗi vs không có học sin
 }
 
 const MyClassesPage = () => {
@@ -124,9 +111,8 @@ const MyClassesPage = () => {
               className,
               classCode,
               grade,
+              year: assignment.classId.year || schoolYear,
               subjects: [],
-              isExpanded: false,
-              loadingStudents: false,
             });
           }
 
@@ -138,13 +124,47 @@ const MyClassesPage = () => {
           });
         });
 
-        setClasses(Array.from(classMap.values()).sort((a, b) => {
+        const classesList = Array.from(classMap.values()).sort((a, b) => {
           // Sắp xếp theo khối rồi tên lớp
           if (a.grade !== b.grade) {
             return a.grade.localeCompare(b.grade);
           }
           return a.className.localeCompare(b.className);
-        }));
+        });
+
+        // ✅ Lấy số học sinh chính xác theo niên khóa và lớp
+        const classesWithStudentCount = await Promise.all(
+          classesList.map(async (classItem) => {
+            try {
+              // Lấy thông tin lớp để có currentSize hoặc lấy từ API
+              const classInfo = await classApi.getById(classItem.classId);
+              let studentCount = classInfo.currentSize || 0;
+
+              // ✅ Nếu currentSize không có hoặc không chính xác, đếm từ Student API theo niên khóa
+              if (!studentCount || studentCount === 0) {
+                const students = await studentApi.getAll({
+                  classId: classItem.classId,
+                  status: 'active',
+                  currentYear: classItem.year || schoolYear,
+                });
+                studentCount = Array.isArray(students) ? students.length : 0;
+              }
+
+              return {
+                ...classItem,
+                studentCount,
+              };
+            } catch (err) {
+              console.error(`Error fetching student count for class ${classItem.classId}:`, err);
+              return {
+                ...classItem,
+                studentCount: 0,
+              };
+            }
+          })
+        );
+
+        setClasses(classesWithStudentCount);
       } catch (err: any) {
         console.error('Error fetching assignments:', err);
         toast({
@@ -159,88 +179,9 @@ const MyClassesPage = () => {
     fetchAssignments();
   }, [backendUser, schoolYear, semester]);
 
-  // Lấy danh sách học sinh khi expand
-  const fetchStudentsForClass = async (classId: string) => {
-    const classIndex = classes.findIndex((c) => c.classId === classId);
-    if (classIndex === -1) return;
-
-    // Đánh dấu đang load và reset error
-    setClasses((prev) =>
-      prev.map((c, idx) => 
-        idx === classIndex 
-          ? { ...c, loadingStudents: true, errorLoadingStudents: false } 
-          : c
-      )
-    );
-
-    try {
-      // ✅ Dùng studentApi để lấy học sinh theo lớp (cho phép giáo viên bộ môn xem)
-      const studentsData = await studentApi.getAll({ classId, status: 'active' });
-      // ✅ studentApi.getAll() trả về mảng trực tiếp, không có wrapper {success, data}
-      const studentsList = Array.isArray(studentsData) ? studentsData : [];
-      setClasses((prev) =>
-        prev.map((c, idx) =>
-          idx === classIndex 
-            ? { 
-                ...c, 
-                students: studentsList.map((s: any) => ({
-                  _id: s._id,
-                  name: s.name,
-                  studentCode: s.studentCode,
-                })), 
-                loadingStudents: false,
-                errorLoadingStudents: false 
-              } 
-            : c
-        )
-      );
-    } catch (err: any) {
-      console.error('Error fetching students:', err);
-      const errorMessage = err?.response?.data?.message || err?.message || 'Không thể tải danh sách học sinh';
-      toast({
-        title: 'Lỗi',
-        description: errorMessage,
-        variant: 'destructive',
-      });
-      // ✅ Đánh dấu lỗi để hiển thị thông báo khác với "không có học sinh"
-      setClasses((prev) =>
-        prev.map((c, idx) => 
-          idx === classIndex 
-            ? { 
-                ...c, 
-                loadingStudents: false, 
-                errorLoadingStudents: true,
-                students: undefined // Xóa students khi có lỗi
-              } 
-            : c
-        )
-      );
-    }
-  };
-
-  const toggleExpand = (classId: string) => {
-    const classIndex = classes.findIndex((c) => c.classId === classId);
-    if (classIndex === -1) return;
-
-    const classItem = classes[classIndex];
-    const isExpanding = !classItem.isExpanded;
-
-    setClasses((prev) =>
-      prev.map((c, idx) =>
-        idx === classIndex ? { ...c, isExpanded: isExpanding } : c
-      )
-    );
-
-    // Nếu đang expand và chưa có danh sách học sinh, thì load
-    if (isExpanding && !classItem.students) {
-      fetchStudentsForClass(classId);
-    }
-  };
-
   // Thống kê
   const totalClasses = classes.length;
   const totalSubjects = new Set(assignments.map((a) => a.subjectId._id)).size;
-  const totalStudents = classes.reduce((sum, c) => sum + (c.students?.length || 0), 0);
 
   if (!backendUser) {
     return (
@@ -260,7 +201,7 @@ const MyClassesPage = () => {
         <div>
           <h1 className="text-3xl font-bold">Lớp giảng dạy của tôi</h1>
           <p className="text-muted-foreground">
-            Xem danh sách các lớp và học sinh bạn đang giảng dạy
+            Xem danh sách các lớp bạn đang giảng dạy
           </p>
         </div>
       </div>
@@ -312,7 +253,7 @@ const MyClassesPage = () => {
       </Card>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Card>
           <CardContent className="p-4 text-center">
             <School className="h-8 w-8 text-primary mx-auto mb-2" />
@@ -327,13 +268,6 @@ const MyClassesPage = () => {
             <p className="text-sm text-muted-foreground">Môn học</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <Users className="h-8 w-8 text-warning mx-auto mb-2" />
-            <p className="text-2xl font-bold">{totalStudents || '-'}</p>
-            <p className="text-sm text-muted-foreground">Tổng học sinh</p>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Classes List */}
@@ -345,142 +279,65 @@ const MyClassesPage = () => {
           </CardContent>
         </Card>
       ) : classes.length > 0 ? (
-        <div className="space-y-4">
-          {classes.map((classItem) => (
-            <Card key={classItem.classId} className="overflow-hidden">
-              <CardHeader
-                className="cursor-pointer hover:bg-muted/50 transition-colors"
-                onClick={() => toggleExpand(classItem.classId)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="p-2 bg-primary/10 rounded-lg">
-                      {classItem.isExpanded ? (
-                        <ChevronDown className="h-5 w-5 text-primary" />
-                      ) : (
-                        <ChevronRight className="h-5 w-5 text-primary" />
-                      )}
-                    </div>
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        <School className="h-5 w-5 text-primary" />
-                        {classItem.className}
-                        {classItem.classCode && (
-                          <span className="text-sm font-normal text-muted-foreground">
-                            ({classItem.classCode})
-                          </span>
-                        )}
-                      </CardTitle>
-                      <CardDescription>
-                        Khối {classItem.grade} • {classItem.subjects.length} môn học
-                        {classItem.students && ` • ${classItem.students.length} học sinh`} • 
-                        Năm học: {schoolYear} • Học kỳ: {semester === "1" ? "1" : "2"}
-                      </CardDescription>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {classItem.subjects.map((subject) => (
-                      <Badge key={subject.subjectId} variant="outline">
-                        {subject.subjectName}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              </CardHeader>
-
-              {classItem.isExpanded && (
-                <CardContent className="border-t">
-                  <div className="space-y-4 mt-4">
-                    {/* Subjects */}
-                    <div>
-                      <h4 className="font-semibold mb-2 flex items-center gap-2">
-                        <BookOpen className="h-4 w-4" />
-                        Môn học giảng dạy
-                      </h4>
-                      <div className="flex flex-wrap gap-2">
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12">STT</TableHead>
+                  <TableHead>Lớp</TableHead>
+                  <TableHead>Khối</TableHead>
+                  <TableHead>Môn học</TableHead>
+                  <TableHead>Năm học</TableHead>
+                  <TableHead>Học kỳ</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {classes.map((classItem, index) => (
+                  <TableRow key={classItem.classId}>
+                    <TableCell>{index + 1}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <School className="h-4 w-4 text-primary" />
+                        <div>
+                          <div className="font-medium">{classItem.className}</div>
+                          {classItem.classCode && (
+                            <div className="text-sm text-muted-foreground">
+                              ({classItem.classCode})
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">Khối {classItem.grade}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
                         {classItem.subjects.map((subject) => (
-                          <Badge key={subject.subjectId} variant="default" className="text-sm">
+                          <Badge key={subject.subjectId} variant="secondary" className="text-xs">
                             {subject.subjectName}
                           </Badge>
                         ))}
                       </div>
-                    </div>
-
-                    {/* Students */}
-                    <div>
-                      <h4 className="font-semibold mb-2 flex items-center gap-2">
-                        <Users className="h-4 w-4" />
-                        Danh sách học sinh
-                        {classItem.students && (
-                          <span className="text-sm font-normal text-muted-foreground">
-                            ({classItem.students.length} học sinh)
-                          </span>
+                    </TableCell>
+                    <TableCell>
+                      <div>
+                        <div>{classItem.year || schoolYear}</div>
+                        {classItem.studentCount !== undefined && (
+                          <div className="text-sm text-muted-foreground">
+                            {classItem.studentCount} học sinh
+                          </div>
                         )}
-                      </h4>
-                      {classItem.loadingStudents ? (
-                        <div className="flex items-center justify-center py-8">
-                          <Loader2 className="h-6 w-6 animate-spin text-primary mr-2" />
-                          <span className="text-muted-foreground">Đang tải danh sách học sinh...</span>
-                        </div>
-                      ) : classItem.errorLoadingStudents ? (
-                        // ✅ Hiển thị thông báo lỗi khi không tải được
-                        <div className="text-center py-8 border rounded-lg border-destructive/50 bg-destructive/5">
-                          <AlertCircle className="h-8 w-8 mx-auto mb-2 text-destructive" />
-                          <p className="text-destructive font-medium">Không thể tải danh sách học sinh</p>
-                          <p className="text-sm text-muted-foreground mt-1">
-                            Vui lòng thử lại sau hoặc liên hệ quản trị viên
-                          </p>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="mt-3"
-                            onClick={() => fetchStudentsForClass(classItem.classId)}
-                          >
-                            <Loader2 className="h-4 w-4 mr-2" />
-                            Thử lại
-                          </Button>
-                        </div>
-                      ) : classItem.students && classItem.students.length > 0 ? (
-                        // ✅ Hiển thị danh sách học sinh khi có dữ liệu
-                        <div className="border rounded-lg overflow-hidden">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="w-12">STT</TableHead>
-                                <TableHead>Mã học sinh</TableHead>
-                                <TableHead>Họ và tên</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {classItem.students.map((student, index) => (
-                                <TableRow key={student._id}>
-                                  <TableCell>{index + 1}</TableCell>
-                                  <TableCell>
-                                    <div className="flex items-center gap-1">
-                                      <Hash className="h-3 w-3 text-muted-foreground" />
-                                      {student.studentCode || 'Chưa có mã'}
-                                    </div>
-                                  </TableCell>
-                                  <TableCell className="font-medium">{student.name}</TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      ) : (
-                        // ✅ Hiển thị thông báo khi không có học sinh (đã load thành công nhưng rỗng)
-                        <div className="text-center py-8 text-muted-foreground border rounded-lg">
-                          <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                          <p>Chưa có học sinh trong lớp này</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              )}
-            </Card>
-          ))}
-        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>Học kỳ {semester}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       ) : (
         <Card>
           <CardContent className="p-12 text-center">

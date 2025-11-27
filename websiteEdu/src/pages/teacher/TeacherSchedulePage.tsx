@@ -5,9 +5,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { scheduleApi } from '@/services/scheduleApi';
 import { getScheduleConfig } from '@/services/scheduleConfigApi';
 import { ViewSchedule } from '@/components/schedule/ViewSchedule';
-import { Calendar, Users, Loader2 } from 'lucide-react';
+import { Calendar, Users, Loader2, Lock, Unlock } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { ScheduleConfig } from '@/types/schedule';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 const TeacherSchedulePage = () => {
   const { backendUser } = useAuth();
@@ -16,6 +17,7 @@ const TeacherSchedulePage = () => {
   const [config, setConfig] = useState<ScheduleConfig | null>(null);
   const [schoolYear, setSchoolYear] = useState<string>('');
   const [semester, setSemester] = useState<string>('1');
+  const [publishState, setPublishState] = useState<'locked' | 'pending' | null>(null);
 
   useEffect(() => {
     const fetchConfig = async () => {
@@ -37,16 +39,22 @@ const TeacherSchedulePage = () => {
   }, []);
 
   useEffect(() => {
-    if (backendUser?.name && schoolYear) {
-      fetchSchedules(backendUser.name, schoolYear, semester);
+    const teacherId = typeof backendUser?.teacherId === 'object' && backendUser?.teacherId !== null
+      ? (backendUser.teacherId as any)._id
+      : backendUser?.teacherId;
+    
+    if (teacherId && schoolYear) {
+      fetchSchedules(teacherId, schoolYear, semester);
     }
   }, [backendUser, schoolYear, semester]);
 
-  const fetchSchedules = async (teacherName: string, year: string, sem: string) => {
+  const fetchSchedules = async (teacherId: string, year: string, sem: string) => {
     try {
       setLoading(true);
-      const data = await scheduleApi.getScheduleByTeacher(teacherName, year, sem);
-      setSchedules(Array.isArray(data) ? data : []);
+      const data = await scheduleApi.getScheduleByTeacher(teacherId, year, sem);
+      const parsed = Array.isArray(data) ? data : [];
+      setSchedules(parsed);
+      setPublishState(parsed.length > 0 ? 'locked' : 'pending');
     } catch (err: any) {
       console.error('Error fetching schedules:', err);
       if (err.response?.status !== 404) {
@@ -57,6 +65,7 @@ const TeacherSchedulePage = () => {
         });
       }
       setSchedules([]);
+      setPublishState('pending');
     } finally {
       setLoading(false);
     }
@@ -161,6 +170,26 @@ const TeacherSchedulePage = () => {
           </Select>
         </div>
       </div>
+
+      {!loading && publishState === 'locked' && (
+        <Alert className="border-green-200 bg-green-50 text-green-800">
+          <Lock className="h-4 w-4" />
+          <AlertTitle>Lịch giảng dạy đã được công bố</AlertTitle>
+          <AlertDescription>
+            Dữ liệu bên dưới chỉ bao gồm các thời khóa biểu đã được BGH khóa, đảm bảo học sinh và giáo viên nhìn thấy cùng một nội dung.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {!loading && publishState === 'pending' && (
+        <Alert className="border-amber-200 bg-amber-50 text-amber-800">
+          <Unlock className="h-4 w-4" />
+          <AlertTitle>Chưa có lịch giảng dạy được công bố</AlertTitle>
+          <AlertDescription>
+            Khi các lớp bạn phụ trách được khóa thời khóa biểu, lịch giảng dạy sẽ tự động xuất hiện tại đây.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {loading ? (
         <Card>

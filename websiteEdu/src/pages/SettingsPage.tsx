@@ -756,6 +756,67 @@ const SettingsPage = () => {
   </CardContent>
 </Card>
 
+        {/* ✅ Thời gian nhập hạnh kiểm */}
+        <Card className="shadow-card border-border">
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <BookOpen className="h-5 w-5 text-primary" />
+              <span>Thời gian nhập hạnh kiểm</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Thiết lập khoảng thời gian giáo viên chủ nhiệm có thể nhập và chỉnh sửa hạnh kiểm
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <Label>Ngày bắt đầu HK1</Label>
+                <Input
+                  type="date"
+                  value={settings.conductEntryStartHK1 || ''}
+                  onChange={(e) => handleChange('conductEntryStartHK1', e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Ngày kết thúc HK1</Label>
+                <Input
+                  type="date"
+                  value={settings.conductEntryEndHK1 || ''}
+                  onChange={(e) => handleChange('conductEntryEndHK1', e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Ngày bắt đầu HK2</Label>
+                <Input
+                  type="date"
+                  value={settings.conductEntryStartHK2 || ''}
+                  onChange={(e) => handleChange('conductEntryStartHK2', e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Ngày kết thúc HK2</Label>
+                <Input
+                  type="date"
+                  value={settings.conductEntryEndHK2 || ''}
+                  onChange={(e) => handleChange('conductEntryEndHK2', e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-3 border border-border rounded-lg bg-muted/30 mt-3">
+              <div>
+                <Label>Cho phép admin/BGH nhập hạnh kiểm ngoài thời gian</Label>
+                <p className="text-sm text-muted-foreground">Admin/BGH luôn có quyền nhập hạnh kiểm</p>
+              </div>
+              <Switch
+                checked={!!settings.allowAdminConductOverride}
+                onCheckedChange={(v) => handleChange('allowAdminConductOverride', v)}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Email */}
         <Card className="lg:col-span-2 shadow-card border-border">
           <CardHeader>

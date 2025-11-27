@@ -74,6 +74,19 @@ router.get("/exam/:examId",
   ctrl.getGradesByExam
 );
 
+// 🚀 Công bố điểm - Trưởng bộ môn / BGH
+router.post("/exam/:examId/publish",
+  auth,
+  ctrl.publishExamGrades
+);
+
+// 📊 Thống kê điểm cho Trưởng bộ môn (QLBM)
+router.get("/department-head/stats",
+  auth,
+  checkPermission([PERMISSIONS.GRADE_VIEW_DEPARTMENT], { checkContext: false }),
+  ctrl.getDepartmentHeadStats
+);
+
 // ➕ Nhập / Cập nhật điểm 1 học sinh - GVBM (môn mình dạy) hoặc Admin
 router.post("/", 
   auth, 

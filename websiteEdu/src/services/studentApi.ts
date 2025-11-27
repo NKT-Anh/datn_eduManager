@@ -96,11 +96,26 @@ const studentApi = {
     return res.data;
   },
   // 📘 Phân lớp tự động cho học sinh (backend sẽ chia đều theo khối + năm học)
-async autoAssignToClasses(year: string) {
-  const res = await api.post("/students/auto-assign", { year });
-  return res.data;
-},
+  async autoAssignToClasses(year: string) {
+    const res = await api.post("/students/auto-assign", { year });
+    return res.data;
+  },
 
+  // 📈 Xét học sinh lên lớp và cập nhật năm học
+  async promoteStudents(data: {
+    currentYear: string;
+    newYear: string;
+    grade?: string | null;
+    classId?: string | null;
+    minGPA?: number;
+    minAcademicLevel?: string;
+    minConduct?: string;
+    autoAssignClass?: boolean;
+  }) {
+    const res = await api.post("/students/promote", data);
+    return res.data;
+  },
 };
+
 
 export default studentApi;

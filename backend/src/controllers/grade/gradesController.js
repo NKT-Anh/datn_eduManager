@@ -540,9 +540,14 @@ exports.initGradeTable = async (req, res) => {
     for (const classItem of classes) {
       const classId = classItem._id;
       const grade = classItem.grade;
+      const classYear = classItem.year; // ✅ Năm học của lớp
 
-      // Lấy tất cả học sinh trong lớp
-      const students = await Student.find({ classId, status: 'active' }).lean();
+      // ✅ Lấy tất cả học sinh trong lớp - CHỈ lấy học sinh của niên khóa tương ứng
+      const students = await Student.find({ 
+        classId, 
+        status: 'active',
+        currentYear: classYear // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+      }).lean();
       if (students.length === 0) {
         continue;
       }
@@ -741,8 +746,38 @@ exports.getAllStudentsGrades = async (req, res) => {
       ];
     }
 
-    // Get students
-    const students = await Student.find(studentQuery).populate('classId', 'className classCode grade').lean();
+    // ✅ Get students - Filter by currentYear if schoolYear is provided
+    if (schoolYear && studentQuery.classId) {
+      // Nếu có classId, lấy năm học của lớp và filter theo currentYear
+      const classInfo = await Class.findById(studentQuery.classId).select('year').lean();
+      if (classInfo) {
+        studentQuery.currentYear = classInfo.year;
+      }
+    } else if (schoolYear && studentQuery.classId && studentQuery.classId.$in) {
+      // Nếu có nhiều classId, lấy năm học của các lớp và filter
+      const classes = await Class.find({ _id: { $in: studentQuery.classId.$in } }).select('year').lean();
+      const classYears = [...new Set(classes.map(c => c.year).filter(Boolean))];
+      if (classYears.length === 1) {
+        studentQuery.currentYear = classYears[0];
+      }
+    }
+    
+    const students = await Student.find(studentQuery)
+      .populate({
+        path: 'classId',
+        select: 'className classCode grade year',
+        match: schoolYear ? { year: schoolYear } : {}
+      })
+      .lean();
+    
+    // ✅ Lọc lại để chỉ lấy học sinh có classId hợp lệ và đúng năm học (nếu có schoolYear)
+    const validStudents = students.filter(s => {
+      if (!s.classId) return false;
+      if (schoolYear && s.classId.year && String(s.classId.year) !== String(schoolYear)) {
+        return false;
+      }
+      return true;
+    });
     const studentIds = students.map(s => s._id);
 
     // Build summary query
@@ -771,7 +806,7 @@ exports.getAllStudentsGrades = async (req, res) => {
 
     // Group by student
     const studentMap = new Map();
-    students.forEach(s => {
+    validStudents.forEach(s => {
       studentMap.set(String(s._id), {
         _id: s._id,
         name: s.name,
@@ -863,9 +898,33 @@ exports.getStatistics = async (req, res) => {
     const classes = await Class.find(classQuery).lean();
     const classIds = classes.map(c => c._id);
 
-    // Get students in these classes
-    const students = await Student.find({ classId: { $in: classIds } }).lean();
-    const studentIds = students.map(s => s._id);
+    // ✅ Get students in these classes - Filter by currentYear if schoolYear is provided
+    let studentQuery = { classId: { $in: classIds } };
+    if (schoolYear) {
+      // Lấy năm học của các lớp
+      const classYears = [...new Set(classes.map(c => c.year).filter(Boolean))];
+      if (classYears.length === 1) {
+        studentQuery.currentYear = classYears[0];
+      }
+    }
+    
+    const students = await Student.find(studentQuery)
+      .populate({
+        path: 'classId',
+        select: 'className classCode grade year',
+        match: schoolYear ? { year: schoolYear } : {}
+      })
+      .lean();
+    
+    // ✅ Lọc lại để chỉ lấy học sinh có classId hợp lệ và đúng năm học (nếu có schoolYear)
+    const validStudents2 = students.filter(s => {
+      if (!s.classId) return false;
+      if (schoolYear && s.classId.year && String(s.classId.year) !== String(schoolYear)) {
+        return false;
+      }
+      return true;
+    });
+    const studentIds = validStudents2.map(s => s._id);
 
     // Get grade summaries
     let summaryQuery = { studentId: { $in: studentIds } };
@@ -896,7 +955,7 @@ exports.getStatistics = async (req, res) => {
         good: 0,
         average: 0,
         weak: 0,
-        total: students.length
+        total: validStudents.length
       }
     };
 
@@ -1145,12 +1204,32 @@ exports.getHomeroomClassAllGrades = async (req, res) => {
       });
     }
 
-    // Lấy tất cả học sinh trong lớp
-    const students = await Student.find({ classId, status: 'active' })
-      .populate('classId', 'className classCode grade')
+    // ✅ Lấy thông tin lớp để lấy năm học
+    const classInfo = await Class.findById(classId).select('year').lean();
+    if (!classInfo) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy lớp học' });
+    }
+    
+    // ✅ Lấy tất cả học sinh trong lớp - CHỈ lấy học sinh của niên khóa tương ứng
+    const students = await Student.find({ 
+      classId, 
+      status: 'active',
+      currentYear: classInfo.year // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+    })
+      .populate({
+        path: 'classId',
+        select: 'className classCode grade year',
+        match: { year: classInfo.year } // ✅ Đảm bảo lớp thuộc năm học đúng
+      })
       .lean();
+    
+    // ✅ Lọc lại để chỉ lấy học sinh có classId hợp lệ và đúng năm học
+    const validStudents = students.filter(s => {
+      if (!s.classId) return false;
+      return String(s.classId.year || classInfo.year) === String(classInfo.year);
+    });
 
-    if (students.length === 0) {
+    if (validStudents.length === 0) {
       return res.json({ 
         success: true, 
         count: 0, 
@@ -1159,7 +1238,7 @@ exports.getHomeroomClassAllGrades = async (req, res) => {
       });
     }
 
-    const studentIds = students.map(s => s._id);
+    const studentIds = validStudents.map(s => s._id);
 
     // Lấy tất cả điểm của học sinh trong lớp (tất cả môn)
     const gradeSummaries = await GradeSummary.find({
@@ -1183,7 +1262,7 @@ exports.getHomeroomClassAllGrades = async (req, res) => {
 
     // Nhóm điểm theo học sinh
     const studentMap = new Map();
-    students.forEach(student => {
+    validStudents.forEach(student => {
       studentMap.set(String(student._id), {
         _id: student._id,
         name: student.name,
@@ -1536,7 +1615,7 @@ exports.getHomeroomClassClassification = async (req, res) => {
       .lean();
 
     // Tính điểm trung bình và học lực cho từng học sinh
-    const result = students.map(student => {
+    const result = validStudents2.map(student => {
       const studentId = String(student._id);
       
       // Tìm record tương ứng

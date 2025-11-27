@@ -50,9 +50,9 @@ export const scheduleApi = {
     const res = await api.get(`/schedules/grade/${grade}/year/${year}/semester/${semester}`);
     return res.data;
   },
-  // 🆕 🧩 Lấy TKB theo giáo viên
-  getScheduleByTeacher: async (teacherName: string, year: string, semester: string) => {
-    const res = await api.get(`/schedules/teacher/${encodeURIComponent(teacherName)}/${year}/${semester}`);
+  // 🆕 🧩 Lấy TKB theo giáo viên (theo teacherId để tránh trùng tên)
+  getScheduleByTeacher: async (teacherId: string, year: string, semester: string) => {
+    const res = await api.get(`/schedules/teacher/${teacherId}/${year}/${semester}`);
     return res.data;
   },
 saveOrUpdateSchedule: async (payload: SchedulePayload) => {

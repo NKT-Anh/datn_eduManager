@@ -52,6 +52,7 @@ import HomeroomClassPage from "./pages/gvcn/HomeroomClassPage.tsx";
 import HomeroomGradesPage from "./pages/gvcn/HomeroomGradesPage.tsx";
 import HomeroomAttendancePage from "./pages/gvcn/HomeroomAttendancePage.tsx";
 import HomeroomConductPage from "./pages/gvcn/HomeroomConductPage.tsx";
+import HomeroomDashboard from "./pages/gvcn/HomeroomDashboard.tsx";
 
 // 👩‍🏫 Teacher Pages
 import TeacherDashboard from "./pages/teacher/TeacherDashboard";
@@ -91,6 +92,7 @@ import StudentAttendancePage from "./pages/student/StudentAttendancePage";
 // 👨‍🏫 Teacher Exam Pages
 import SupervisorSchedule from "./pages/teacher/exams/SupervisorSchedule";
 import SupervisorRooms from "./pages/teacher/exams/SupervisorRooms";
+import TeacherExamGradePage from "./pages/teacher/exams/TeacherExamGradePage";
 
 // 👩‍🎓 Student Exam Pages
 import StudentSchedule from "./pages/student/exams/StudentSchedule";
@@ -162,6 +164,7 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/teacher/profile", element: <ProfilePage /> },
     { path: "/teacher/exams/supervisor-schedule", element: <SupervisorSchedule /> },
     { path: "/teacher/exams/supervisor-rooms", element: <SupervisorRooms /> },
+    { path: "/teacher/exams/enter-grades", element: <TeacherExamGradePage /> },
   ],
   student: [
     { path: "/student/home", element: <StudentDashboard /> },
@@ -186,27 +189,29 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/qlbm/teaching-assignments", element: <TeachingAssignmentsPage /> },
     { path: "/qlbm/my-classes", element: <MyClassesPage /> },
     { path: "/qlbm/schedule", element: <TeacherSchedulePage /> },
-    { path: "/qlbm/schedule-weekly", element: <TeacherSchedulePage /> },
     { path: "/qlbm/grades", element: <TeacherEnterGradesPage /> },
+    { path: "/qlbm/exams", element: <ExamListPage /> },
+    { path: "/qlbm/exams/supervisor-schedule", element: <SupervisorSchedule /> },
+    { path: "/qlbm/exams/supervisor-rooms", element: <SupervisorRooms /> },
+    { path: "/qlbm/exams/enter-grades", element: <TeacherExamGradePage /> },
     { path: "/qlbm/profile", element: <ProfilePage /> },
-    { path: "/qlbm/settings", element: <SettingsPage /> },
   ],
   // GVCN (Giáo viên chủ nhiệm) - sử dụng lại pages từ teacher
   gvcn: [
-    { path: "/gvcn/home", element: <TeacherDashboard /> },
+    { path: "/gvcn/home", element: <HomeroomDashboard /> },
     { path: "/gvcn/homeroom-class", element: <HomeroomClassPage /> },
     { path: "/gvcn/homeroom-grades", element: <HomeroomGradesPage /> },
     { path: "/gvcn/attendance", element: <HomeroomAttendancePage /> },
     { path: "/gvcn/my-classes", element: <MyClassesPage /> },
     { path: "/gvcn/students", element: <StudentsList /> },
     { path: "/gvcn/schedule", element: <TeacherSchedulePage /> },
-    { path: "/gvcn/schedule-weekly", element: <TeacherSchedulePage /> },
     { path: "/gvcn/grades", element: <TeacherEnterGradesPage /> },
     { path: "/gvcn/conduct", element: <HomeroomConductPage /> },
-    { path: "/gvcn/exams", element: <ExamListPage /> },
+    { path: "/gvcn/exams/supervisor-schedule", element: <SupervisorSchedule /> },
+    { path: "/gvcn/exams/supervisor-rooms", element: <SupervisorRooms /> },
+    { path: "/gvcn/exams/enter-grades", element: <TeacherExamGradePage /> },
     { path: "/gvcn/incidents", element: <BGHIncidentsPage /> },
     { path: "/gvcn/profile", element: <ProfilePage /> },
-    { path: "/gvcn/settings", element: <SettingsPage /> },
   ],
   // GVBM (Giáo viên bộ môn) - sử dụng lại pages từ teacher
   gvbm: [
@@ -219,6 +224,7 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/gvbm/exams", element: <ExamListPage /> },
     { path: "/gvbm/exams/supervisor-schedule", element: <SupervisorSchedule /> },
     { path: "/gvbm/exams/supervisor-rooms", element: <SupervisorRooms /> },
+    { path: "/gvbm/exams/enter-grades", element: <TeacherExamGradePage /> },
     { path: "/gvbm/profile", element: <ProfilePage /> },
   ],
   // BGH (Ban giám hiệu)

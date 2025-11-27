@@ -138,6 +138,9 @@ exports.updateConduct = async (req, res) => {
       return res.status(404).json({ error: 'Không tìm thấy hạnh kiểm' });
     }
     
+    // ✅ Admin/BGH: Luôn được phép nhập (có thể override thời gian)
+    const isAdminOrBGH = role === 'admin' || role === 'bgh';
+    
     // Teacher với isHomeroom flag: Nhập hạnh kiểm lớp chủ nhiệm
     if (role === 'teacher') {
       // Kiểm tra permission context từ middleware
@@ -154,7 +157,7 @@ exports.updateConduct = async (req, res) => {
         return res.status(403).json({ error: 'Không phải lớp chủ nhiệm của bạn' });
       }
       
-      // ✅ Kiểm tra trạng thái locked
+      // ✅ Kiểm tra trạng thái locked (GVCN không thể sửa khi đã locked)
       const locked = await isConductLocked(record, false);
       if (locked) {
         return res.status(403).json({ 
@@ -212,8 +215,8 @@ exports.updateConduct = async (req, res) => {
       // Xử lý trong hàm approveConduct riêng
       return res.status(400).json({ error: 'Vui lòng sử dụng API phê duyệt hạnh kiểm' });
     }
-    // Admin: Có thể sửa tất cả (override)
-    else if (role === 'admin') {
+    // ✅ Admin/BGH: Có thể sửa tất cả (override thời gian và locked)
+    else if (isAdminOrBGH) {
       const { gpa, rank, note, conductStatus } = req.body;
       
       if (conduct) {
@@ -227,7 +230,7 @@ exports.updateConduct = async (req, res) => {
       if (note !== undefined) record.note = note;
       if (conductNote !== undefined) record.conductNote = conductNote;
       
-      // Admin có thể thay đổi trạng thái (mở khóa)
+      // Admin/BGH có thể thay đổi trạng thái (mở khóa)
       if (conductStatus && ['draft', 'pending', 'approved', 'locked'].includes(conductStatus)) {
         record.conductStatus = conductStatus;
         if (conductStatus === 'locked') {

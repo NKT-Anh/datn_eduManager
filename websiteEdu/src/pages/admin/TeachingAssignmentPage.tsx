@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { X, BookOpen, Loader2, AlertTriangle, Search, FileText, ChevronDown, ChevronUp, CheckCircle, XCircle, Clock, Lock } from "lucide-react";
+import { X, BookOpen, Loader2, AlertTriangle, Search, FileText, ChevronDown, ChevronUp, CheckCircle, XCircle, Clock, Lock, Send } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { proposalApi, TeachingAssignmentProposal } from "@/services/proposalApi";
@@ -130,6 +130,7 @@ export default function TeachingAssignmentPage() {
   const [showAutoCheckCard, setShowAutoCheckCard] = useState(true);
   const [classPeriodsMap, setClassPeriodsMap] = useState<Record<string, number>>({}); // { "subjectId_classId": periods }
   const [assignmentLocks, setAssignmentLocks] = useState<Record<string, { gradeCount: number; locked: boolean }>>({}); // { assignmentId: { gradeCount, locked } }
+  const [publishing, setPublishing] = useState(false);
 
   const form = useForm<AssignmentFormData>({
     resolver: zodResolver(assignmentSchema),
@@ -794,6 +795,25 @@ const handleCheckMissingTeachers = async () => {
             <Search className="h-4 w-4 mr-2" />
             Kiểm tra môn thiếu giáo viên
           </Button>
+          {filterYear && filterSemester && (
+            <Button 
+              variant="default" 
+              onClick={handlePublishAssignments}
+              disabled={publishing}
+            >
+              {publishing ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Đang công bố...
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4 mr-2" />
+                  Công bố phân công
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1435,6 +1455,11 @@ const handleCheckMissingTeachers = async () => {
                                             {isLocked && (
                                               <div className="absolute -top-1 -right-1 z-10 bg-yellow-500 text-white rounded-full p-1 shadow-md" title={`Đã có ${gradeCount} điểm - Không thể thay đổi`}>
                                                 <Lock className="h-3 w-3" />
+                                              </div>
+                                            )}
+                                            {cellAssignment?.isPublished && (
+                                              <div className="absolute -top-1 -left-1 z-10 bg-green-500 text-white rounded-full p-1 shadow-md" title="Đã công bố cho giáo viên">
+                                                <CheckCircle className="h-3 w-3" />
                                               </div>
                                             )}
                                             <Select

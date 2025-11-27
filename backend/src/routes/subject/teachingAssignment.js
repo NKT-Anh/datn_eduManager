@@ -191,4 +191,16 @@ router.get("/lock-status",
   teachingAssignmentController.getLockStatus
 );
 
+// ✅ Công bố phân công giảng dạy - Chỉ Admin
+router.post("/publish", 
+  authMiddleware, 
+  checkPermission(PERMISSIONS.TEACHING_ASSIGNMENT_UPDATE), 
+  auditLog({
+    action: 'PUBLISH',
+    resource: 'TEACHING_ASSIGNMENT',
+    getDescription: (req) => `Công bố phân công giảng dạy: ${req.body.year} - HK${req.body.semester}`,
+  }),
+  teachingAssignmentController.publishAssignments
+);
+
 module.exports = router;

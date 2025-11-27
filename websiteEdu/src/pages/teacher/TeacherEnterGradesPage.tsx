@@ -309,7 +309,8 @@ const TeacherEnterGradesPage: React.FC = () => {
             quiz15: averages.quiz15 ?? st.quiz15 ?? undefined,
             quiz45: averages.quiz45 ?? st.quiz45 ?? undefined,
             midterm: averages.midterm ?? st.midterm ?? undefined,
-            final: averages.final ?? st.final ?? st.average ?? undefined,
+            // ✅ Điểm cuối kỳ: CHỈ lấy từ điểm thi cuối kỳ (final), KHÔNG fallback về điểm TB môn (average)
+            final: averages.final ?? st.final ?? undefined,
             average: st.average,
             averages: st.averages || {},
             // ✅ Lấy gradeItems từ backend (mảng điểm riêng lẻ cho mỗi component)
