@@ -372,6 +372,44 @@ const getAvailableSubjects = (classId: string, year: string, semester: string) =
       alert("Có lỗi xảy ra khi xóa phân công");
     }
   };
+
+  // ✅ Hàm công bố phân công giảng dạy
+  const handlePublishAssignments = async () => {
+    if (!filterYear || !filterSemester) {
+      toast({
+        title: "Lỗi",
+        description: "Vui lòng chọn năm học và học kỳ",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setPublishing(true);
+      const result = await assignmentApi.publish({
+        year: filterYear,
+        semester: filterSemester,
+      });
+      
+      toast({
+        title: "✅ Thành công",
+        description: result.message || `Đã công bố ${result.publishedCount} phân công giảng dạy`,
+      });
+      
+      // Refresh danh sách assignments
+      refetchAssignments();
+    } catch (error: any) {
+      console.error("❌ Lỗi khi công bố phân công:", error);
+      toast({
+        title: "Lỗi",
+        description: error.response?.data?.error || "Không thể công bố phân công giảng dạy",
+        variant: "destructive",
+      });
+    } finally {
+      setPublishing(false);
+    }
+  };
+
 const availableYears = useMemo(() => {
   const yearList = [
     ...schoolYears.map((y) => y.code),
@@ -747,10 +785,6 @@ const handleCheckMissingTeachers = async () => {
     setCheckMissingLoading(false);
   }
 };
-
-
-
-
 
   // Filter
   // const filteredAssignments = useMemo(() => {

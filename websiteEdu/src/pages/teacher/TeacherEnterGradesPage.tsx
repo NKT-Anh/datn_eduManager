@@ -223,15 +223,20 @@ const TeacherEnterGradesPage: React.FC = () => {
 
         setSubjects(uniqueSubjects);
 
-        // ✅ Nếu chưa chọn môn học và có môn học, tự động chọn môn đầu tiên
-        if (!selectedSubject && uniqueSubjects.length > 0) {
-          setSelectedSubject(uniqueSubjects[0]._id);
-        }
-
-        // ✅ Reset selected nếu không còn tồn tại trong danh sách
-        if (!uniqueSubjects.find(s => s._id === selectedSubject)) {
+        // ✅ Tự động chọn môn học đầu tiên nếu:
+        // 1. Chưa có môn học nào được chọn, HOẶC
+        // 2. Môn học hiện tại không còn trong danh sách
+        if (uniqueSubjects.length > 0) {
+          const currentSubjectExists = selectedSubject && uniqueSubjects.find(s => s._id === selectedSubject);
+          if (!currentSubjectExists) {
+            // Tự động chọn môn học đầu tiên
+            setSelectedSubject(uniqueSubjects[0]._id);
+            setSelectedClass(""); // Reset lớp khi môn học thay đổi
+          }
+        } else {
+          // Nếu không có môn học nào, reset
           setSelectedSubject("");
-          setSelectedClass(""); // Reset lớp khi môn học thay đổi
+          setSelectedClass("");
         }
 
       } catch (err) {
@@ -272,13 +277,17 @@ const TeacherEnterGradesPage: React.FC = () => {
 
     setClasses(uniqueClasses);
 
-    // ✅ Nếu chưa chọn lớp và có lớp, tự động chọn lớp đầu tiên
-    if (!selectedClass && uniqueClasses.length > 0) {
-      setSelectedClass(uniqueClasses[0]._id);
-    }
-
-    // ✅ Reset selected nếu không còn tồn tại trong danh sách
-    if (!uniqueClasses.find(c => c._id === selectedClass)) {
+    // ✅ Tự động chọn lớp đầu tiên nếu:
+    // 1. Chưa có lớp nào được chọn, HOẶC
+    // 2. Lớp hiện tại không còn trong danh sách
+    if (uniqueClasses.length > 0) {
+      const currentClassExists = selectedClass && uniqueClasses.find(c => c._id === selectedClass);
+      if (!currentClassExists) {
+        // Tự động chọn lớp đầu tiên
+        setSelectedClass(uniqueClasses[0]._id);
+      }
+    } else {
+      // Nếu không có lớp nào, reset
       setSelectedClass("");
     }
   }, [selectedSubject, allAssignments, selectedClass]);

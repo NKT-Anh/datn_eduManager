@@ -80,7 +80,8 @@ exports.getStudents = async (req, res) => {
     });
 
     const data = filteredStudents.map(s => {
-      const obj = s.toObject();
+      // ✅ Vì đã dùng .lean(), s đã là plain object, không cần .toObject()
+      const obj = { ...s }; // Tạo copy của object
       obj.parents = obj.parentIds;
       delete obj.parentIds;
       return obj;
@@ -101,11 +102,13 @@ exports.getStudentById = async (req, res) => {
     const student = await Student.findById(req.params.id)
       .populate({ path: 'accountId', select: 'email phone role' })
       .populate({ path: 'classId', select: 'className grade' })
-      .populate({ path: 'parentIds', select: 'name phone relation occupation' });
+      .populate({ path: 'parentIds', select: 'name phone relation occupation' })
+      .lean();
 
     if (!student) return res.status(404).json({ message: 'Student not found' });
 
-    const obj = student.toObject();
+    // ✅ Vì đã dùng .lean(), student đã là plain object, không cần .toObject()
+    const obj = { ...student }; // Tạo copy của object
     obj.parents = obj.parentIds;
     delete obj.parentIds;
     res.json(obj);
