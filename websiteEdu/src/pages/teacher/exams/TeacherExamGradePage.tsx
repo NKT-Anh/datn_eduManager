@@ -29,6 +29,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { assignmentApi } from "@/services/assignmentApi";
 import { useSchoolYears } from "@/hooks";
+import { useCurrentAcademicYear } from "@/hooks/useCurrentAcademicYear";
 
 const { Option } = Select;
 const { Title, Text } = Typography;
@@ -36,7 +37,7 @@ const { Title, Text } = Typography;
 export default function TeacherExamGradePage() {
   const { backendUser } = useAuth();
   const { hasPermission, PERMISSIONS } = usePermissions();
-  const { currentYear } = useSchoolYears();
+  const { currentYearCode } = useCurrentAcademicYear();
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
@@ -53,7 +54,7 @@ export default function TeacherExamGradePage() {
   // Lấy danh sách phân công giảng dạy của giáo viên
   useEffect(() => {
     const fetchAssignments = async () => {
-      if (!backendUser || !currentYear) return;
+      if (!backendUser || !currentYearCode) return;
       
       const teacherId = typeof backendUser.teacherId === 'object' && backendUser.teacherId !== null
         ? (backendUser.teacherId as any)._id
@@ -63,7 +64,7 @@ export default function TeacherExamGradePage() {
 
       try {
         const res = await assignmentApi.getByTeacher(teacherId, {
-          year: currentYear,
+          year: currentYearCode,
         });
         setAssignments(Array.isArray(res) ? res : []);
       } catch (err) {
@@ -72,12 +73,12 @@ export default function TeacherExamGradePage() {
     };
 
     fetchAssignments();
-  }, [backendUser, currentYear]);
+  }, [backendUser, currentYearCode]);
 
   // Lấy danh sách kỳ thi (chỉ các kỳ thi có môn học mà giáo viên dạy)
   useEffect(() => {
     const fetchExams = async () => {
-      if (!currentYear || assignments.length === 0) {
+      if (!currentYearCode || assignments.length === 0) {
         setExams([]);
         return;
       }
@@ -85,7 +86,7 @@ export default function TeacherExamGradePage() {
       try {
         setLoading(true);
         const res = await examApi.getAll({
-          year: currentYear,
+          year: currentYearCode,
           status: "published",
         });
 
@@ -124,7 +125,7 @@ export default function TeacherExamGradePage() {
     };
 
     fetchExams();
-  }, [currentYear, assignments, selectedExamId]);
+  }, [currentYearCode, assignments, selectedExamId]);
 
   // Lấy danh sách môn học từ kỳ thi và phân công
   const availableSubjects = useMemo(() => {

@@ -42,6 +42,13 @@ const ScheduleSchema = new mongoose.Schema(
       default: false,
       index: true 
     },
+
+    // ✅ Soft Delete - Không xóa thật vì liên quan đến lịch sử thời khóa biểu
+    isDeleted: {
+      type: Boolean,
+      default: false,
+      description: 'Đánh dấu xóa mềm - giữ lịch sử thời khóa biểu'
+    },
   },
   { timestamps: true }
 );

@@ -11,6 +11,7 @@ import conductApi from "@/services/conductApi";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { ClipboardList, Edit } from "lucide-react";
 import { useSchoolYears } from "@/hooks";
 import schoolConfigApi from "@/services/schoolConfigApi";
@@ -28,8 +29,12 @@ interface Conduct {
   year: string;
   semester: string;
   conduct: string;
-  gpa: number;
-  rank: number;
+  conductNote?: string;
+  conductStatus?: 'draft' | 'pending' | 'approved' | 'locked';
+  gpa?: number;
+  rank?: number; // rank lưu trong DB (nếu có)
+  computedRank?: number; // rank tính động từ gpa trên frontend
+  note?: string;
 }
 
 /**
@@ -49,6 +54,11 @@ export default function ConductPage() {
   const [semesters, setSemesters] = useState<{ code: string; name: string }[]>([]);
   const [editingConduct, setEditingConduct] = useState<Conduct | null>(null);
   const [editConduct, setEditConduct] = useState<string>("");
+  const [editConductNote, setEditConductNote] = useState<string>("");
+  const [editGpa, setEditGpa] = useState<number | undefined>(undefined);
+  const [editRank, setEditRank] = useState<number | undefined>(undefined);
+  const [editNote, setEditNote] = useState<string>("");
+  const [editConductStatus, setEditConductStatus] = useState<string>("");
   const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   // ✅ Kiểm tra quyền
@@ -95,7 +105,36 @@ export default function ConductPage() {
         params.semester = selectedSemester === '1' ? 'HK1' : selectedSemester === '2' ? 'HK2' : selectedSemester;
       }
       const res = await conductApi.getConducts(params);
-      setConducts(res.data || []);
+      const records: Conduct[] = res.data || [];
+
+      // ✅ Tự động tính xếp hạng theo GPA trong từng lớp / năm / học kỳ
+      const groups = new Map<string, Conduct[]>();
+      records.forEach((r) => {
+        const className = r.classId?.className || '';
+        const key = `${className}|${r.year}|${r.semester}`;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(r);
+      });
+
+      const rankById = new Map<string, number>();
+      groups.forEach((group) => {
+        const sortable = group
+          .filter((r) => typeof r.gpa === 'number' && r.gpa !== null)
+          .slice()
+          .sort((a, b) => (b.gpa || 0) - (a.gpa || 0));
+
+        sortable.forEach((r, index) => {
+          // Xếp hạng 1,2,3... theo GPA (không xử lý đồng hạng để đơn giản)
+          rankById.set(r._id, index + 1);
+        });
+      });
+
+      const withRanks = records.map((r) => ({
+        ...r,
+        computedRank: rankById.get(r._id) ?? r.rank ?? undefined,
+      }));
+
+      setConducts(withRanks);
     } catch (error: any) {
       toast({
         title: "Lỗi",
@@ -107,10 +146,27 @@ export default function ConductPage() {
     }
   };
 
-  const handleUpdateConduct = async () => {
+  const handleUpdateConduct = async (mode: 'save' | 'submit' = 'save') => {
     if (!editingConduct || !editConduct) return;
     try {
-      await conductApi.updateConduct(editingConduct._id, { conduct: editConduct });
+      const payload: any = { conduct: editConduct };
+      const isAdminBGH = isAdminOrBGH(backendUser);
+
+      // ✅ Admin/BGH có thể sửa đầy đủ và đặt trạng thái trực tiếp
+      if (isAdminBGH) {
+        if (editConductNote !== undefined) payload.conductNote = editConductNote;
+        if (editGpa !== undefined) payload.gpa = editGpa;
+        if (editRank !== undefined) payload.rank = editRank;
+        if (editNote !== undefined) payload.note = editNote;
+        if (editConductStatus) payload.conductStatus = editConductStatus;
+      } else {
+        // ✅ GVCN chỉ có thể sửa conduct và conductNote
+        if (editConductNote !== undefined) payload.conductNote = editConductNote;
+        // Gửi thêm action để backend biết là lưu nháp hay gửi phê duyệt
+        payload.action = mode; // 'save' | 'submit'
+      }
+      
+      await conductApi.updateConduct(editingConduct._id, payload);
       toast({
         title: "Thành công",
         description: "Đã cập nhật hạnh kiểm",
@@ -118,6 +174,11 @@ export default function ConductPage() {
       setEditDialogOpen(false);
       setEditingConduct(null);
       setEditConduct("");
+      setEditConductNote("");
+      setEditGpa(undefined);
+      setEditRank(undefined);
+      setEditNote("");
+      setEditConductStatus("");
       fetchConducts();
     } catch (error: any) {
       toast({
@@ -223,9 +284,26 @@ export default function ConductPage() {
                         )}
                         {getConductBadge(conduct.conduct)}
                       </div>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {conduct.year} - {conduct.semester} | Điểm TB: {conduct.gpa} | Xếp hạng: {conduct.rank}
-                      </p>
+                      <div className="text-sm text-muted-foreground mt-1 flex flex-wrap items-center gap-2">
+                        <span>
+                          {conduct.year} - {conduct.semester} 
+                          {conduct.gpa !== undefined && conduct.gpa !== null && ` | Điểm TB: ${conduct.gpa}`}
+                          {conduct.computedRank !== undefined && conduct.computedRank !== null && ` | Xếp hạng: ${conduct.computedRank}`}
+                        </span>
+                        {conduct.conductStatus && (
+                          <Badge variant="outline" className="ml-2">
+                            {conduct.conductStatus === 'draft' ? 'Bản nháp' : 
+                             conduct.conductStatus === 'pending' ? 'Chờ phê duyệt' :
+                             conduct.conductStatus === 'approved' ? 'Đã phê duyệt' :
+                             conduct.conductStatus === 'locked' ? 'Đã khóa' : conduct.conductStatus}
+                          </Badge>
+                        )}
+                      </div>
+                      {conduct.conductNote && (
+                        <p className="text-xs text-muted-foreground mt-1 italic">
+                          Ghi chú: {conduct.conductNote}
+                        </p>
+                      )}
                     </div>
                   </div>
                   {canEnter && (
@@ -236,23 +314,31 @@ export default function ConductPage() {
                           size="sm"
                           onClick={() => {
                             setEditingConduct(conduct);
-                            setEditConduct(conduct.conduct);
+                            setEditConduct(conduct.conduct || "");
+                            setEditConductNote(conduct.conductNote || "");
+                            setEditGpa(conduct.gpa);
+                            setEditRank(conduct.rank);
+                            setEditNote(conduct.note || "");
+                            setEditConductStatus(conduct.conductStatus || "draft");
                           }}
                         >
                           <Edit className="h-4 w-4 mr-2" />
                           Sửa
                         </Button>
                       </DialogTrigger>
-                      <DialogContent>
+                      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                         <DialogHeader>
                           <DialogTitle>Sửa hạnh kiểm</DialogTitle>
                         </DialogHeader>
                         <div className="space-y-4">
                           <div>
-                            <Label>Học sinh: {conduct.studentId?.name}</Label>
+                            <Label>Học sinh: {conduct.studentId?.name} ({conduct.studentId?.studentCode})</Label>
+                            {conduct.classId && (
+                              <p className="text-sm text-muted-foreground">Lớp: {conduct.classId.className}</p>
+                            )}
                           </div>
                           <div>
-                            <Label>Hạnh kiểm</Label>
+                            <Label>Hạnh kiểm *</Label>
                             <Select value={editConduct} onValueChange={setEditConduct}>
                               <SelectTrigger>
                                 <SelectValue placeholder="Chọn hạnh kiểm" />
@@ -265,13 +351,101 @@ export default function ConductPage() {
                               </SelectContent>
                             </Select>
                           </div>
+                          <div>
+                            <Label>Ghi chú hạnh kiểm</Label>
+                            <Textarea 
+                              value={editConductNote} 
+                              onChange={(e) => setEditConductNote(e.target.value)}
+                              placeholder="Nhập ghi chú hạnh kiểm..."
+                              rows={3}
+                            />
+                          </div>
+                          {isAdminOrBGH(backendUser) && (
+                            <>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <Label>Điểm TB (GPA)</Label>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    max="10"
+                                    value={editGpa ?? ""}
+                                    onChange={(e) => setEditGpa(e.target.value ? parseFloat(e.target.value) : undefined)}
+                                    className="w-full px-3 py-2 border rounded-md"
+                                    placeholder="Nhập điểm TB"
+                                  />
+                                </div>
+                                <div>
+                                  <Label>Xếp hạng</Label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={editRank ?? ""}
+                                    onChange={(e) => setEditRank(e.target.value ? parseInt(e.target.value) : undefined)}
+                                    className="w-full px-3 py-2 border rounded-md"
+                                    placeholder="Nhập xếp hạng"
+                                  />
+                                </div>
+                              </div>
+                              <div>
+                                <Label>Nhận xét</Label>
+                                <Textarea 
+                                  value={editNote} 
+                                  onChange={(e) => setEditNote(e.target.value)}
+                                  placeholder="Nhập nhận xét..."
+                                  rows={3}
+                                />
+                              </div>
+                              <div>
+                                <Label>Trạng thái</Label>
+                                <Select value={editConductStatus} onValueChange={setEditConductStatus}>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Chọn trạng thái" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="draft">Bản nháp</SelectItem>
+                                    <SelectItem value="pending">Chờ phê duyệt</SelectItem>
+                                    <SelectItem value="approved">Đã phê duyệt</SelectItem>
+                                    <SelectItem value="locked">Đã khóa</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </>
+                          )}
                           <div className="flex justify-end gap-2">
-                            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setEditDialogOpen(false);
+                                setEditingConduct(null);
+                                setEditConduct("");
+                                setEditConductNote("");
+                                setEditGpa(undefined);
+                                setEditRank(undefined);
+                                setEditNote("");
+                                setEditConductStatus("");
+                              }}
+                            >
                               Hủy
                             </Button>
-                            <Button onClick={handleUpdateConduct}>
-                              Lưu
-                            </Button>
+                            {isAdminOrBGH(backendUser) ? (
+                              <Button onClick={() => handleUpdateConduct('save')}>
+                                Lưu
+                              </Button>
+                            ) : (
+                              <>
+                                <Button
+                                  variant="secondary"
+                                  onClick={() => handleUpdateConduct('save')}
+                                >
+                                  Lưu nháp
+                                </Button>
+                                <Button onClick={() => handleUpdateConduct('submit')}>
+                                  Gửi phê duyệt
+                                </Button>
+                              </>
+                            )}
                           </div>
                         </div>
                       </DialogContent>

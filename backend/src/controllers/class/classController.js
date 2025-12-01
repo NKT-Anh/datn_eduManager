@@ -4,29 +4,7 @@ const Student = require("../../models/user/student");
 const Room = require("../../models/room/room");
 const mongoose = require("mongoose");
 const Teacher = require("../../models/user/teacher");
-const Setting = require("../../models/settings");
-const SchoolYearModel = require("../../models/schoolYear");
-
-// ✅ Helper: Lấy năm học hiện tại từ settings hoặc active school years
-async function getCurrentSchoolYear() {
-  try {
-    // Ưu tiên lấy từ active SchoolYear
-    const activeYear = await SchoolYearModel.findOne({ isActive: true }).lean();
-    if (activeYear && activeYear.code) {
-      return String(activeYear.code);
-    }
-    // Fallback về settings
-    const settings = await Setting.findOne().lean();
-    if (settings && settings.currentSchoolYear) {
-      return String(settings.currentSchoolYear);
-    }
-    // Fallback về env
-    return process.env.SCHOOL_YEAR || null;
-  } catch (error) {
-    console.error('Error getting current school year:', error);
-    return null;
-  }
-}
+const { getCurrentSchoolYear } = require("../../utils/schoolYearHelper");
 
 // ✅ Helper: Cập nhật yearRoles cho giáo viên
 async function updateTeacherYearRole(teacherId, updates, targetYear = null) {
@@ -95,8 +73,14 @@ exports.getAllClasses = async (req, res) => {
       filter.year = req.query.year;
     }
     // ✅ Nếu không có year, không filter → trả về tất cả các lớp của tất cả các niên khóa
-    
+
     if (req.query.grade) filter.grade = req.query.grade;
+
+    // ✅ Soft Delete: Filter isDeleted != true mặc định (bao gồm false, null, không có trường)
+    const { isDeleted = 'false' } = req.query;
+    if (isDeleted !== 'true') {
+      filter.isDeleted = { $ne: true };
+    }
 
     const cls = await Class.find(filter)
       .populate("teacherId", "name")
@@ -167,6 +151,14 @@ exports.createClass = async (req, res) => {
 
     // 🔒 Ràng buộc: Không được tạo lớp nếu chưa có năm học active
     const SchoolYear = require('../../models/schoolYear');
+    const activeYearCode = await getCurrentSchoolYear();
+    if (!activeYearCode) {
+      return res.status(400).json({ 
+        message: "Không thể tạo lớp. Vui lòng kích hoạt một năm học trước." 
+      });
+    }
+    
+    // ✅ Lấy thông tin đầy đủ của năm học active để sử dụng
     const activeYear = await SchoolYear.findOne({ isActive: true });
     if (!activeYear) {
       return res.status(400).json({ 
@@ -546,10 +538,13 @@ exports.deleteClass = async (req, res) => {
       }
     }
 
-    await Class.findByIdAndDelete(classId);
+    // ✅ Soft Delete - Đánh dấu isDeleted = true (không xóa vĩnh viễn)
+    cls.isDeleted = true;
+    cls.status = 'inactive'; // Đồng thời cập nhật status
+    await cls.save();
 
     res.json({
-      message: `Đã xoá lớp ${cls.className} thành công và cập nhật học sinh.`,
+      message: `Đã xoá lớp ${cls.className} thành công (soft delete) và cập nhật học sinh.`,
     });
   } catch (error) {
     console.error("[deleteClass]", error);
@@ -1046,7 +1041,10 @@ exports.autoAssignHomeroomTeachers = async (req, res) => {
     const toanSubjectId = toanSubject?._id;
 
     // Lấy tất cả giáo viên active
-    const allTeachers = await Teacher.find({ status: 'active' })
+    const allTeachers = await Teacher.find({ 
+      status: 'active',
+      isDeleted: { $ne: true } // ✅ Không lấy giáo viên đã bị xóa mềm
+    })
       .populate('subjects.subjectId', 'name code')
       .populate('mainSubject', 'name code');
 
@@ -1152,9 +1150,74 @@ exports.autoAssignHomeroomTeachers = async (req, res) => {
         });
     };
 
+    // ✅ Lấy currentSchoolYear một lần trước vòng lặp
+    const Setting = require('../../models/settings');
+    const settings = await Setting.findOne().lean();
+    const currentSchoolYear = settings?.currentSchoolYear;
+
     // Duyệt từng lớp
     for (const cls of classesToAssign) {
       try {
+        // ✅ Nếu lớp đã có GVCN và reassignAll = true → Gỡ GVCN cũ trước
+        if (reassignAll === 'true' && cls.teacherId) {
+          const oldTeacherId = cls.teacherId;
+          const oldTeacher = await Teacher.findById(oldTeacherId);
+          
+          if (oldTeacher) {
+            // ✅ Kiểm tra xem GVCN cũ còn lớp chủ nhiệm nào trong năm học của lớp (cls.year) không
+            const yearClasses = await Class.find({
+              teacherId: oldTeacherId,
+              year: cls.year, // ✅ Kiểm tra theo năm học của lớp
+              _id: { $ne: cls._id }
+            });
+            
+            console.log(`🔄 Reassign GVCN: Lớp ${cls.className} (${cls.year}) - GVCN cũ: ${oldTeacherId}`);
+            console.log(`   - GVCN cũ còn ${yearClasses.length} lớp chủ nhiệm trong năm học ${cls.year}`);
+            
+            // ✅ Nếu không còn lớp chủ nhiệm nào trong năm học đó → Gỡ flag isHomeroom trong yearRoles
+            if (yearClasses.length === 0) {
+              console.log(`   ✅ Gỡ flag isHomeroom cho GVCN cũ trong năm học ${cls.year}`);
+              await updateTeacherYearRole(oldTeacherId, {
+                isHomeroom: false,
+                currentHomeroomClassId: null
+              }, cls.year); // ✅ Truyền year của lớp vào
+              
+              // ✅ Nếu lớp thuộc năm học hiện tại → reset currentHomeroomClassId của GVCN cũ
+              if (cls.year === currentSchoolYear) {
+                await Teacher.findByIdAndUpdate(oldTeacherId, {
+                  currentHomeroomClassId: null
+                });
+                console.log(`   ✅ Reset currentHomeroomClassId cho GVCN cũ`);
+              }
+              
+              // ✅ Nếu không còn lớp chủ nhiệm nào trong năm học hiện tại và không có lớp chủ nhiệm nào khác
+              if (cls.year === currentSchoolYear && (!oldTeacher.homeroomClassIds || oldTeacher.homeroomClassIds.length === 0)) {
+                await Teacher.findByIdAndUpdate(oldTeacherId, {
+                  isHomeroom: false // ✅ Reset top-level flag
+                });
+                console.log(`   ✅ Reset top-level isHomeroom flag cho GVCN cũ`);
+              }
+            } else {
+              // ✅ Vẫn còn lớp chủ nhiệm khác trong năm học đó → Chỉ reset currentHomeroomClassId cho lớp này
+              if (oldTeacher.currentHomeroomClassId?.toString() === cls._id.toString()) {
+                await Teacher.findByIdAndUpdate(oldTeacherId, {
+                  currentHomeroomClassId: null
+                });
+                // ✅ Cập nhật yearRoles: chỉ reset currentHomeroomClassId, giữ nguyên isHomeroom = true
+                await updateTeacherYearRole(oldTeacherId, {
+                  currentHomeroomClassId: null
+                  // ✅ KHÔNG set isHomeroom: false vì vẫn còn lớp chủ nhiệm khác
+                }, cls.year);
+                console.log(`   ✅ Chỉ reset currentHomeroomClassId (vẫn giữ isHomeroom = true vì còn lớp chủ nhiệm khác)`);
+              }
+            }
+          }
+          
+          // ✅ Reset teacherId của lớp trước khi gán mới
+          cls.teacherId = null;
+          await cls.save();
+        }
+        
         // Sắp xếp giáo viên theo độ ưu tiên
         const prioritySubjectIds = [vanSubjectId, toanSubjectId].filter(Boolean);
         const sortedTeachers = sortTeachersByPriority(allTeachers, prioritySubjectIds, cls.grade, cls.year);
@@ -1176,10 +1239,7 @@ exports.autoAssignHomeroomTeachers = async (req, res) => {
 
         // ✅ Cập nhật homeroomClassIds (lịch sử) và currentHomeroomClassId (hiện tại) của giáo viên
         // ✅ Lưu ý: Không ảnh hưởng đến isDepartmentHead, giáo viên có thể vừa là GVCN vừa là TBM
-        const Setting = require('../../models/settings');
-        const settings = await Setting.findOne().lean();
-        const currentSchoolYear = settings?.currentSchoolYear;
-        const targetYear = cls.year || currentSchoolYear;
+        const targetYear = cls.year || currentSchoolYear; // ✅ Lấy năm của lớp
 
         if (!selectedTeacher.homeroomClassIds) {
           selectedTeacher.homeroomClassIds = [];
@@ -1450,8 +1510,15 @@ exports.getAllHomeroomClasses = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy thông tin giáo viên' });
     }
 
+    console.log(`📋 [getAllHomeroomClasses] Teacher ID: ${teacher._id}`);
+    console.log(`📋 [getAllHomeroomClasses] yearRoles:`, JSON.stringify(teacher.yearRoles, null, 2));
+    console.log(`📋 [getAllHomeroomClasses] currentHomeroomClassId:`, teacher.currentHomeroomClassId);
+    console.log(`📋 [getAllHomeroomClasses] homeroomClassIds:`, teacher.homeroomClassIds);
+
     // ✅ Lấy tất cả lớp chủ nhiệm từ yearRoles
     const homeroomClassesByYear = [];
+    const addedClassIds = new Set(); // Để tránh trùng lặp
+    
     if (Array.isArray(teacher.yearRoles) && teacher.yearRoles.length > 0) {
       for (const yearRole of teacher.yearRoles) {
         if (yearRole.isHomeroom && yearRole.currentHomeroomClassId) {
@@ -1465,34 +1532,64 @@ exports.getAllHomeroomClasses = async (req, res) => {
             .lean();
           
           if (classInfo) {
-            homeroomClassesByYear.push({
-              schoolYear: yearRole.schoolYear,
-              class: classInfo,
-            });
+            const classIdStr = String(classInfo._id);
+            if (!addedClassIds.has(classIdStr)) {
+              homeroomClassesByYear.push({
+                schoolYear: yearRole.schoolYear,
+                class: classInfo,
+              });
+              addedClassIds.add(classIdStr);
+            }
           }
         }
       }
     }
 
-    // ✅ Nếu không có filter năm, lấy thêm từ homeroomClassIds (lịch sử)
-    if (!year && Array.isArray(teacher.homeroomClassIds) && teacher.homeroomClassIds.length > 0) {
+    // ✅ Lấy thêm từ homeroomClassIds (lịch sử) - bao gồm cả khi có filter năm
+    if (Array.isArray(teacher.homeroomClassIds) && teacher.homeroomClassIds.length > 0) {
       for (const classId of teacher.homeroomClassIds) {
         const classInfo = await Class.findById(classId)
           .populate('teacherId', 'name teacherCode')
           .lean();
         
         if (classInfo) {
-          // Kiểm tra xem đã có trong danh sách chưa (tránh trùng lặp)
-          const exists = homeroomClassesByYear.some(
-            item => String(item.class._id) === String(classInfo._id)
-          );
+          // Nếu có filter theo năm, chỉ lấy lớp của năm đó
+          if (year && String(classInfo.year) !== String(year)) {
+            continue;
+          }
           
-          if (!exists) {
+          const classIdStr = String(classInfo._id);
+          // Kiểm tra xem đã có trong danh sách chưa (tránh trùng lặp)
+          if (!addedClassIds.has(classIdStr)) {
             homeroomClassesByYear.push({
               schoolYear: classInfo.year || 'N/A',
               class: classInfo,
             });
+            addedClassIds.add(classIdStr);
           }
+        }
+      }
+    }
+
+    // ✅ Nếu vẫn chưa có lớp nào, kiểm tra từ Class model trực tiếp (fallback)
+    if (homeroomClassesByYear.length === 0) {
+      const classesAsHomeroom = await Class.find({ teacherId: teacher._id })
+        .populate('teacherId', 'name teacherCode')
+        .lean();
+      
+      for (const classInfo of classesAsHomeroom) {
+        // Nếu có filter theo năm, chỉ lấy lớp của năm đó
+        if (year && String(classInfo.year) !== String(year)) {
+          continue;
+        }
+        
+        const classIdStr = String(classInfo._id);
+        if (!addedClassIds.has(classIdStr)) {
+          homeroomClassesByYear.push({
+            schoolYear: classInfo.year || 'N/A',
+            class: classInfo,
+          });
+          addedClassIds.add(classIdStr);
         }
       }
     }
@@ -1501,6 +1598,9 @@ exports.getAllHomeroomClasses = async (req, res) => {
     homeroomClassesByYear.sort((a, b) => {
       return String(b.schoolYear).localeCompare(String(a.schoolYear));
     });
+
+    console.log(`📋 [getAllHomeroomClasses] Tổng số lớp chủ nhiệm tìm được: ${homeroomClassesByYear.length}`);
+    console.log(`📋 [getAllHomeroomClasses] Danh sách năm học:`, homeroomClassesByYear.map(item => item.schoolYear));
 
     res.json({ 
       success: true, 
@@ -1647,7 +1747,8 @@ exports.getHomeroomClassStudents = async (req, res) => {
     const students = await Student.find({ 
       classId: homeroomClassId, 
       status: 'active',
-      currentYear: classInfo.year || targetYear // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+      currentYear: classInfo.year || targetYear, // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+      isDeleted: { $ne: true } // ✅ Không lấy học sinh đã bị xóa mềm
     })
       .populate('accountId', 'email phone')
       .populate({
@@ -1808,7 +1909,8 @@ exports.getHomeroomClassGrades = async (req, res) => {
     const students = await Student.find({ 
       classId: homeroomClassId, 
       status: 'active',
-      currentYear: classInfoForGrades.year || targetYear // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+      currentYear: classInfoForGrades.year || targetYear, // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+      isDeleted: { $ne: true } // ✅ Không lấy học sinh đã bị xóa mềm
     })
       .select('_id name studentCode')
       .sort({ name: 1 })

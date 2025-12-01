@@ -19,7 +19,24 @@ exports.login = async (req, res) => {
     const decoded = await admin.auth().verifyIdToken(idToken);
     const uid = decoded.uid;
 
-    // 2. Tìm user trong MongoDB
+    // 2. Tìm account trong MongoDB và kiểm tra trạng thái khóa
+    const account = await Account.findOne({ uid });
+    
+    if (!account) {
+      return res.status(404).json({ message: 'Account not found in database' });
+    }
+
+    // ✅ Kiểm tra tài khoản có bị khóa không
+    if (account.isLocked === true) {
+      return res.status(403).json({ 
+        message: 'Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.',
+        code: 'ACCOUNT_LOCKED',
+        lockedAt: account.lockedAt,
+        lockReason: account.lockReason
+      });
+    }
+
+    // 3. Tìm user trong MongoDB
     const user = await User.findOne({ uid });
 
     if (!user) {
@@ -40,32 +57,9 @@ exports.login = async (req, res) => {
       const teacher = await Teacher.findOne({ accountId: user._id })
         .select('isHomeroom isDepartmentHead isLeader permissions yearRoles currentHomeroomClassId');
       if (teacher) {
-        // ✅ Xác định năm học hiện tại: ưu tiên header > query > active SchoolYear > settings > env
-        const SchoolYearModel = require('../models/schoolYear');
-        const Setting = require('../models/settings');
-        
-        let effectiveYear = (req.headers && (req.headers['x-school-year'] || req.headers['x-school-year-code']))
-          || req.query?.year
-          || null;
-        
-        // ✅ Nếu không có từ request, lấy từ active SchoolYear hoặc settings
-        if (!effectiveYear) {
-          try {
-            const active = await SchoolYearModel.findOne({ isActive: true }).lean();
-            if (active && active.code) {
-              effectiveYear = String(active.code);
-            } else {
-              const s = await Setting.findOne().lean();
-              if (s && s.currentSchoolYear) {
-                effectiveYear = String(s.currentSchoolYear);
-              } else {
-                effectiveYear = process.env.SCHOOL_YEAR || null;
-              }
-            }
-          } catch (e) {
-            effectiveYear = process.env.SCHOOL_YEAR || null;
-          }
-        }
+        // ✅ Sử dụng utility function để xác định năm học hiện tại
+        const { getEffectiveSchoolYear } = require('../utils/schoolYearHelper');
+        const effectiveYear = await getEffectiveSchoolYear(req);
 
         // ✅ QUAN TRỌNG: Chỉ lấy flags theo năm học hiện tại (effectiveYear)
         // Nếu không có yearRoleEntry cho năm hiện tại → không có flag đó trong năm này
@@ -728,6 +722,16 @@ exports.verifyLoginOTP = async (req, res) => {
 
     if (!account) {
       return res.status(404).json({ message: 'Email không tồn tại trong hệ thống' });
+    }
+
+    // ✅ Kiểm tra tài khoản có bị khóa không
+    if (account.isLocked === true) {
+      return res.status(403).json({ 
+        message: 'Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.',
+        code: 'ACCOUNT_LOCKED',
+        lockedAt: account.lockedAt,
+        lockReason: account.lockReason
+      });
     }
 
     // Kiểm tra OTP

@@ -3,6 +3,8 @@ const GradeSummary = require('../models/grade/gradeSummary');
 const GradeConfig = require('../models/grade/gradeConfig');
 const Subject = require('../models/subject/subject');
 const StudentYearRecord = require('../models/user/studentYearRecord');
+const Student = require('../models/user/student');
+const Class = require('../models/class/class');
 const { calculateAcademicLevel } = require('./academicLevelService');
 
 /**
@@ -409,11 +411,134 @@ async function computeAndSaveYearGPA({ studentId, classId, schoolYear }) {
         { upsert: true, new: true }
       );
       console.log(`✅ Đã lưu điểm TB cả năm cho học sinh ${studentId} (${schoolYear}): ${yearGPA.toFixed(2)}${academicLevel ? `, Học lực: ${academicLevel}` : ''}`);
+      
+      // ✅ Tính lại rank cho lớp và khối sau khi cập nhật GPA
+      try {
+        // Tính rank theo lớp
+        await recomputeRanksForClass({ classId, schoolYear, rankBy: 'class' });
+        // Tính rank theo khối
+        await recomputeRanksForClass({ classId, schoolYear, rankBy: 'grade' });
+      } catch (rankError) {
+        console.error('⚠️ Lỗi khi tính lại rank (không ảnh hưởng đến việc lưu điểm):', rankError);
+      }
     }
 
     return { hk1GPA, hk2GPA, yearGPA, academicLevel };
   } catch (error) {
     console.error('❌ Lỗi khi tính điểm TB cả năm:', error);
+    throw error;
+  }
+}
+
+/**
+ * ✅ Tính lại rank cho tất cả học sinh trong lớp (theo lớp)
+ * Rank được tính dựa trên GPA cả năm (semester='CN')
+ */
+async function recomputeRanksForClass({ classId, schoolYear, rankBy = 'class' }) {
+  if (!classId || !schoolYear) {
+    throw new Error('Thiếu trường bắt buộc: classId, schoolYear');
+  }
+
+  try {
+    // Lấy thông tin lớp
+    const classInfo = await Class.findById(classId).select('grade').lean();
+    if (!classInfo) {
+      throw new Error('Không tìm thấy lớp');
+    }
+
+    // Lấy tất cả học sinh trong lớp (hoặc khối nếu rankBy='grade')
+    let studentQuery = {};
+    if (rankBy === 'class') {
+      studentQuery = { classId, status: 'active', isDeleted: { $ne: true } };
+    } else if (rankBy === 'grade') {
+      studentQuery = { 
+        'classId.grade': classInfo.grade,
+        status: 'active',
+        isDeleted: { $ne: true }
+      };
+    }
+
+    // Lấy tất cả StudentYearRecord có GPA cả năm
+    let yearRecordQuery = { year: schoolYear, semester: 'CN', gpa: { $ne: null } };
+    
+    if (rankBy === 'class') {
+      yearRecordQuery.classId = classId;
+    } else if (rankBy === 'grade') {
+      // Lấy tất cả lớp trong khối
+      const classesInGrade = await Class.find({ 
+        grade: classInfo.grade,
+        year: schoolYear,
+        isDeleted: { $ne: true }
+      }).select('_id').lean();
+      const classIds = classesInGrade.map(c => c._id);
+      yearRecordQuery.classId = { $in: classIds };
+    }
+
+    const yearRecords = await StudentYearRecord.find(yearRecordQuery)
+      .populate('classId', 'grade')
+      .populate('studentId', 'name')
+      .lean();
+
+    if (yearRecords.length === 0) {
+      console.log(`⚠️ Không có học sinh nào có GPA để tính rank (${rankBy === 'class' ? 'lớp' : 'khối'})`);
+      return;
+    }
+
+    // Sắp xếp theo GPA giảm dần (cao nhất trước)
+    yearRecords.sort((a, b) => {
+      if (b.gpa === a.gpa) {
+        // Nếu GPA bằng nhau, sắp xếp theo tên (A-Z)
+        const nameA = a.studentId?.name || '';
+        const nameB = b.studentId?.name || '';
+        return nameA.localeCompare(nameB, 'vi');
+      }
+      return b.gpa - a.gpa;
+    });
+
+    // Gán rank (1, 2, 3, ...)
+    // Nếu có nhiều học sinh cùng GPA, cùng rank (ví dụ: 2 học sinh cùng GPA cao nhất → cả 2 đều rank 1)
+    let currentRank = 1;
+    let previousGPA = null;
+    
+    const updatePromises = [];
+    for (let i = 0; i < yearRecords.length; i++) {
+      const record = yearRecords[i];
+      const currentGPA = record.gpa;
+      
+      // Nếu GPA khác với học sinh trước, tăng rank
+      if (previousGPA !== null && currentGPA < previousGPA) {
+        currentRank = i + 1;
+      }
+      
+      // Cập nhật rank theo loại (lớp hoặc khối)
+      const updateData = {};
+      if (rankBy === 'class') {
+        if (record.rank !== currentRank) {
+          updateData.rank = currentRank;
+        }
+      } else if (rankBy === 'grade') {
+        if (record.rankGrade !== currentRank) {
+          updateData.rankGrade = currentRank;
+        }
+      }
+      
+      if (Object.keys(updateData).length > 0) {
+        updatePromises.push(
+          StudentYearRecord.findByIdAndUpdate(
+            record._id,
+            { $set: updateData },
+            { new: true }
+          )
+        );
+      }
+      
+      previousGPA = currentGPA;
+    }
+
+    await Promise.all(updatePromises);
+    console.log(`✅ Đã tính lại rank ${rankBy === 'class' ? 'lớp' : 'khối'} cho ${yearRecords.length} học sinh (${rankBy === 'class' ? 'lớp' : 'khối'} ${classInfo.grade})`);
+  } catch (error) {
+    console.error('❌ Lỗi khi tính lại rank:', error);
     throw error;
   }
 }
@@ -629,6 +754,7 @@ module.exports = {
   computeAverages,
   getActiveConfig,
   computeAndSaveYearGPA,
+  recomputeRanksForClass,
   saveScores,
   initGradesForStudent,
 };

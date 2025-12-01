@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { Tabs, Card, Typography, Space, Spin, Tag, message, Divider, Button, Popconfirm } from "antd";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   CalendarDays,
   School,
   Users,
   BarChart3,
   FileText,
+  TrendingUp,
 } from "lucide-react"; // ✅ icon từ lucide-react
 import { UserAddOutlined } from "@ant-design/icons";
 import ExamSchedulePage from "./examDetail/ExamSchedulePage";
@@ -23,6 +24,7 @@ const { Title, Text } = Typography;
 export default function ExamDetailPage() {
   const { hasPermission, PERMISSIONS } = usePermissions();
   const { examId } = useParams<{ examId: string }>();
+  const navigate = useNavigate();
   const [exam, setExam] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [addingStudents, setAddingStudents] = useState(false);
@@ -122,6 +124,21 @@ export default function ExamDetailPage() {
                 </Tag>
               )}
             </Space>
+            {/* Nút phân tích điểm thi - chỉ hiện khi đã có điểm */}
+            {exam.gradesPublished && (hasPermission(PERMISSIONS.EXAM_VIEW) || hasPermission(PERMISSIONS.DASHBOARD_VIEW_ALL)) && (
+              <div style={{ marginTop: 12 }}>
+                <Button
+                  type="primary"
+                  icon={<TrendingUp size={16} />}
+                  onClick={() => {
+                    const base = window.location.pathname.includes('/admin/') ? '/admin/exam' : '/bgh/exam';
+                    navigate(`${base}/${examId}/analysis`);
+                  }}
+                >
+                  📊 Phân tích điểm thi
+                </Button>
+              </div>
+            )}
           </Space>
 
           {/* 🎯 Nút thêm tất cả học sinh và phòng thi */}

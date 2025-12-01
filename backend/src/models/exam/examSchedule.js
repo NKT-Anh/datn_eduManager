@@ -39,6 +39,9 @@ const examScheduleSchema = new Schema(
 
     // 🗒️ Ghi chú thêm
     notes: { type: String },
+    
+    // ✅ Soft delete
+    isDeleted: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

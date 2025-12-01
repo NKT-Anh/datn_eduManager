@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { usePermissions } from '@/hooks/usePermissions';
 import {
   Table,
   TableBody,
@@ -54,6 +55,13 @@ type TabType = 'student' | 'teacher' | 'admin' | 'homeroom' | 'departmentHead' |
 const BatchAccountPage = () => {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<TabType>('accounts');
+  
+  // ✅ Kiểm tra quyền BGH
+  const { isBGH, hasPermission, PERMISSIONS } = usePermissions();
+  const canCreate = hasPermission(PERMISSIONS.USER_CREATE);
+  const canUpdate = hasPermission(PERMISSIONS.USER_UPDATE);
+  const canDelete = hasPermission(PERMISSIONS.USER_DELETE);
+  
   // ✅ Sử dụng hooks
   const { students, refetch: refetchStudents } = useStudents();
   const { teachers, refetch: refetchTeachers, create: createTeacher } = useTeachers();
@@ -1254,20 +1262,24 @@ const handleDeleteAccounts = async () => {
                   >
                     {loading ? 'Đang reset...' : `Reset mật khẩu (${selectedIds.length})`}
                   </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={() => setDeleteAccountDialogOpen(true)}
-                    disabled={loading}
-                    size="lg"
-                    className="flex-1 sm:flex-initial"
-                  >
-                    {loading ? 'Đang xóa...' : `Xóa tài khoản (${selectedIds.length})`}
-                  </Button>
+                  {canDelete && (
+                    <Button
+                      variant="destructive"
+                      onClick={() => setDeleteAccountDialogOpen(true)}
+                      disabled={loading}
+                      size="lg"
+                      className="flex-1 sm:flex-initial"
+                    >
+                      {loading ? 'Đang xóa...' : `Xóa tài khoản (${selectedIds.length})`}
+                    </Button>
+                  )}
                 </>
               ) : (
-                <Button onClick={handleSubmit} disabled={loading} size="lg" className="flex-1 sm:flex-initial">
-                  {loading ? 'Đang tạo...' : `Tạo tài khoản (${selectedIds.length})`}
-                </Button>
+                canCreate && (
+                  <Button onClick={handleSubmit} disabled={loading} size="lg" className="flex-1 sm:flex-initial">
+                    {loading ? 'Đang tạo...' : `Tạo tài khoản (${selectedIds.length})`}
+                  </Button>
+                )
               )}
             </div>
           </div>

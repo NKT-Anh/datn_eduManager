@@ -5,7 +5,7 @@ const API_URL = `/teachingAssignments`;
 
 export const assignmentApi = {
   getAll: async (params?: { year?: string }): Promise<TeachingAssignment[]> => {
-    const queryParams: any = {};
+    const queryParams: any = { isDeleted: 'false' };
     if (params?.year) queryParams.year = params.year;
     const res = await api.get(API_URL, { params: queryParams });
     return res.data;

@@ -7,12 +7,19 @@ const autoAuditLog = require('./src/middlewares/autoAuditLogMiddleware');
 
 const app = express();
 
-const allowedOrigins = [
-  'http://localhost:8080',
-  'http://localhost:8081',
-  'http://localhost:3001',
-  'http://10.10.10.244:8080',
-];
+// ✅ Cấu hình CORS từ environment variables
+// Format: CORS_ORIGINS=http://localhost:8080,http://localhost:8081,http://localhost:3001
+const corsOriginsEnv = process.env.CORS_ORIGINS;
+const allowedOrigins = corsOriginsEnv 
+  ? corsOriginsEnv.split(',').map(origin => origin.trim())
+  : [
+      'http://localhost:8080',
+      'http://localhost:8081',
+      'http://localhost:3001',
+      'http://10.10.10.244:8080',
+    ];
+
+console.log('✅ [CORS] Allowed origins:', allowedOrigins);
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -24,7 +31,7 @@ app.use(cors({
       callback(new Error('Not allowed by CORS'));
     }
   },
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-school-year', 'x-school-year-code'],
   credentials: true,
   methods: ['GET', 'POST','PATCH', 'PUT', 'DELETE', 'OPTIONS'],
 }));

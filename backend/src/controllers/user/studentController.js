@@ -58,7 +58,15 @@ exports.getStudents = async (req, res) => {
     if (grade) {
       filter.grade = grade;
     }
-    
+
+    // ✅ Soft Delete: Filter isDeleted = false mặc định (bao gồm cả undefined/null cho dữ liệu cũ)
+    const { isDeleted = 'false' } = req.query;
+    if (isDeleted !== 'true') {
+      // Lấy tất cả trừ isDeleted = true (bao gồm false, undefined, null)
+      // Dùng $ne: true để lấy tất cả trừ true, bao gồm cả undefined
+      filter.isDeleted = { $ne: true };
+    }
+
     const students = await Student.find(filter)
       .populate({ 
         path: 'classId', 
@@ -99,7 +107,15 @@ exports.getStudents = async (req, res) => {
 ========================================================= */
 exports.getStudentById = async (req, res) => {
   try {
-    const student = await Student.findById(req.params.id)
+    // ✅ Admin có thể xem tất cả (bao gồm đã xóa), user thường chỉ xem chưa xóa
+    const { isDeleted } = req.query;
+    const query = { _id: req.params.id };
+
+    if (isDeleted !== 'true') {
+      query.isDeleted = { $ne: true }; // Lấy tất cả trừ true (false, null, undefined)
+    }
+
+    const student = await Student.findOne(query)
       .populate({ path: 'accountId', select: 'email phone role' })
       .populate({ path: 'classId', select: 'className grade' })
       .populate({ path: 'parentIds', select: 'name phone relation occupation' })
@@ -115,6 +131,341 @@ exports.getStudentById = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
+  }
+};
+
+/* =========================================================
+   📘 LẤY THÔNG TIN CHI TIẾT HỌC SINH THEO NIÊN KHÓA
+   - Bảng điểm chi tiết (điểm hệ số 1, 2, giữa kỳ, cuối kỳ)
+   - Học lực HK1, HK2, cả năm
+   - Hạnh kiểm HK1, HK2, cả năm
+   - Thông tin lớp học theo năm (lớp, khối, GVCN)
+   - Kết quả lên lớp
+   - Thống kê chuyên cần
+   - Nhận xét GVCN
+   - Tổng kết và danh hiệu
+========================================================= */
+exports.getStudentYearDetail = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { year } = req.query; // Năm học: "2025-2026"
+
+    if (!year) {
+      return res.status(400).json({ message: 'Vui lòng cung cấp năm học' });
+    }
+
+    const StudentYearRecord = require('../../models/user/studentYearRecord');
+    const GradeSummary = require('../../models/grade/gradeSummary');
+    const GradeItem = require('../../models/grade/gradeItem');
+    const Class = require('../../models/class/class');
+    const Attendance = require('../../models/class/attendance');
+
+    // 1. Lấy StudentYearRecord (HK1, HK2, CN)
+    const yearRecords = await StudentYearRecord.find({
+      studentId: id,
+      year: year
+    })
+      .populate('classId', 'className classCode grade year homeroomTeacherId')
+      .populate('homeroomTeacherId', 'name teacherCode')
+      .populate({ 
+        path: 'classId.homeroomTeacherId', 
+        select: 'name teacherCode',
+        populate: { path: 'accountId', select: 'email' }
+      })
+      .lean();
+
+    const hk1Record = yearRecords.find(r => r.semester === 'HK1');
+    const hk2Record = yearRecords.find(r => r.semester === 'HK2');
+    const yearRecord = yearRecords.find(r => r.semester === 'CN');
+
+    // 2. Lấy thông tin lớp học theo năm
+    const classInfo = hk1Record?.classId || hk2Record?.classId || yearRecord?.classId;
+    let classDetail = null;
+    let homeroomTeacher = null;
+
+    if (classInfo) {
+      classDetail = {
+        _id: classInfo._id,
+        className: classInfo.className,
+        classCode: classInfo.classCode,
+        grade: classInfo.grade,
+        year: classInfo.year
+      };
+
+      // Lấy GVCN từ class hoặc từ yearRecord
+      if (classInfo.homeroomTeacherId) {
+        const Teacher = require('../../models/user/teacher');
+        const teacher = await Teacher.findById(classInfo.homeroomTeacherId)
+          .populate('accountId', 'email')
+          .select('name teacherCode accountId')
+          .lean();
+        if (teacher) {
+          homeroomTeacher = {
+            _id: teacher._id,
+            name: teacher.name,
+            teacherCode: teacher.teacherCode,
+            email: teacher.accountId?.email
+          };
+        }
+      } else if (yearRecord?.homeroomTeacherId) {
+        homeroomTeacher = {
+          _id: yearRecord.homeroomTeacherId._id,
+          name: yearRecord.homeroomTeacherId.name,
+          teacherCode: yearRecord.homeroomTeacherId.teacherCode
+        };
+      }
+    }
+
+    // 3. Lấy bảng điểm chi tiết (có điểm hệ số 1, 2, giữa kỳ, cuối kỳ)
+    const gradeSummaries = await GradeSummary.find({
+      studentId: id,
+      schoolYear: year
+    })
+      .populate('subjectId', 'name code includeInAverage')
+      .sort({ 'subjectId.name': 1 })
+      .lean();
+
+    // Lấy GradeItem để có điểm chi tiết
+    const allGradeItems = await GradeItem.find({
+      studentId: id,
+      schoolYear: year
+    })
+      .sort({ subjectId: 1, semester: 1, component: 1, attempt: 1 })
+      .lean();
+
+    // Nhóm GradeSummary theo môn học
+    const summariesBySubject = {};
+    gradeSummaries.forEach(summary => {
+      const subjectId = String(summary.subjectId._id);
+      if (!summariesBySubject[subjectId]) {
+        summariesBySubject[subjectId] = {
+          subject: summary.subjectId,
+          hk1: null,
+          hk2: null
+        };
+      }
+      if (summary.semester === '1') {
+        summariesBySubject[subjectId].hk1 = summary;
+      } else if (summary.semester === '2') {
+        summariesBySubject[subjectId].hk2 = summary;
+      }
+    });
+
+    // Nhóm điểm theo môn và học kỳ
+    const detailedGrades = Object.values(summariesBySubject).map((subjectData) => {
+      const subjectItems = allGradeItems.filter(
+        item => String(item.subjectId) === String(subjectData.subject._id) &&
+        item.schoolYear === year
+      );
+
+      // Nhóm theo học kỳ và component
+      const hk1Items = subjectItems.filter(item => item.semester === '1');
+      const hk2Items = subjectItems.filter(item => item.semester === '2');
+
+      const getComponentScores = (items, component) => {
+        return items
+          .filter(item => item.component === component)
+          .sort((a, b) => (a.attempt || 1) - (b.attempt || 1))
+          .map(item => item.score);
+      };
+
+      const hk1Summary = subjectData.hk1;
+      const hk2Summary = subjectData.hk2;
+
+      return {
+        subject: {
+          _id: subjectData.subject._id,
+          name: subjectData.subject.name,
+          code: subjectData.subject.code,
+          includeInAverage: subjectData.subject.includeInAverage
+        },
+        hk1: {
+          // Điểm hệ số 1 (oral, quiz15)
+          coefficient1: {
+            oral: getComponentScores(hk1Items, 'oral'),
+            quiz15: getComponentScores(hk1Items, 'quiz15')
+          },
+          // Điểm hệ số 2 (quiz45)
+          coefficient2: {
+            quiz45: getComponentScores(hk1Items, 'quiz45')
+          },
+          midterm: getComponentScores(hk1Items, 'midterm'),
+          final: getComponentScores(hk1Items, 'final'),
+          average: hk1Summary?.average || null,
+          averages: hk1Summary?.averages || {}
+        },
+        hk2: {
+          coefficient1: {
+            oral: getComponentScores(hk2Items, 'oral'),
+            quiz15: getComponentScores(hk2Items, 'quiz15')
+          },
+          coefficient2: {
+            quiz45: getComponentScores(hk2Items, 'quiz45')
+          },
+          midterm: getComponentScores(hk2Items, 'midterm'),
+          final: getComponentScores(hk2Items, 'final'),
+          average: hk2Summary?.average || null,
+          averages: hk2Summary?.averages || {}
+        },
+        yearAverage: null // Sẽ tính sau
+      };
+    });
+
+    // Tính điểm TB cả năm cho từng môn
+    detailedGrades.forEach(grade => {
+      const hk1Avg = grade.hk1.average;
+      const hk2Avg = grade.hk2.average;
+      if (hk1Avg !== null && hk2Avg !== null) {
+        grade.yearAverage = parseFloat(((hk1Avg + hk2Avg * 2) / 3).toFixed(1));
+      } else if (hk1Avg !== null) {
+        grade.yearAverage = parseFloat(hk1Avg.toFixed(1));
+      } else if (hk2Avg !== null) {
+        grade.yearAverage = parseFloat(hk2Avg.toFixed(1));
+      }
+    });
+
+    // 4. Lấy thống kê chuyên cần
+    const attendanceStats = {
+      totalAbsent: yearRecord?.totalAbsent || 0,
+      totalLate: yearRecord?.totalLate || 0,
+      excusedAbsent: 0, // Sẽ tính từ Attendance records
+      unexcusedAbsent: 0,
+      earlyLeave: 0
+    };
+
+    // Tính chi tiết từ Attendance records
+    const attendanceRecords = await Attendance.find({
+      studentId: id,
+      schoolYear: year
+    }).lean();
+
+    attendanceRecords.forEach(record => {
+      if (record.status === 'absent') {
+        if (record.excused) {
+          attendanceStats.excusedAbsent++;
+        } else {
+          attendanceStats.unexcusedAbsent++;
+        }
+      }
+      if (record.status === 'late') {
+        attendanceStats.totalLate++;
+      }
+      if (record.status === 'early_leave') {
+        attendanceStats.earlyLeave++;
+      }
+    });
+
+    // 5. Tính kết quả lên lớp (từ promoteStudents logic)
+    let promotionResult = null;
+    if (yearRecord) {
+      const gpa = yearRecord.gpa || 0;
+      const academicLevel = yearRecord.academicLevel;
+      const conduct = yearRecord.conduct;
+
+      // Logic xác định kết quả
+      if (classInfo?.grade === '12') {
+        // Khối 12: Tốt nghiệp hoặc không tốt nghiệp
+        promotionResult = (gpa >= 5.0 && academicLevel !== 'Yếu' && conduct !== 'Yếu') 
+          ? 'Tốt nghiệp' 
+          : 'Không tốt nghiệp';
+      } else {
+        // Khối 10, 11: Lên lớp hoặc ở lại
+        if (gpa >= 5.0 && academicLevel !== 'Yếu' && conduct !== 'Yếu') {
+          promotionResult = 'Lên lớp thẳng';
+        } else if (gpa >= 3.5 && academicLevel !== 'Yếu') {
+          promotionResult = 'Lên lớp có điều kiện';
+        } else {
+          promotionResult = 'Ở lại lớp';
+        }
+      }
+    }
+
+    // 6. Tính tổng kết và danh hiệu
+    const allSubjectAverages = detailedGrades
+      .filter(g => g.subject.includeInAverage && g.yearAverage)
+      .map(g => parseFloat(g.yearAverage));
+
+    const overallGPA = allSubjectAverages.length > 0
+      ? (allSubjectAverages.reduce((a, b) => a + b, 0) / allSubjectAverages.length).toFixed(1)
+      : null;
+
+    // Xác định danh hiệu
+    let title = null;
+    if (overallGPA && parseFloat(overallGPA) >= 8.0 && 
+        allSubjectAverages.every(avg => avg >= 6.5) &&
+        yearRecord?.conduct === 'Tốt') {
+      title = 'Học sinh Giỏi';
+    } else if (overallGPA && parseFloat(overallGPA) >= 6.5 &&
+               allSubjectAverages.every(avg => avg >= 5.0) &&
+               (yearRecord?.conduct === 'Tốt' || yearRecord?.conduct === 'Khá')) {
+      title = 'Học sinh Tiên tiến';
+    }
+
+    // 7. Xác định xếp loại chung
+    let overallRank = '—';
+    if (overallGPA) {
+      const gpaNum = parseFloat(overallGPA);
+      if (gpaNum >= 8.0 && allSubjectAverages.every(avg => avg >= 6.5)) {
+        overallRank = 'Xuất sắc';
+      } else if (gpaNum >= 6.5 && allSubjectAverages.every(avg => avg >= 5.0)) {
+        overallRank = 'Giỏi';
+      } else if (gpaNum >= 5.0) {
+        overallRank = 'Khá';
+      } else if (gpaNum >= 3.5) {
+        overallRank = 'Trung bình';
+      } else {
+        overallRank = 'Yếu';
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        year,
+        // Thông tin lớp học
+        classInfo: classDetail,
+        homeroomTeacher,
+        // Bảng điểm chi tiết
+        grades: detailedGrades,
+        // Học lực
+        academicLevel: {
+          hk1: hk1Record?.academicLevel || null,
+          hk2: hk2Record?.academicLevel || null,
+          year: yearRecord?.academicLevel || null
+        },
+        // Hạnh kiểm
+        conduct: {
+          hk1: hk1Record?.conduct || null,
+          hk2: hk2Record?.conduct || null,
+          year: yearRecord?.conduct || null
+        },
+        // Điểm TB
+        gpa: {
+          hk1: hk1Record?.gpa || null,
+          hk2: hk2Record?.gpa || null,
+          year: yearRecord?.gpa || null
+        },
+        // Kết quả lên lớp
+        promotionResult,
+        // Thống kê chuyên cần
+        attendance: attendanceStats,
+        // Nhận xét GVCN (HK1, HK2, Cuối năm)
+        homeroomTeacherNotes: {
+          hk1: hk1Record?.note || null,
+          hk2: hk2Record?.note || null,
+          year: yearRecord?.note || null
+        },
+        // Tổng kết
+        summary: {
+          overallGPA,
+          overallRank,
+          title
+        }
+      }
+    });
+  } catch (error) {
+    console.error('❌ Lỗi getStudentYearDetail:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
@@ -393,19 +744,31 @@ exports.updateStudent = async (req, res) => {
 /* =========================================================
    🗑️ XOÁ HỌC SINH
 ========================================================= */
+// ✅ Soft Delete - Xóa mềm học sinh (chỉ đánh dấu, không xóa thật)
 exports.deleteStudent = async (req, res) => {
   try {
-    const deleted = await Student.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ message: 'Student not found' });
-
-    if (deleted.parentIds?.length > 0) {
-      await Parent.deleteMany({ _id: { $in: deleted.parentIds } });
+    const { id } = req.params;
+    const student = await Student.findById(id);
+    
+    if (!student) {
+      return res.status(404).json({ message: 'Không tìm thấy học sinh' });
     }
 
-    res.json({ message: 'Student and related parents deleted successfully' });
+    // ✅ Đánh dấu isDeleted = true (soft delete)
+    student.isDeleted = true;
+    student.status = 'inactive'; // Đồng thời cập nhật status
+    await student.save();
+
+    res.json({ 
+      message: 'Đã xóa học sinh thành công (soft delete)',
+      student: student
+    });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error deleting student', error: error.message });
+    console.error('❌ Lỗi khi xóa học sinh:', error);
+    res.status(500).json({ 
+      message: 'Lỗi khi xóa học sinh', 
+      error: error.message 
+    });
   }
 };
 
@@ -990,6 +1353,90 @@ exports.updateAllStudentsYear = async (req, res) => {
       success: false,
       message: "Lỗi khi cập nhật năm học cho học sinh.",
       error: error.message,
+    });
+  }
+};
+
+// ✅ Soft Delete - Xóa mềm học sinh (chỉ đánh dấu, không xóa thật)
+exports.softDeleteStudent = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const student = await Student.findById(id);
+    if (!student) {
+      return res.status(404).json({ message: 'Không tìm thấy học sinh' });
+    }
+
+    // ✅ Đánh dấu isDeleted = true
+    student.isDeleted = true;
+    student.status = 'inactive'; // Đồng thời cập nhật status
+    await student.save();
+
+    res.json({
+      message: 'Đã xóa mềm học sinh thành công',
+      student: student
+    });
+  } catch (error) {
+    console.error('❌ Lỗi khi xóa mềm học sinh:', error);
+    res.status(500).json({
+      message: 'Lỗi khi xóa mềm học sinh',
+      error: error.message
+    });
+  }
+};
+
+// ✅ Restore - Khôi phục học sinh đã xóa mềm
+exports.restoreStudent = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const student = await Student.findById(id);
+    if (!student) {
+      return res.status(404).json({ message: 'Không tìm thấy học sinh' });
+    }
+
+    // ✅ Khôi phục isDeleted = false
+    student.isDeleted = false;
+    student.status = 'active'; // Khôi phục status
+    await student.save();
+
+    res.json({
+      message: 'Đã khôi phục học sinh thành công',
+      student: student
+    });
+  } catch (error) {
+    console.error('❌ Lỗi khi khôi phục học sinh:', error);
+    res.status(500).json({
+      message: 'Lỗi khi khôi phục học sinh',
+      error: error.message
+    });
+  }
+};
+
+// ✅ Force Delete - Xóa vĩnh viễn học sinh (chỉ Admin)
+exports.forceDeleteStudent = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // ✅ Kiểm tra quyền Admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Chỉ Admin mới có quyền xóa vĩnh viễn' });
+    }
+
+    const student = await Student.findByIdAndDelete(id);
+    if (!student) {
+      return res.status(404).json({ message: 'Không tìm thấy học sinh' });
+    }
+
+    res.json({
+      message: 'Đã xóa vĩnh viễn học sinh thành công',
+      student: student
+    });
+  } catch (error) {
+    console.error('❌ Lỗi khi xóa vĩnh viễn học sinh:', error);
+    res.status(500).json({
+      message: 'Lỗi khi xóa vĩnh viễn học sinh',
+      error: error.message
     });
   }
 };

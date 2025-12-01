@@ -5,29 +5,8 @@ const Account = require('../../models/user/account');
 const TeachingAssignment = require('../../models/subject/teachingAssignment');
 const ClassModel = require('../../models/class/class');
 const ClassPeriods = require('../../models/class/classPeriods');
-const Setting = require('../../models/settings');
 const SchoolYearModel = require('../../models/schoolYear');
-
-// ✅ Helper: Lấy năm học hiện tại từ settings hoặc active school year
-async function getCurrentSchoolYear() {
-  try {
-    // Ưu tiên lấy từ active SchoolYear
-    const activeYear = await SchoolYearModel.findOne({ isActive: true }).lean();
-    if (activeYear && activeYear.code) {
-      return String(activeYear.code);
-    }
-    // Fallback về settings
-    const settings = await Setting.findOne().lean();
-    if (settings && settings.currentSchoolYear) {
-      return String(settings.currentSchoolYear);
-    }
-    // Fallback về env
-    return process.env.SCHOOL_YEAR || null;
-  } catch (error) {
-    console.error('Error getting current school year:', error);
-    return null;
-  }
-}
+const { getCurrentSchoolYear, getEffectiveSchoolYear } = require('../../utils/schoolYearHelper');
 
 // ✅ Helper: Cập nhật yearRoles cho giáo viên
 async function updateTeacherYearRole(teacherId, updates, targetYear = null) {
@@ -86,14 +65,30 @@ async function updateTeacherYearRole(teacherId, updates, targetYear = null) {
   }
 }
 
+// ✅ Helper: Kiểm tra quyền quản lý tổ bộ môn (từ yearRoles theo năm học)
 async function canManageDepartment(req, departmentId) {
   if (!req.user || req.user.role !== 'teacher') return true;
   if (!departmentId) return false;
+  
   const teacher = await Teacher.findOne({ accountId: req.user.accountId })
-    .select('isDepartmentHead departmentId')
+    .select('yearRoles')
     .lean();
-  if (!teacher || !teacher.isDepartmentHead) return false;
-  return teacher.departmentId && teacher.departmentId.toString() === departmentId.toString();
+  if (!teacher) return false;
+  
+  // ✅ Lấy năm học hiện tại
+  const currentYear = await getCurrentSchoolYear();
+  if (!currentYear) return false;
+  
+  // ✅ Tìm yearRole cho năm học hiện tại
+  const yearRole = Array.isArray(teacher.yearRoles) 
+    ? teacher.yearRoles.find(yr => String(yr.schoolYear) === String(currentYear))
+    : null;
+  
+  if (!yearRole || !yearRole.isDepartmentHead) return false;
+  
+  // ✅ Kiểm tra departmentId từ yearRole
+  const deptId = yearRole.departmentId?._id?.toString() || yearRole.departmentId?.toString();
+  return deptId && deptId === departmentId.toString();
 }
 
 const normalizeMaxClassPerGrade = (map = {}) => {
@@ -127,20 +122,94 @@ exports.getAllDepartments = async (req, res) => {
   try {
     const { year } = req.query;
     let query = { status: 'active' };
-    
-    // Lọc theo năm học nếu có
-    if (year) {
-      query.year = year;
+
+    // ✅ Soft Delete: Filter isDeleted != true mặc định (bao gồm false, null, không có trường)
+    const { isDeleted = 'false' } = req.query;
+    if (isDeleted !== 'true') {
+      query.isDeleted = { $ne: true };
     }
 
-    let departments = await populatedDepartment(Department.find(query));
+    // ✅ Lọc theo năm học nếu có (nếu không có year, trả về tất cả departments không filter theo year)
+    // ✅ CHỈ filter khi year có giá trị hợp lệ (không phải undefined, null, hoặc chuỗi rỗng)
+    // ✅ year phải là MÃ năm học (ví dụ: "2025-2026"), không phải tên năm học
+    if (year && year !== 'undefined' && year !== 'null' && String(year).trim() !== '') {
+      const yearStr = String(year).trim();
+      
+      // ✅ Tìm SchoolYear để lấy cả mã và tên năm học (tương thích với dữ liệu cũ)
+      let yearCode = yearStr;
+      let yearName = null;
+      
+      // Nếu year là mã năm học, tìm tên năm học tương ứng
+      try {
+        const schoolYear = await SchoolYearModel.findOne({
+          $or: [
+            { code: yearStr },
+            { name: yearStr }
+          ]
+        }).lean();
+        
+        if (schoolYear) {
+          yearCode = schoolYear.code; // Mã năm học (ví dụ: "2025-2026")
+          yearName = schoolYear.name; // Tên năm học (ví dụ: "Năm học 2025 - 2026")
+        } else {
+          // Nếu không tìm thấy, có thể year đã là tên năm học
+          if (yearStr.includes('Năm học') || yearStr.includes('năm học')) {
+            yearName = yearStr;
+          } else {
+            yearCode = yearStr;
+          }
+        }
+      } catch (err) {
+        console.warn('⚠️ [getAllDepartments] Error looking up SchoolYear:', err.message);
+        // Fallback: coi như year đã là mã hoặc tên
+        if (yearStr.includes('Năm học') || yearStr.includes('năm học')) {
+          yearName = yearStr;
+        } else {
+          yearCode = yearStr;
+        }
+      }
+      
+      // ✅ Filter theo cả MÃ và TÊN năm học (tương thích với dữ liệu cũ và mới)
+      const yearFilters = [];
+      if (yearCode) {
+        yearFilters.push({ year: yearCode });
+        yearFilters.push({ schoolYear: yearCode });
+      }
+      if (yearName) {
+        yearFilters.push({ year: yearName });
+        yearFilters.push({ schoolYear: yearName });
+      }
+      
+      if (yearFilters.length > 0) {
+        query.$or = yearFilters;
+      }
+    }
+    // ✅ Nếu không có year hoặc year không hợp lệ, KHÔNG filter theo year (trả về tất cả departments)
 
+    console.log('🔍 [getAllDepartments] Request params:', { year, isDeleted: req.query.isDeleted, userRole: req.user?.role });
+    console.log('🔍 [getAllDepartments] Query:', JSON.stringify(query, null, 2));
+    let departments = await populatedDepartment(Department.find(query));
+    console.log(`✅ [getAllDepartments] Found ${departments.length} departments (role: ${req.user?.role})`);
+
+    // ✅ Lọc departments cho giáo viên (chỉ hiển thị tổ bộ môn mà giáo viên là trưởng bộ môn)
     if (req.user?.role === 'teacher') {
+      const currentYear = await getCurrentSchoolYear();
       const teacher = await Teacher.findOne({ accountId: req.user.accountId })
-        .select('isDepartmentHead departmentId')
+        .select('yearRoles')
         .lean();
-      if (teacher?.isDepartmentHead && teacher.departmentId) {
-        departments = departments.filter(dep => dep._id.toString() === teacher.departmentId.toString());
+      
+      if (teacher && currentYear) {
+        // ✅ Tìm yearRole cho năm học hiện tại
+        const yearRole = Array.isArray(teacher.yearRoles) 
+          ? teacher.yearRoles.find(yr => String(yr.schoolYear) === String(currentYear))
+          : null;
+        
+        if (yearRole?.isDepartmentHead && yearRole.departmentId) {
+          const deptId = yearRole.departmentId._id?.toString() || yearRole.departmentId.toString();
+          departments = departments.filter(dep => dep._id.toString() === deptId);
+        } else {
+          departments = [];
+        }
       } else {
         departments = [];
       }
@@ -182,11 +251,97 @@ exports.createDepartment = async (req, res) => {
     const { name, code, description, headTeacherId, subjectIds, notes, year } = req.body;
     
     // ✅ Tự động lấy năm học hiện tại đang active nếu không có year
-    const deptYear = year || await getCurrentSchoolYear();
+    let deptYear = year || await getCurrentSchoolYear();
     if (!deptYear) {
       return res.status(400).json({ 
         message: 'Không thể xác định năm học. Vui lòng kích hoạt một năm học trước.' 
       });
+    }
+    
+    // ✅ Đảm bảo deptYear là MÃ năm học (code), không phải tên năm học
+    // Nếu là tên năm học (có chứa "Năm học"), tìm mã năm học tương ứng
+    if (String(deptYear).includes('Năm học') || String(deptYear).includes('năm học')) {
+      try {
+        const schoolYear = await SchoolYearModel.findOne({ name: deptYear }).lean();
+        if (schoolYear && schoolYear.code) {
+          deptYear = schoolYear.code; // Lấy mã năm học
+        }
+      } catch (err) {
+        console.warn('⚠️ [createDepartment] Error looking up SchoolYear:', err.message);
+      }
+    }
+
+    // 🔒 RÀNG BUỘC: Mỗi môn học chỉ được thuộc TỐI ĐA 1 tổ bộ môn trong CÙNG NĂM HỌC
+    if (Array.isArray(subjectIds) && subjectIds.length > 0) {
+      try {
+        const rawYear = String(deptYear).trim();
+        let yearCode = rawYear;
+        let yearName = null;
+
+        // Tìm SchoolYear để lấy cả mã và tên (tương thích dữ liệu cũ & mới)
+        try {
+          const schoolYear = await SchoolYearModel.findOne({
+            $or: [{ code: rawYear }, { name: rawYear }],
+          }).lean();
+          if (schoolYear) {
+            yearCode = schoolYear.code || rawYear;
+            yearName = schoolYear.name || null;
+          }
+        } catch (err) {
+          console.warn(
+            '⚠️ [createDepartment] Error looking up SchoolYear for subject uniqueness:',
+            err.message
+          );
+        }
+
+        const yearFilters = [];
+        if (yearCode) {
+          yearFilters.push({ year: yearCode }, { schoolYear: yearCode });
+        }
+        if (yearName) {
+          yearFilters.push({ year: yearName }, { schoolYear: yearName });
+        }
+
+        const subjectIdStrings = subjectIds.map((s) => s.toString());
+
+        const conflictQuery = {
+          isDeleted: { $ne: true },
+          subjectIds: { $in: subjectIdStrings },
+        };
+        if (yearFilters.length > 0) {
+          conflictQuery.$or = yearFilters;
+        }
+
+        const conflictDepartments = await Department.find(conflictQuery)
+          .populate('subjectIds', 'name code')
+          .lean();
+
+        if (conflictDepartments.length > 0) {
+          const conflictSubjectNames = new Set();
+          conflictDepartments.forEach((dep) => {
+            (dep.subjectIds || []).forEach((sub) => {
+              const sid = sub?._id?.toString?.();
+              if (sid && subjectIdStrings.includes(sid)) {
+                conflictSubjectNames.add(sub.name || sub.code || sid);
+              }
+            });
+          });
+
+          if (conflictSubjectNames.size > 0) {
+            return res.status(400).json({
+              message:
+                'Một số môn học đã thuộc tổ bộ môn khác trong năm học này: ' +
+                Array.from(conflictSubjectNames).join(', '),
+            });
+          }
+        }
+      } catch (err) {
+        console.error(
+          '❌ [createDepartment] Error checking subject uniqueness per year:',
+          err
+        );
+        // Không chặn tạo nếu check lỗi, nhưng log để theo dõi
+      }
     }
 
     // Tạo code tự động nếu không có
@@ -207,7 +362,7 @@ exports.createDepartment = async (req, res) => {
       headTeacherId: headTeacherId || null,
       subjectIds: subjectIds || [],
       notes,
-      year: deptYear, // ✅ Dùng năm học đã xác định
+      year: deptYear, // ✅ Lưu MÃ năm học (ví dụ: "2025-2026")
       schoolYear: deptYear, // ✅ Đảm bảo tương thích với cả 2 field
       status: 'active'
     });
@@ -239,12 +394,19 @@ exports.createDepartment = async (req, res) => {
         }
       }
 
-      if (headTeacher && headTeacher.isDepartmentHead) {
-        // Nếu giáo viên này đã là tổ trưởng của tổ khác, reset tổ cũ
-        const oldDepartment = await Department.findOne({ headTeacherId: headTeacherId });
-        if (oldDepartment && String(oldDepartment._id) !== String(department._id)) {
-          // Reset tổ trưởng cũ - cập nhật yearRoles trước
-          const oldDeptYear = oldDepartment.year || oldDepartment.schoolYear || deptYear;
+      // ✅ Kiểm tra giáo viên có phải tổ trưởng của tổ khác không (từ yearRoles)
+      const headYearRole = Array.isArray(headTeacher.yearRoles)
+        ? headTeacher.yearRoles.find(yr => yr.isDepartmentHead && yr.departmentId)
+        : null;
+      
+      if (headYearRole && headYearRole.departmentId) {
+        const oldDepartmentId = headYearRole.departmentId.toString();
+        if (oldDepartmentId !== department._id.toString()) {
+          // ✅ Reset yearRoles cho tổ cũ - CHỈ cập nhật yearRoles, KHÔNG cập nhật top-level
+          const oldDepartment = await Department.findById(oldDepartmentId);
+          const oldDeptYear = oldDepartment 
+            ? (oldDepartment.year || oldDepartment.schoolYear || deptYear)
+            : deptYear;
           try {
             await updateTeacherYearRole(headTeacherId, {
               departmentId: null,
@@ -253,33 +415,45 @@ exports.createDepartment = async (req, res) => {
           } catch (err) {
             console.error('❌ Lỗi khi reset yearRoles cho tổ cũ:', err);
           }
-          
-          // Reset tổ trưởng cũ
-          await Teacher.findByIdAndUpdate(headTeacherId, { 
-            $unset: { departmentId: 1 },
-            isDepartmentHead: false 
-          });
           // Xóa headTeacherId của tổ cũ
-          await Department.findByIdAndUpdate(oldDepartment._id, {
+          await Department.findByIdAndUpdate(oldDepartmentId, {
             headTeacherId: null
           });
         }
       }
       
-      // ✅ Cập nhật top-level flags trước
-      await Teacher.findByIdAndUpdate(headTeacherId, { 
-        departmentId: department._id,
-        isDepartmentHead: true 
-        // Không set isHomeroom ở đây để giữ lại flag nếu giáo viên đã là GVCN
-      });
-
-      // ✅ Cập nhật yearRoles cho năm học hiện tại đang active
+      // ✅ CHỈ cập nhật yearRoles, KHÔNG cập nhật top-level fields (departmentId, isDepartmentHead)
+      // ✅ Lý do: Hệ thống chỉ sử dụng yearRoles để xác định QLBM theo năm học
       try {
+        const PERMISSIONS = require('../../config/permissions').PERMISSIONS;
+        // ✅ Permissions cho Trưởng bộ môn - phải khớp với checkPermission.js middleware
+        const departmentHeadPermissions = [
+          PERMISSIONS.DEPARTMENT_VIEW,
+          PERMISSIONS.DEPARTMENT_MANAGE,
+          PERMISSIONS.DEPARTMENT_ASSIGN_TEACHING,
+          PERMISSIONS.DEPARTMENT_SUPERVISE,
+          PERMISSIONS.TEACHER_VIEW_DEPARTMENT,
+          PERMISSIONS.TEACHER_VIEW,
+          PERMISSIONS.SUBJECT_VIEW,
+          PERMISSIONS.SUBJECT_MANAGE_DEPARTMENT,
+          PERMISSIONS.TEACHING_ASSIGNMENT_VIEW_DEPARTMENT,
+          PERMISSIONS.TEACHING_ASSIGNMENT_CREATE,
+          PERMISSIONS.TEACHING_ASSIGNMENT_UPDATE,
+          PERMISSIONS.SCHEDULE_VIEW_DEPARTMENT,
+          PERMISSIONS.CLASS_VIEW,
+          PERMISSIONS.STUDENT_VIEW,
+          PERMISSIONS.GRADE_VIEW,
+          PERMISSIONS.GRADE_VIEW_DEPARTMENT,
+          PERMISSIONS.EXAM_VIEW_DEPARTMENT,
+          PERMISSIONS.DASHBOARD_VIEW_DEPARTMENT
+        ];
+        
         await updateTeacherYearRole(headTeacherId, {
           departmentId: department._id,
-          isDepartmentHead: true
+          isDepartmentHead: true,
+          permissions: departmentHeadPermissions // ✅ Cập nhật đầy đủ permissions cho tổ trưởng mới
         }, deptYear);
-        console.log(`✅ Đã cập nhật quyền trưởng bộ môn cho giáo viên ${headTeacherId} năm học ${deptYear}`);
+        console.log(`✅ Đã cập nhật quyền trưởng bộ môn (và permissions) cho giáo viên ${headTeacherId} năm học ${deptYear}`);
       } catch (yearRoleError) {
         console.error('❌ Lỗi khi cập nhật yearRoles:', yearRoleError);
         // Không throw để không làm gián đoạn việc tạo department, nhưng log lỗi
@@ -344,6 +518,82 @@ exports.updateDepartment = async (req, res) => {
 
     // Cập nhật subjectIds: Xóa departmentId cũ, thêm departmentId mới
     if (subjectIds !== undefined) {
+      // 🔒 RÀNG BUỘC: Mỗi môn học chỉ được thuộc TỐI ĐA 1 tổ bộ môn trong CÙNG NĂM HỌC
+      if (Array.isArray(subjectIds) && subjectIds.length > 0) {
+        try {
+          const rawYear = String(department.year || department.schoolYear || '').trim();
+          let yearCode = rawYear;
+          let yearName = null;
+
+          // Tìm SchoolYear để lấy cả mã và tên (tương thích dữ liệu cũ & mới)
+          if (rawYear) {
+            try {
+              const schoolYear = await SchoolYearModel.findOne({
+                $or: [{ code: rawYear }, { name: rawYear }],
+              }).lean();
+              if (schoolYear) {
+                yearCode = schoolYear.code || rawYear;
+                yearName = schoolYear.name || null;
+              }
+            } catch (err) {
+              console.warn(
+                '⚠️ [updateDepartment] Error looking up SchoolYear for subject uniqueness:',
+                err.message
+              );
+            }
+          }
+
+          const yearFilters = [];
+          if (yearCode) {
+            yearFilters.push({ year: yearCode }, { schoolYear: yearCode });
+          }
+          if (yearName) {
+            yearFilters.push({ year: yearName }, { schoolYear: yearName });
+          }
+
+          const subjectIdStrings = subjectIds.map((s) => s.toString());
+
+          const conflictQuery = {
+            _id: { $ne: department._id },
+            isDeleted: { $ne: true },
+            subjectIds: { $in: subjectIdStrings },
+          };
+          if (yearFilters.length > 0) {
+            conflictQuery.$or = yearFilters;
+          }
+
+          const conflictDepartments = await Department.find(conflictQuery)
+            .populate('subjectIds', 'name code')
+            .lean();
+
+          if (conflictDepartments.length > 0) {
+            const conflictSubjectNames = new Set();
+            conflictDepartments.forEach((dep) => {
+              (dep.subjectIds || []).forEach((sub) => {
+                const sid = sub?._id?.toString?.();
+                if (sid && subjectIdStrings.includes(sid)) {
+                  conflictSubjectNames.add(sub.name || sub.code || sid);
+                }
+              });
+            });
+
+            if (conflictSubjectNames.size > 0) {
+              return res.status(400).json({
+                message:
+                  'Một số môn học đã thuộc tổ bộ môn khác trong năm học này: ' +
+                  Array.from(conflictSubjectNames).join(', '),
+              });
+            }
+          }
+        } catch (err) {
+          console.error(
+            '❌ [updateDepartment] Error checking subject uniqueness per year:',
+            err
+          );
+          // Không chặn cập nhật nếu check lỗi, nhưng log để theo dõi
+        }
+      }
+
       // Xóa departmentId từ các subject cũ
       await Subject.updateMany(
         { departmentId: department._id },
@@ -388,46 +638,51 @@ exports.updateDepartment = async (req, res) => {
           }
         }
 
-        if (newHeadTeacher && newHeadTeacher.isDepartmentHead) {
-          // Nếu giáo viên này đã là tổ trưởng của tổ khác, reset tổ cũ
-          const oldDepartment = await Department.findOne({ headTeacherId: headTeacherId });
-          if (oldDepartment && oldDepartment._id.toString() !== id) {
-            // Reset tổ trưởng cũ
-            await Teacher.findByIdAndUpdate(headTeacherId, { 
-              $unset: { departmentId: 1 },
-              isDepartmentHead: false 
-            });
+        // ✅ Kiểm tra giáo viên có phải tổ trưởng của tổ khác không (từ yearRoles)
+        const newHeadYearRole = Array.isArray(newHeadTeacher.yearRoles) 
+          ? newHeadTeacher.yearRoles.find(yr => yr.isDepartmentHead && yr.departmentId)
+          : null;
+        
+        if (newHeadYearRole && newHeadYearRole.departmentId) {
+          const oldDepartmentId = newHeadYearRole.departmentId.toString();
+          if (oldDepartmentId !== id) {
+            // ✅ Reset yearRoles cho tổ cũ - CHỈ cập nhật yearRoles, KHÔNG cập nhật top-level
+            await updateTeacherYearRole(headTeacherId, {
+              departmentId: null,
+              isDepartmentHead: false
+            }, deptYear);
             // Xóa headTeacherId của tổ cũ
-            await Department.findByIdAndUpdate(oldDepartment._id, {
-              headTeacherId: null
-            });
+            const oldDepartment = await Department.findById(oldDepartmentId);
+            if (oldDepartment) {
+              await Department.findByIdAndUpdate(oldDepartmentId, {
+                headTeacherId: null
+              });
+            }
           }
         }
       }
 
-      // ✅ Xóa isDepartmentHead từ giáo viên cũ (nếu có) - nhưng vẫn giữ departmentId nếu giáo viên vẫn thuộc tổ
+      // ✅ Xóa isDepartmentHead từ giáo viên cũ (nếu có) - CHỈ cập nhật yearRoles
       if (department.headTeacherId && department.headTeacherId.toString() !== headTeacherId?.toString()) {
         const oldHeadTeacher = await Teacher.findById(department.headTeacherId);
-        if (oldHeadTeacher && oldHeadTeacher.departmentId && oldHeadTeacher.departmentId.toString() === id) {
-          // ✅ Nếu giáo viên cũ vẫn thuộc tổ này, chỉ reset isDepartmentHead = false, giữ lại departmentId
-          await Teacher.findByIdAndUpdate(department.headTeacherId, { 
-            isDepartmentHead: false 
-          });
-          // ✅ Cập nhật yearRoles cho giáo viên cũ
-          await updateTeacherYearRole(department.headTeacherId, {
-            isDepartmentHead: false
-          }, deptYear);
-        } else {
-          // ✅ Nếu giáo viên cũ không thuộc tổ này nữa, xóa departmentId
-          await Teacher.findByIdAndUpdate(department.headTeacherId, { 
-            $unset: { departmentId: 1 },
-            isDepartmentHead: false 
-          });
-          // ✅ Cập nhật yearRoles cho giáo viên cũ
-          await updateTeacherYearRole(department.headTeacherId, {
-            departmentId: null,
-            isDepartmentHead: false
-          }, deptYear);
+        if (oldHeadTeacher) {
+          // ✅ Kiểm tra giáo viên cũ có còn thuộc tổ này không (từ yearRoles)
+          const oldHeadYearRole = Array.isArray(oldHeadTeacher.yearRoles)
+            ? oldHeadTeacher.yearRoles.find(yr => String(yr.schoolYear) === String(deptYear))
+            : null;
+          
+          if (oldHeadYearRole && oldHeadYearRole.departmentId && oldHeadYearRole.departmentId.toString() === id) {
+            // ✅ Nếu giáo viên cũ vẫn thuộc tổ này, chỉ reset isDepartmentHead = false, giữ lại departmentId
+            await updateTeacherYearRole(department.headTeacherId, {
+              isDepartmentHead: false
+            }, deptYear);
+          } else {
+            // ✅ Nếu giáo viên cũ không thuộc tổ này nữa, xóa departmentId
+            await updateTeacherYearRole(department.headTeacherId, {
+              departmentId: null,
+              isDepartmentHead: false
+            }, deptYear);
+          }
         }
       }
       
@@ -435,41 +690,50 @@ exports.updateDepartment = async (req, res) => {
       // ✅ Đảm bảo giáo viên mới có departmentId và isDepartmentHead = true
       // ✅ Lưu ý: Không ảnh hưởng đến isHomeroom, giáo viên có thể vừa là TBM vừa là GVCN
       if (headTeacherId) {
-        // ✅ Đảm bảo giáo viên mới có departmentId và isDepartmentHead = true
-      await Teacher.findByIdAndUpdate(headTeacherId, { 
-        departmentId: department._id,
-        isDepartmentHead: true 
-        // Không set isHomeroom ở đây để giữ lại flag nếu giáo viên đã là GVCN
-      });
-      
-      // ✅ Cập nhật yearRoles cho năm học của department
+      // ✅ CHỈ cập nhật yearRoles, KHÔNG cập nhật top-level fields (departmentId, isDepartmentHead)
+      // ✅ Lý do: Hệ thống chỉ sử dụng yearRoles để xác định QLBM theo năm học
       try {
+        const PERMISSIONS = require('../../config/permissions').PERMISSIONS;
+        // ✅ Permissions cho Trưởng bộ môn - phải khớp với checkPermission.js middleware
+        const departmentHeadPermissions = [
+          PERMISSIONS.DEPARTMENT_VIEW,
+          PERMISSIONS.DEPARTMENT_MANAGE,
+          PERMISSIONS.DEPARTMENT_ASSIGN_TEACHING,
+          PERMISSIONS.DEPARTMENT_SUPERVISE,
+          PERMISSIONS.TEACHER_VIEW_DEPARTMENT,
+          PERMISSIONS.TEACHER_VIEW,
+          PERMISSIONS.SUBJECT_VIEW,
+          PERMISSIONS.SUBJECT_MANAGE_DEPARTMENT,
+          PERMISSIONS.TEACHING_ASSIGNMENT_VIEW_DEPARTMENT,
+          PERMISSIONS.TEACHING_ASSIGNMENT_CREATE,
+          PERMISSIONS.TEACHING_ASSIGNMENT_UPDATE,
+          PERMISSIONS.SCHEDULE_VIEW_DEPARTMENT,
+          PERMISSIONS.CLASS_VIEW,
+          PERMISSIONS.STUDENT_VIEW,
+          PERMISSIONS.GRADE_VIEW,
+          PERMISSIONS.GRADE_VIEW_DEPARTMENT,
+          PERMISSIONS.EXAM_VIEW_DEPARTMENT,
+          PERMISSIONS.DASHBOARD_VIEW_DEPARTMENT
+        ];
+        
         await updateTeacherYearRole(headTeacherId, {
           departmentId: department._id,
-          isDepartmentHead: true
+          isDepartmentHead: true,
+          permissions: departmentHeadPermissions // ✅ Cập nhật đầy đủ permissions cho tổ trưởng mới
         }, deptYear);
-        console.log(`✅ Đã cập nhật quyền trưởng bộ môn cho giáo viên ${headTeacherId} năm học ${deptYear}`);
+        console.log(`✅ Đã cập nhật quyền trưởng bộ môn (và permissions) cho giáo viên ${headTeacherId} năm học ${deptYear}`);
       } catch (yearRoleError) {
         console.error('❌ Lỗi khi cập nhật yearRoles:', yearRoleError);
         // Không throw để không làm gián đoạn việc cập nhật department
       }
       
-      // ✅ Đảm bảo các giáo viên khác trong tổ KHÔNG có isDepartmentHead = true
-      await Teacher.updateMany(
-        { 
-          departmentId: department._id,
-          _id: { $ne: headTeacherId } // Loại trừ trưởng bộ môn mới
-        },
-        { 
-          isDepartmentHead: false 
-        }
-      );
-
       // ✅ Reset yearRoles.isDepartmentHead cho các giáo viên khác trong tổ
+      // ✅ CHỈ cập nhật yearRoles, KHÔNG cập nhật top-level fields
       if (deptYear) {
         const otherTeachers = await Teacher.find({
           departmentId: department._id,
-          _id: { $ne: headTeacherId }
+          _id: { $ne: headTeacherId },
+          isDeleted: { $ne: true } // ✅ Không lấy giáo viên đã bị xóa mềm
         });
         for (const otherTeacher of otherTeachers) {
           try {
@@ -524,7 +788,8 @@ exports.deleteDepartment = async (req, res) => {
       $or: [
         { departmentId: department._id },
         { _id: { $in: teacherIds } }
-      ]
+      ],
+      isDeleted: { $ne: true } // ✅ Không lấy giáo viên đã bị xóa mềm
     });
 
     const allTeacherIds = [
@@ -581,13 +846,13 @@ exports.deleteDepartment = async (req, res) => {
       console.warn('Warning: không thể xóa TeachingAssignment liên quan khi xóa Department', err.message);
     }
 
-    // ✅ Xóa tổ bộ môn (hoặc đánh dấu inactive) - teacherIds sẽ tự động bị xóa
+    // ✅ Soft Delete - Đánh dấu isDeleted = true (không xóa vĩnh viễn)
     await Department.findByIdAndUpdate(id, { 
+      isDeleted: true,
       status: 'inactive',
       teacherIds: [], // ✅ Xóa tất cả teacherIds
       headTeacherId: null // ✅ Reset headTeacherId
     });
-    // Hoặc xóa hoàn toàn: await Department.findByIdAndDelete(id);
 
     res.json({ 
       message: 'Xóa tổ bộ môn thành công. Tất cả giáo viên đã được gỡ khỏi tổ và reset về giáo viên bình thường.',
@@ -617,53 +882,73 @@ exports.getDepartmentTeachers = async (req, res) => {
       }
     }
 
-    // Nếu client yêu cầu theo năm học, sử dụng helper để trả về yearRole phù hợp
-    let teachers;
-    if (year) {
-      // sử dụng Department instance helper getTeachersWithYear
-      const teachersWithYear = await department.getTeachersWithYear();
-      // Populate account/subjects/mainSubject manually for returned plain objects
-      const teacherIds = teachersWithYear.map(t => t._id).filter(Boolean);
-      const populated = await Teacher.find({ _id: { $in: teacherIds } })
-        .populate('accountId', 'email phone')
-        .populate('subjects.subjectId', 'name code')
-        .populate('mainSubject', 'name code')
-        .lean();
-
-      // Merge yearRole into populated teacher objects
-      const popMap = new Map(populated.map(p => [String(p._id), p]));
-      teachers = teachersWithYear.map(t => {
-        const base = popMap.get(String(t._id)) || {};
-        return Object.assign({}, base, {
-          schoolYear: t.schoolYear,
-          yearRole: t.yearRole || null,
-          maxClassPerGrade: normalizeMaxClassPerGrade(base.maxClassPerGrade)
-        });
-      });
-    } else {
-      // Không có year: hành vi cũ
-      if (department.teacherIds && department.teacherIds.length > 0) {
-        // Ưu tiên lấy từ teacherIds trong Department
-        teachers = await Teacher.find({ _id: { $in: department.teacherIds } })
-          .populate('accountId', 'email phone')
-          .populate('subjects.subjectId', 'name code')
-          .populate('mainSubject', 'name code')
-          .select('name teacherCode phone subjects mainSubject isHomeroom isDepartmentHead departmentId')
-          .lean();
+    // ✅ LUÔN sử dụng getTeachersWithYear để lấy teachers từ yearRoles
+    // Nếu có year từ query, dùng year đó; nếu không, dùng year của department
+    const targetYear = year || department.year || department.schoolYear;
+    
+    let yearCode = targetYear ? String(targetYear).trim() : null;
+    let yearName = null;
+    
+    if (yearCode) {
+      // ✅ Chuyển đổi year (có thể là mã hoặc tên) thành mã năm học để filter chính xác
+      // Nếu year là tên năm học, tìm mã năm học tương ứng
+      if (yearCode.includes('Năm học') || yearCode.includes('năm học')) {
+        try {
+          const schoolYear = await SchoolYearModel.findOne({ name: yearCode }).lean();
+          if (schoolYear && schoolYear.code) {
+            yearCode = schoolYear.code;
+            yearName = schoolYear.name;
+          } else {
+            yearName = yearCode;
+          }
+        } catch (err) {
+          console.warn('⚠️ [getDepartmentTeachers] Error looking up SchoolYear:', err.message);
+          yearName = yearCode;
+        }
       } else {
-        // Fallback: lấy từ departmentId trong Teacher
-        teachers = await Teacher.find({ departmentId: id })
-          .populate('accountId', 'email phone')
-          .populate('subjects.subjectId', 'name code')
-          .populate('mainSubject', 'name code')
-          .select('name teacherCode phone subjects mainSubject isHomeroom isDepartmentHead departmentId')
-          .lean();
+        // year là mã năm học, tìm tên năm học tương ứng
+        try {
+          const schoolYear = await SchoolYearModel.findOne({ code: yearCode }).lean();
+          if (schoolYear && schoolYear.name) {
+            yearName = schoolYear.name;
+          }
+        } catch (err) {
+          console.warn('⚠️ [getDepartmentTeachers] Error looking up SchoolYear:', err.message);
+        }
       }
-      teachers = teachers.map(teacher => ({
-        ...teacher,
-        maxClassPerGrade: normalizeMaxClassPerGrade(teacher.maxClassPerGrade)
-      }));
     }
+    
+    // ✅ Sử dụng Department instance helper getTeachersWithYear
+    // Nếu không có year, getTeachersWithYear sẽ tự động dùng year của department
+    const teachersWithYear = await department.getTeachersWithYear(yearCode || yearName || targetYear);
+    
+    // Populate account/subjects/mainSubject manually for returned plain objects
+    const teacherIds = teachersWithYear.map(t => t._id).filter(Boolean);
+    
+    if (teacherIds.length === 0) {
+      // Không có teachers nào, trả về mảng rỗng
+      return res.json([]);
+    }
+    
+    const populated = await Teacher.find({ 
+      _id: { $in: teacherIds },
+      isDeleted: { $ne: true } // ✅ Không lấy giáo viên đã bị xóa mềm
+    })
+      .populate('accountId', 'email phone')
+      .populate('subjects.subjectId', 'name code')
+      .populate('mainSubject', 'name code')
+      .lean();
+
+    // Merge yearRole into populated teacher objects
+    const popMap = new Map(populated.map(p => [String(p._id), p]));
+    const teachers = teachersWithYear.map(t => {
+      const base = popMap.get(String(t._id)) || {};
+      return Object.assign({}, base, {
+        schoolYear: t.schoolYear,
+        yearRole: t.yearRole || null,
+        maxClassPerGrade: normalizeMaxClassPerGrade(base.maxClassPerGrade)
+      });
+    });
 
     const normalizedTeachers = teachers.map(teacher => {
       const plain = teacher.toObject ? teacher.toObject() : teacher;
@@ -922,27 +1207,42 @@ exports.addTeacherToDepartment = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy giáo viên' });
     }
 
+    // ✅ Lấy năm học của department để kiểm tra yearRoles
+    const deptYear = department.year || department.schoolYear;
+    if (!deptYear) {
+      return res.status(400).json({ 
+        message: 'Tổ bộ môn chưa có năm học. Vui lòng cập nhật năm học cho tổ bộ môn.' 
+      });
+    }
+
     // ✅ RÀNG BUỘC: CHỈ CÓ 1 TỔ TRƯỞNG TRONG 1 TỔ
-    // Kiểm tra giáo viên đã thuộc tổ khác chưa
-    if (teacher.departmentId && teacher.departmentId.toString() !== id) {
-      // Nếu giáo viên này đã là tổ trưởng của tổ khác, reset tổ cũ
-      if (teacher.isDepartmentHead) {
-        const oldDepartment = await Department.findOne({ headTeacherId: teacherId });
-        if (oldDepartment) {
-          // Reset tổ trưởng cũ
-          await Teacher.findByIdAndUpdate(teacherId, { 
-            $unset: { departmentId: 1 },
-            isDepartmentHead: false 
-          });
-          // Xóa headTeacherId của tổ cũ
-          await Department.findByIdAndUpdate(oldDepartment._id, {
-            headTeacherId: null
+    // ✅ Kiểm tra giáo viên đã thuộc tổ khác chưa (theo yearRoles, không phải top-level departmentId)
+    const teacherYearRole = Array.isArray(teacher.yearRoles) 
+      ? teacher.yearRoles.find(yr => String(yr.schoolYear) === String(deptYear))
+      : null;
+    
+    if (teacherYearRole && teacherYearRole.departmentId) {
+      const existingDeptId = teacherYearRole.departmentId._id?.toString() || teacherYearRole.departmentId.toString();
+      if (existingDeptId !== id) {
+        // Nếu giáo viên này đã là tổ trưởng của tổ khác trong cùng năm học, reset tổ cũ
+        if (teacherYearRole.isDepartmentHead) {
+          const oldDepartment = await Department.findById(existingDeptId);
+          if (oldDepartment && oldDepartment.headTeacherId && oldDepartment.headTeacherId.toString() === teacherId) {
+            // Reset tổ trưởng cũ trong yearRoles
+            await updateTeacherYearRole(teacherId, {
+              departmentId: null,
+              isDepartmentHead: false
+            }, deptYear);
+            // Xóa headTeacherId của tổ cũ
+            await Department.findByIdAndUpdate(existingDeptId, {
+              headTeacherId: null
+            });
+          }
+        } else {
+          return res.status(400).json({ 
+            message: `Giáo viên đã thuộc tổ bộ môn khác trong năm học này. Vui lòng xóa khỏi tổ cũ trước.` 
           });
         }
-      } else {
-        return res.status(400).json({ 
-          message: `Giáo viên đã thuộc tổ bộ môn khác. Vui lòng xóa khỏi tổ cũ trước.` 
-        });
       }
     }
 
@@ -971,35 +1271,71 @@ exports.addTeacherToDepartment = async (req, res) => {
       });
     }
 
-    // ✅ Thêm giáo viên vào tổ - CHỈ set departmentId, KHÔNG set isDepartmentHead
-    // isDepartmentHead CHỈ được set khi giáo viên đó là headTeacherId trong Department
-    teacher.departmentId = department._id;
+    // ✅ Thêm giáo viên vào tổ - CHỈ cập nhật yearRoles, KHÔNG cập nhật top-level departmentId/isDepartmentHead
+    // ✅ Xác định isDepartmentHead: 
+    //    1. Nếu giáo viên này đã là trưởng bộ môn (headTeacherId) → giữ nguyên
+    //    2. Nếu tổ chưa có trưởng bộ môn → giáo viên mới tự động trở thành trưởng bộ môn
+    const isHeadTeacher = department.headTeacherId && department.headTeacherId.toString() === teacherId;
+    const shouldBecomeHead = !department.headTeacherId; // ✅ Tổ chưa có trưởng bộ môn
     
-    // ✅ CHỈ set isDepartmentHead = true nếu giáo viên này là trưởng bộ môn (headTeacherId)
-    // ✅ Nếu KHÔNG phải trưởng bộ môn, đảm bảo isDepartmentHead = false
-    if (department.headTeacherId && department.headTeacherId.toString() === teacherId) {
-      teacher.isDepartmentHead = true;
+    // ✅ Xác định permissions dựa trên vai trò
+    const PERMISSIONS = require('../../config/permissions').PERMISSIONS;
+    let departmentPermissions = [];
+    let finalIsDepartmentHead = isHeadTeacher || shouldBecomeHead;
+    
+    if (finalIsDepartmentHead) {
+      // ✅ Trưởng bộ môn có quyền quản lý tổ - phải khớp với checkPermission.js middleware
+      departmentPermissions = [
+        PERMISSIONS.DEPARTMENT_VIEW,
+        PERMISSIONS.DEPARTMENT_MANAGE,
+        PERMISSIONS.DEPARTMENT_ASSIGN_TEACHING,
+        PERMISSIONS.DEPARTMENT_SUPERVISE,
+        PERMISSIONS.TEACHER_VIEW_DEPARTMENT,
+        PERMISSIONS.TEACHER_VIEW,
+        PERMISSIONS.SUBJECT_VIEW,
+        PERMISSIONS.SUBJECT_MANAGE_DEPARTMENT,
+        PERMISSIONS.TEACHING_ASSIGNMENT_VIEW_DEPARTMENT,
+        PERMISSIONS.TEACHING_ASSIGNMENT_CREATE,
+        PERMISSIONS.TEACHING_ASSIGNMENT_UPDATE,
+        PERMISSIONS.SCHEDULE_VIEW_DEPARTMENT,
+        PERMISSIONS.CLASS_VIEW,
+        PERMISSIONS.STUDENT_VIEW,
+        PERMISSIONS.GRADE_VIEW,
+        PERMISSIONS.GRADE_VIEW_DEPARTMENT,
+        PERMISSIONS.EXAM_VIEW_DEPARTMENT,
+        PERMISSIONS.DASHBOARD_VIEW_DEPARTMENT
+      ];
     } else {
-      // ✅ Đảm bảo thành viên bộ môn KHÔNG có isDepartmentHead = true
-      teacher.isDepartmentHead = false;
+      // ✅ Giáo viên thường trong tổ có quyền xem tổ
+      departmentPermissions = [
+        PERMISSIONS.DEPARTMENT_VIEW,
+        PERMISSIONS.TEACHER_VIEW_DEPARTMENT,
+        PERMISSIONS.TEACHING_ASSIGNMENT_VIEW_DEPARTMENT,
+        PERMISSIONS.SCHEDULE_VIEW_DEPARTMENT
+      ];
     }
     
-    await teacher.save();
-    
-    // ✅ Cập nhật yearRoles cho giáo viên theo năm học của department
-    const deptYear = department.year || department.schoolYear;
-    if (deptYear) {
-      await updateTeacherYearRole(teacherId, {
-        departmentId: department._id,
-        isDepartmentHead: (department.headTeacherId && department.headTeacherId.toString() === teacherId) ? true : false
-      }, deptYear);
-    }
+    // ✅ Cập nhật yearRoles cho giáo viên theo năm học của department (bao gồm permissions)
+    await updateTeacherYearRole(teacherId, {
+      departmentId: department._id,
+      isDepartmentHead: finalIsDepartmentHead,
+      permissions: departmentPermissions
+    }, deptYear);
 
-    // ✅ Cập nhật teacherIds trong Department - thêm giáo viên vào danh sách thành viên
-    // Sử dụng $addToSet để tránh trùng lặp (MongoDB tự động kiểm tra)
-    await Department.findByIdAndUpdate(id, {
-      $addToSet: { teacherIds: teacherId } // Thêm teacherId vào teacherIds nếu chưa có
-    });
+    // ✅ Nếu tổ chưa có trưởng bộ môn, đặt giáo viên mới làm trưởng bộ môn
+    if (shouldBecomeHead) {
+      await Department.findByIdAndUpdate(id, {
+        headTeacherId: teacherId,
+        $addToSet: { teacherIds: teacherId } // Thêm teacherId vào teacherIds nếu chưa có
+      });
+      console.log(`✅ Đã tự động đặt giáo viên ${teacherId} làm trưởng bộ môn cho tổ ${id} (tổ chưa có trưởng)`);
+    } else {
+      // ✅ Cập nhật teacherIds trong Department - thêm giáo viên vào danh sách thành viên
+      // Sử dụng $addToSet để tránh trùng lặp (MongoDB tự động kiểm tra)
+      await Department.findByIdAndUpdate(id, {
+        $addToSet: { teacherIds: teacherId } // Thêm teacherId vào teacherIds nếu chưa có
+      });
+    }
 
     const updatedTeacher = await Teacher.findById(teacherId)
       .populate('accountId', 'email phone')
@@ -1181,4 +1517,5 @@ exports.copyDepartmentsFromYear = async (req, res) => {
     });
   }
 };
+
 

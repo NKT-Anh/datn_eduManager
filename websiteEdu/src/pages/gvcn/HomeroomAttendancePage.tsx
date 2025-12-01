@@ -16,6 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import attendanceApi from '@/services/attendanceApi';
 import api from '@/services/axiosInstance';
 import { useSchoolYears, useScheduleConfig } from '@/hooks';
+import { useCurrentAcademicYear } from '@/hooks/useCurrentAcademicYear';
 import schoolConfigApi from '@/services/schoolConfigApi';
 import {
   Dialog,
@@ -57,7 +58,9 @@ interface AbsentStudent {
 export default function HomeroomAttendancePage() {
   const { backendUser } = useAuth();
   const { toast } = useToast();
-  const { currentYearData, currentYear, schoolYears: allSchoolYears } = useSchoolYears();
+  const { schoolYears: allSchoolYears } = useSchoolYears();
+  const { currentYearCode, currentYearData } = useCurrentAcademicYear();
+  const currentYear = currentYearCode;
   const { scheduleConfig } = useScheduleConfig();
   
   const [homeroomClass, setHomeroomClass] = useState<any>(null);

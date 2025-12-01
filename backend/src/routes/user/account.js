@@ -79,4 +79,18 @@ router.put('/teacher/:teacherId/flags',
   accountController.updateTeacherFlags
 );
 
+// 🔒 Khóa tài khoản (chỉ Admin)
+router.put('/:accountId/lock', 
+  authMiddleware, 
+  checkPermission(PERMISSIONS.USER_UPDATE, { checkContext: false }),
+  accountController.lockAccount
+);
+
+// 🔓 Mở khóa tài khoản (chỉ Admin)
+router.put('/:accountId/unlock', 
+  authMiddleware, 
+  checkPermission(PERMISSIONS.USER_UPDATE, { checkContext: false }),
+  accountController.unlockAccount
+);
+
 module.exports = router;

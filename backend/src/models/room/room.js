@@ -21,6 +21,14 @@ const roomSchema = new Schema(
       enum: ["available", "maintenance", "inactive"],
       default: "available",
     },
+
+    // ✅ Soft Delete - Không xóa thật vì liên quan đến lịch sử sử dụng phòng
+    isDeleted: {
+      type: Boolean,
+      default: false,
+      description: 'Đánh dấu xóa mềm - giữ lịch sử sử dụng phòng'
+    },
+
     note: { type: String },
   },
   { timestamps: true }

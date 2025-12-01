@@ -65,6 +65,13 @@ const departmentSchema = new mongoose.Schema({
     default: 'active'
   },
 
+  // ✅ Soft Delete - Không xóa thật vì liên quan đến lịch sử phân công
+  isDeleted: {
+    type: Boolean,
+    default: false,
+    description: 'Đánh dấu xóa mềm - giữ lịch sử tổ bộ môn'
+  },
+
   // Thông tin bổ sung
   notes: {
     type: String,
@@ -120,16 +127,127 @@ departmentSchema.pre('save', async function(next) {
 
 /**
  * Instance helper: populate teachers and return each teacher with schoolYear and matching yearRole
+ * ✅ CHỈ trả về giáo viên có departmentId trong yearRole trùng với department này trong năm học đó
+ * @param {string} targetYear - Năm học cần filter (optional, nếu không có sẽ dùng year của department)
  */
-departmentSchema.methods.getTeachersWithYear = async function() {
+departmentSchema.methods.getTeachersWithYear = async function(targetYear = null) {
   const dept = this;
   const Teacher = require('../user/teacher');
-  const teachers = await Teacher.find({ _id: { $in: dept.teacherIds } }).lean();
-  const year = String(dept.schoolYear || dept.year || '');
-  return teachers.map(t => {
-    const yearRole = Array.isArray(t.yearRoles) ? t.yearRoles.find(r => String(r.schoolYear) === year) : null;
-    return Object.assign({}, t, { schoolYear: year, yearRole });
-  });
+  const SchoolYearModel = require('../schoolYear');
+  
+  // ✅ Xác định năm học cần filter
+  let year = targetYear ? String(targetYear) : String(dept.schoolYear || dept.year || '');
+  
+  // ✅ Nếu year là tên năm học, tìm mã năm học tương ứng (tương thích với dữ liệu cũ)
+  let yearCode = year;
+  let yearName = null;
+  
+  if (year && (year.includes('Năm học') || year.includes('năm học'))) {
+    // year là tên năm học
+    yearName = year;
+    try {
+      const schoolYear = await SchoolYearModel.findOne({ name: year }).lean();
+      if (schoolYear && schoolYear.code) {
+        yearCode = schoolYear.code;
+      }
+    } catch (err) {
+      console.warn('⚠️ [getTeachersWithYear] Error looking up SchoolYear:', err.message);
+    }
+  } else if (year) {
+    // year có thể là mã năm học, tìm tên năm học tương ứng
+    try {
+      const schoolYear = await SchoolYearModel.findOne({ code: year }).lean();
+      if (schoolYear && schoolYear.name) {
+        yearName = schoolYear.name;
+      }
+    } catch (err) {
+      console.warn('⚠️ [getTeachersWithYear] Error looking up SchoolYear:', err.message);
+    }
+  }
+  
+  // ✅ Tìm tất cả giáo viên có yearRole.departmentId trùng với department này trong năm học đó
+  // Filter theo cả mã và tên năm học để tương thích với dữ liệu cũ và mới
+  const yearFilters = [];
+  if (yearCode) {
+    yearFilters.push({ 'yearRoles.schoolYear': yearCode });
+  }
+  if (yearName) {
+    yearFilters.push({ 'yearRoles.schoolYear': yearName });
+  }
+  // ✅ Nếu không có yearCode và yearName, vẫn filter theo year gốc (có thể là mã hoặc tên)
+  if (!yearCode && !yearName && year) {
+    yearFilters.push({ 'yearRoles.schoolYear': year });
+  }
+  
+  const query = {
+    'yearRoles.departmentId': dept._id,
+    isDeleted: { $ne: true }
+  };
+  
+  if (yearFilters.length > 0) {
+    query.$or = yearFilters;
+  } else if (!year || year === '') {
+    // ✅ Nếu không có year, lấy tất cả teachers có departmentId trong yearRoles (bất kỳ năm nào)
+    // Điều này hữu ích khi không biết năm học cụ thể
+  }
+  
+  let teachers = await Teacher.find(query).lean();
+  
+  console.log(`🔍 [getTeachersWithYear] Department: ${dept.name} (${dept._id}), Year: ${yearCode || yearName || year}`);
+  console.log(`🔍 [getTeachersWithYear] Found ${teachers.length} teachers from yearRoles query`);
+  console.log(`🔍 [getTeachersWithYear] Department has ${dept.teacherIds?.length || 0} teacherIds`);
+  
+  // ✅ Nếu không tìm thấy teachers từ yearRoles, fallback về teacherIds trong Department
+  // Điều này xử lý trường hợp dữ liệu cũ chưa có yearRoles hoặc yearRoles chưa được cập nhật
+  if (teachers.length === 0 && dept.teacherIds && dept.teacherIds.length > 0) {
+    console.log(`⚠️ [getTeachersWithYear] No teachers found from yearRoles, falling back to teacherIds`);
+    const fallbackTeachers = await Teacher.find({
+      _id: { $in: dept.teacherIds },
+      isDeleted: { $ne: true }
+    }).lean();
+    
+    console.log(`✅ [getTeachersWithYear] Found ${fallbackTeachers.length} teachers from teacherIds fallback`);
+    
+    // ✅ Tạo yearRole giả lập từ dữ liệu hiện tại cho các teachers này
+    teachers = fallbackTeachers.map(t => {
+      // Tìm yearRole nếu có (có thể không có departmentId trong yearRole)
+      const yearRole = Array.isArray(t.yearRoles) 
+        ? t.yearRoles.find(r => {
+            const rYear = String(r.schoolYear || '');
+            return rYear === yearCode || rYear === yearName || rYear === year;
+          })
+        : null;
+      
+      // ✅ Nếu không có yearRole, tạo một yearRole giả lập từ dữ liệu top-level (backward compatibility)
+      const mockYearRole = yearRole || {
+        schoolYear: yearCode || yearName || year,
+        departmentId: dept._id,
+        isDepartmentHead: t.isDepartmentHead || false,
+        isHomeroom: t.isHomeroom || false
+      };
+      
+      return Object.assign({}, t, { 
+        schoolYear: yearCode || yearName || year, 
+        yearRole: mockYearRole 
+      });
+    });
+  } else {
+    // ✅ Map và thêm thông tin yearRole tương ứng
+    teachers = teachers.map(t => {
+      const yearRole = Array.isArray(t.yearRoles) 
+        ? t.yearRoles.find(r => {
+            const rYear = String(r.schoolYear || '');
+            const rDeptId = String(r.departmentId || '');
+            return (rYear === yearCode || rYear === yearName || rYear === year) && 
+                   rDeptId === String(dept._id);
+          })
+        : null;
+      return Object.assign({}, t, { schoolYear: yearCode || year, yearRole });
+    });
+  }
+  
+  console.log(`✅ [getTeachersWithYear] Returning ${teachers.length} teachers`);
+  return teachers;
 };
 
 // Register model after attaching hooks/methods

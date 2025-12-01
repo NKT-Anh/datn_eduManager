@@ -164,11 +164,25 @@ router.post('/save',
   gradeController.saveScores
 );
 
-// ✅ Học sinh xem điểm của bản thân
+// ✅ Học sinh xem điểm của bản thân, GVCN xem điểm học sinh lớp chủ nhiệm
 router.get('/student', 
   authMiddleware, 
-  checkPermission(PERMISSIONS.GRADE_VIEW_SELF, { checkContext: true }), 
+  checkPermission([
+    PERMISSIONS.GRADE_VIEW_SELF,
+    PERMISSIONS.GRADE_VIEW_HOMEROOM
+  ], { checkContext: true }), 
   gradeController.getStudentGrades
+);
+
+// ✅ Lấy điểm học sinh với so sánh xu hướng (học kỳ trước, năm trước)
+router.get('/student/trend', 
+  authMiddleware, 
+  checkPermission([
+    PERMISSIONS.GRADE_VIEW_SELF,
+    PERMISSIONS.GRADE_VIEW_HOMEROOM,
+    PERMISSIONS.GRADE_VIEW_ALL
+  ], { checkContext: true }), 
+  gradeController.getStudentGradesWithTrend
 );
 
 // ✅ Khởi tạo bảng điểm cho tất cả lớp - Chỉ Admin
@@ -183,6 +197,13 @@ router.get('/admin/all',
   authMiddleware, 
   checkPermission([PERMISSIONS.GRADE_VIEW_ALL, PERMISSIONS.GRADE_VIEW], { checkContext: false }), 
   gradeController.getAllStudentsGrades
+);
+
+// ✅ Admin/BGH xem tất cả điểm với xu hướng
+router.get('/admin/all/trend', 
+  authMiddleware, 
+  checkPermission([PERMISSIONS.GRADE_VIEW_ALL, PERMISSIONS.GRADE_VIEW], { checkContext: false }), 
+  gradeController.getAllStudentsGradesWithTrend
 );
 
 // ✅ Thống kê điểm theo lớp/khối/năm học
@@ -277,6 +298,13 @@ router.get('/homeroom/all',
   authMiddleware, 
   checkPermission([PERMISSIONS.GRADE_VIEW_HOMEROOM, PERMISSIONS.GRADE_VIEW_ALL], { checkContext: true }), 
   gradeController.getHomeroomClassAllGrades
+);
+
+// ✅ GVCN xem tất cả điểm của lớp chủ nhiệm với xu hướng
+router.get('/homeroom/all/trend', 
+  authMiddleware, 
+  checkPermission([PERMISSIONS.GRADE_VIEW_HOMEROOM, PERMISSIONS.GRADE_VIEW_ALL], { checkContext: true }), 
+  gradeController.getHomeroomClassAllGradesWithTrend
 );
 
 // ✅ GVCN xem điểm trung bình từng môn, điểm TB học kỳ/năm của học sinh

@@ -6,21 +6,30 @@ const TeachingAssignmentProposal = require('../../models/subject/teachingAssignm
 const ClassModel = require('../../models/class/class');
 const Account = require('../../models/user/account');
 const ClassPeriods = require('../../models/class/classPeriods');
-
+const { getCurrentSchoolYear, getEffectiveSchoolYear } = require('../../utils/schoolYearHelper');
 
 /**
- * ✅ Kiểm tra quyền quản lý tổ bộ môn
+ * ✅ Kiểm tra quyền quản lý tổ bộ môn (từ yearRoles theo năm học)
  */
 async function canManageDepartment(req, departmentId) {
   if (!req.user || req.user.role !== 'teacher') return false;
   if (!departmentId) return false;
   
+  const currentYear = await getCurrentSchoolYear();
+  if (!currentYear) return false;
+  
   const teacher = await Teacher.findOne({ accountId: req.user.accountId })
-    .select('isDepartmentHead departmentId')
+    .select('yearRoles')
     .lean();
     
-  if (!teacher || !teacher.isDepartmentHead) return false;
-  return teacher.departmentId && teacher.departmentId.toString() === departmentId.toString();
+  if (!teacher || !Array.isArray(teacher.yearRoles)) return false;
+  
+  // ✅ Tìm yearRole cho năm học hiện tại
+  const yearRole = teacher.yearRoles.find(yr => String(yr.schoolYear) === String(currentYear));
+  if (!yearRole || !yearRole.isDepartmentHead) return false;
+  
+  const teacherDeptId = yearRole.departmentId?._id?.toString() || yearRole.departmentId?.toString();
+  return teacherDeptId === departmentId.toString();
 }
 
 /**
@@ -32,19 +41,34 @@ exports.getDashboard = async (req, res) => {
   try {
     const { semester } = req.query; // ✅ Không lấy year từ query nữa
     
-    // ✅ Bước 1: Lấy thông tin giáo viên hiện tại để lấy departmentId
+    // ✅ Bước 1: Lấy thông tin giáo viên hiện tại để lấy departmentId từ yearRoles
+    const currentYear = await getCurrentSchoolYear();
+    if (!currentYear) {
+      return res.status(400).json({ 
+        message: 'Không thể xác định năm học hiện tại' 
+      });
+    }
+    
     const currentTeacher = await Teacher.findOne({ accountId: req.user.accountId })
-      .select('isDepartmentHead departmentId')
+      .select('yearRoles')
       .lean();
       
-    if (!currentTeacher || !currentTeacher.isDepartmentHead || !currentTeacher.departmentId) {
+    if (!currentTeacher || !Array.isArray(currentTeacher.yearRoles)) {
+      return res.status(403).json({ 
+        message: 'Bạn không phải trưởng bộ môn hoặc không thuộc tổ bộ môn nào' 
+      });
+    }
+    
+    // ✅ Tìm yearRole cho năm học hiện tại
+    const yearRole = currentTeacher.yearRoles.find(yr => String(yr.schoolYear) === String(currentYear));
+    if (!yearRole || !yearRole.isDepartmentHead || !yearRole.departmentId) {
       return res.status(403).json({ 
         message: 'Bạn không phải trưởng bộ môn hoặc không thuộc tổ bộ môn nào' 
       });
     }
 
-    // ✅ Bước 2: Lấy department từ departmentId để lấy year
-    const departmentId = currentTeacher.departmentId._id || currentTeacher.departmentId;
+    // ✅ Bước 2: Lấy department từ departmentId trong yearRole
+    const departmentId = yearRole.departmentId._id?.toString() || yearRole.departmentId.toString();
     const department = await Department.findById(departmentId)
       .populate('subjectIds', 'name code')
       .populate('teacherIds', 'name teacherCode')
@@ -60,10 +84,15 @@ exports.getDashboard = async (req, res) => {
 
     // Thống kê giáo viên
     const teacherCount = department.teacherIds?.length || 0;
-    const homeroomTeacherCount = await Teacher.countDocuments({ 
-      departmentId: departmentId,
-      isHomeroom: true 
-    });
+    
+    // ✅ Đếm giáo viên chủ nhiệm từ yearRoles
+    const teachersWithYearRoles = await Teacher.find({
+      'yearRoles.schoolYear': department.year || department.schoolYear,
+      'yearRoles.departmentId': departmentId,
+      'yearRoles.isHomeroom': true,
+      isDeleted: { $ne: true }
+    }).lean();
+    const homeroomTeacherCount = teachersWithYearRoles.length;
 
     // Thống kê môn học
     const subjectCount = department.subjectIds?.length || 0;
@@ -145,19 +174,34 @@ exports.getDepartmentTeachers = async (req, res) => {
   try {
     const { semester } = req.query; // ✅ Không lấy year từ query nữa
     
-    // ✅ Bước 1: Lấy thông tin giáo viên hiện tại để lấy departmentId
+    // ✅ Bước 1: Lấy thông tin giáo viên hiện tại để lấy departmentId từ yearRoles
+    const currentYear = await getCurrentSchoolYear();
+    if (!currentYear) {
+      return res.status(400).json({ 
+        message: 'Không thể xác định năm học hiện tại' 
+      });
+    }
+    
     const currentTeacher = await Teacher.findOne({ accountId: req.user.accountId })
-      .select('isDepartmentHead departmentId')
+      .select('yearRoles')
       .lean();
       
-    if (!currentTeacher || !currentTeacher.isDepartmentHead || !currentTeacher.departmentId) {
+    if (!currentTeacher || !Array.isArray(currentTeacher.yearRoles)) {
+      return res.status(403).json({ 
+        message: 'Bạn không phải trưởng bộ môn' 
+      });
+    }
+    
+    // ✅ Tìm yearRole cho năm học hiện tại
+    const yearRole = currentTeacher.yearRoles.find(yr => String(yr.schoolYear) === String(currentYear));
+    if (!yearRole || !yearRole.isDepartmentHead || !yearRole.departmentId) {
       return res.status(403).json({ 
         message: 'Bạn không phải trưởng bộ môn' 
       });
     }
 
-    // ✅ Bước 2: Lấy department từ departmentId để lấy year
-    const departmentId = currentTeacher.departmentId._id || currentTeacher.departmentId;
+    // ✅ Bước 2: Lấy department từ departmentId trong yearRole
+    const departmentId = yearRole.departmentId._id?.toString() || yearRole.departmentId.toString();
     const department = await Department.findById(departmentId)
       .populate('teacherIds', 'name teacherCode')
       .select('name code year teacherIds')
@@ -172,12 +216,14 @@ exports.getDepartmentTeachers = async (req, res) => {
 
     // ✅ Bước 4: Lấy danh sách giáo viên từ department
     const teacherIds = (department.teacherIds || []).map(t => t._id || t);
-    const teachers = await Teacher.find({ _id: { $in: teacherIds } })
+    const teachers = await Teacher.find({ 
+      _id: { $in: teacherIds },
+      isDeleted: { $ne: true } // ✅ Không lấy giáo viên đã bị xóa mềm
+    })
       .populate('accountId', 'email phone')
       .populate('subjects.subjectId', 'name code')
       .populate('mainSubject', 'name code')
-      .populate('departmentId', 'name code year')
-      .select('name teacherCode phone subjects mainSubject isHomeroom isDepartmentHead departmentId currentHomeroomClassId')
+      .select('name teacherCode phone subjects mainSubject yearRoles')
       .lean();
 
     // ✅ Bước 5: Thêm thông tin phân công dựa trên year từ department
@@ -240,17 +286,32 @@ exports.addTeacher = async (req, res) => {
       return res.status(400).json({ message: 'Thiếu teacherId' });
     }
 
+    const currentYear = await getCurrentSchoolYear();
+    if (!currentYear) {
+      return res.status(400).json({ 
+        message: 'Không thể xác định năm học hiện tại' 
+      });
+    }
+    
     const currentTeacher = await Teacher.findOne({ accountId: req.user.accountId })
-      .select('isDepartmentHead departmentId')
+      .select('yearRoles')
       .lean();
       
-    if (!currentTeacher || !currentTeacher.isDepartmentHead || !currentTeacher.departmentId) {
+    if (!currentTeacher || !Array.isArray(currentTeacher.yearRoles)) {
+      return res.status(403).json({ 
+        message: 'Bạn không phải trưởng bộ môn' 
+      });
+    }
+    
+    // ✅ Tìm yearRole cho năm học hiện tại
+    const yearRole = currentTeacher.yearRoles.find(yr => String(yr.schoolYear) === String(currentYear));
+    if (!yearRole || !yearRole.isDepartmentHead || !yearRole.departmentId) {
       return res.status(403).json({ 
         message: 'Bạn không phải trưởng bộ môn' 
       });
     }
 
-    const departmentId = currentTeacher.departmentId._id || currentTeacher.departmentId;
+    const departmentId = yearRole.departmentId._id?.toString() || yearRole.departmentId.toString();
     const department = await Department.findById(departmentId)
       .populate('subjectIds', 'name code')
       .lean();
@@ -260,6 +321,7 @@ exports.addTeacher = async (req, res) => {
     }
 
     const teacher = await Teacher.findById(teacherId)
+      .select('yearRoles subjects')
       .populate('subjects.subjectId')
       .lean();
       
@@ -267,11 +329,19 @@ exports.addTeacher = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy giáo viên' });
     }
 
-    // Kiểm tra giáo viên đã thuộc tổ khác chưa
-    if (teacher.departmentId && teacher.departmentId.toString() !== departmentId.toString()) {
-      return res.status(400).json({ 
-        message: 'Giáo viên đã thuộc tổ bộ môn khác. Vui lòng xóa khỏi tổ cũ trước.' 
-      });
+    // ✅ Kiểm tra giáo viên đã thuộc tổ khác chưa (theo yearRoles)
+    const deptYear = department.year || department.schoolYear || currentYear;
+    const teacherYearRole = Array.isArray(teacher.yearRoles) 
+      ? teacher.yearRoles.find(yr => String(yr.schoolYear) === String(deptYear))
+      : null;
+    
+    if (teacherYearRole && teacherYearRole.departmentId) {
+      const existingDeptId = teacherYearRole.departmentId._id?.toString() || teacherYearRole.departmentId.toString();
+      if (existingDeptId !== departmentId.toString()) {
+        return res.status(400).json({ 
+          message: 'Giáo viên đã thuộc tổ bộ môn khác trong năm học này. Vui lòng xóa khỏi tổ cũ trước.' 
+        });
+      }
     }
 
     // Kiểm tra giáo viên có dạy môn trong tổ không
@@ -299,13 +369,12 @@ exports.addTeacher = async (req, res) => {
       });
     }
 
-    // Thêm giáo viên vào tổ
-    teacher.departmentId = departmentId;
-    teacher.isDepartmentHead = false; // Đảm bảo không set isDepartmentHead
-    await Teacher.findByIdAndUpdate(teacherId, {
+    // ✅ Thêm giáo viên vào tổ - CHỈ cập nhật yearRoles, KHÔNG cập nhật top-level
+    const { updateTeacherYearRole } = require('./departmentController');
+    await updateTeacherYearRole(teacherId, {
       departmentId: departmentId,
       isDepartmentHead: false
-    });
+    }, deptYear);
 
     // Cập nhật teacherIds trong Department
     await Department.findByIdAndUpdate(departmentId, {
@@ -315,7 +384,7 @@ exports.addTeacher = async (req, res) => {
     const updatedTeacher = await Teacher.findById(teacherId)
       .populate('accountId', 'email phone')
       .populate('subjects.subjectId', 'name code')
-      .populate('departmentId', 'name code')
+      .select('name teacherCode phone subjects mainSubject yearRoles')
       .lean();
 
     res.json({
@@ -364,25 +433,38 @@ exports.removeTeacher = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy giáo viên' });
     }
 
-    // Kiểm tra giáo viên có thuộc tổ này không
-    if (!teacher.departmentId || teacher.departmentId.toString() !== departmentId.toString()) {
+    // ✅ Kiểm tra giáo viên có thuộc tổ này không (theo yearRoles)
+    const deptYear = department.year || department.schoolYear || currentYear;
+    const teacherYearRole = Array.isArray(teacher.yearRoles) 
+      ? teacher.yearRoles.find(yr => String(yr.schoolYear) === String(deptYear))
+      : null;
+    
+    if (!teacherYearRole || !teacherYearRole.departmentId) {
+      return res.status(400).json({ 
+        message: 'Giáo viên không thuộc tổ bộ môn này' 
+      });
+    }
+    
+    const teacherDeptId = teacherYearRole.departmentId._id?.toString() || teacherYearRole.departmentId.toString();
+    if (teacherDeptId !== departmentId.toString()) {
       return res.status(400).json({ 
         message: 'Giáo viên không thuộc tổ bộ môn này' 
       });
     }
 
     // Không cho phép xóa chính mình (trưởng bộ môn)
-    if (teacher.isDepartmentHead && teacher._id.toString() === currentTeacher._id.toString()) {
+    if (teacherYearRole.isDepartmentHead && teacher._id.toString() === currentTeacher._id.toString()) {
       return res.status(400).json({ 
         message: 'Không thể xóa chính mình khỏi tổ. Vui lòng liên hệ admin để thay đổi trưởng bộ môn.' 
       });
     }
 
-    // Xóa giáo viên khỏi tổ
-    await Teacher.findByIdAndUpdate(teacherId, {
-      $unset: { departmentId: 1 },
+    // ✅ Xóa giáo viên khỏi tổ - CHỈ cập nhật yearRoles, KHÔNG cập nhật top-level
+    const { updateTeacherYearRole } = require('./departmentController');
+    await updateTeacherYearRole(teacherId, {
+      departmentId: null,
       isDepartmentHead: false
-    });
+    }, deptYear);
 
     // Cập nhật teacherIds trong Department
     await Department.findByIdAndUpdate(departmentId, {
@@ -414,17 +496,32 @@ exports.getProposals = async (req, res) => {
   try {
     const { status, year, semester } = req.query;
     
+    const currentYear = await getCurrentSchoolYear();
+    if (!currentYear) {
+      return res.status(400).json({ 
+        message: 'Không thể xác định năm học hiện tại' 
+      });
+    }
+    
     const currentTeacher = await Teacher.findOne({ accountId: req.user.accountId })
-      .select('isDepartmentHead departmentId')
+      .select('yearRoles')
       .lean();
       
-    if (!currentTeacher || !currentTeacher.isDepartmentHead || !currentTeacher.departmentId) {
+    if (!currentTeacher || !Array.isArray(currentTeacher.yearRoles)) {
+      return res.status(403).json({ 
+        message: 'Bạn không phải trưởng bộ môn' 
+      });
+    }
+    
+    // ✅ Tìm yearRole cho năm học hiện tại
+    const yearRole = currentTeacher.yearRoles.find(yr => String(yr.schoolYear) === String(currentYear));
+    if (!yearRole || !yearRole.isDepartmentHead || !yearRole.departmentId) {
       return res.status(403).json({ 
         message: 'Bạn không phải trưởng bộ môn' 
       });
     }
 
-    const departmentId = currentTeacher.departmentId._id || currentTeacher.departmentId;
+    const departmentId = yearRole.departmentId._id?.toString() || yearRole.departmentId.toString();
     
     const query = { departmentId };
     if (status) query.status = status;
@@ -439,10 +536,13 @@ exports.getProposals = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
+    // ✅ Lấy tên department
+    const department = await Department.findById(departmentId).select('name').lean();
+    
     res.json({
       department: {
         _id: departmentId,
-        name: currentTeacher.departmentId.name || 'N/A'
+        name: department?.name || 'N/A'
       },
       proposals
     });
@@ -479,13 +579,26 @@ exports.createProposal = async (req, res) => {
 
     const departmentId = currentTeacher.departmentId._id || currentTeacher.departmentId;
     
-    // Kiểm tra giáo viên được phân công có thuộc tổ không
-    const targetTeacher = await Teacher.findById(teacherId).lean();
+    // ✅ Kiểm tra giáo viên được phân công có thuộc tổ không (theo yearRoles)
+    const targetTeacher = await Teacher.findById(teacherId).select('yearRoles').lean();
     if (!targetTeacher) {
       return res.status(404).json({ message: 'Không tìm thấy giáo viên' });
     }
 
-    if (!targetTeacher.departmentId || targetTeacher.departmentId.toString() !== departmentId.toString()) {
+    // ✅ Lấy năm học từ department hoặc dùng currentYear
+    const deptYear = year || currentYear;
+    const targetYearRole = Array.isArray(targetTeacher.yearRoles) 
+      ? targetTeacher.yearRoles.find(yr => String(yr.schoolYear) === String(deptYear))
+      : null;
+    
+    if (!targetYearRole || !targetYearRole.departmentId) {
+      return res.status(403).json({ 
+        message: 'Chỉ có thể phân công cho giáo viên trong tổ bộ môn của bạn' 
+      });
+    }
+    
+    const targetDeptId = targetYearRole.departmentId._id?.toString() || targetYearRole.departmentId.toString();
+    if (targetDeptId !== departmentId.toString()) {
       return res.status(403).json({ 
         message: 'Chỉ có thể phân công cho giáo viên trong tổ bộ môn của bạn' 
       });
@@ -566,11 +679,26 @@ exports.cancelProposal = async (req, res) => {
   try {
     const { id } = req.params;
     
+    const currentYear = await getCurrentSchoolYear();
+    if (!currentYear) {
+      return res.status(400).json({ 
+        message: 'Không thể xác định năm học hiện tại' 
+      });
+    }
+    
     const currentTeacher = await Teacher.findOne({ accountId: req.user.accountId })
-      .select('isDepartmentHead departmentId _id')
+      .select('yearRoles _id')
       .lean();
       
-    if (!currentTeacher || !currentTeacher.isDepartmentHead || !currentTeacher.departmentId) {
+    if (!currentTeacher || !Array.isArray(currentTeacher.yearRoles)) {
+      return res.status(403).json({ 
+        message: 'Bạn không phải trưởng bộ môn' 
+      });
+    }
+    
+    // ✅ Tìm yearRole cho năm học hiện tại
+    const yearRole = currentTeacher.yearRoles.find(yr => String(yr.schoolYear) === String(currentYear));
+    if (!yearRole || !yearRole.isDepartmentHead || !yearRole.departmentId) {
       return res.status(403).json({ 
         message: 'Bạn không phải trưởng bộ môn' 
       });
@@ -581,8 +709,8 @@ exports.cancelProposal = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy đề xuất phân công' });
     }
 
-    // Kiểm tra đề xuất có thuộc tổ mình không
-    const departmentId = currentTeacher.departmentId._id || currentTeacher.departmentId;
+    // ✅ Kiểm tra đề xuất có thuộc tổ mình không
+    const departmentId = yearRole.departmentId._id?.toString() || yearRole.departmentId.toString();
     if (proposal.departmentId.toString() !== departmentId.toString()) {
       return res.status(403).json({ 
         message: 'Bạn không có quyền hủy đề xuất này' 
@@ -621,17 +749,32 @@ exports.cancelAllProposals = async (req, res) => {
   try {
     const { year, semester, status } = req.body;
     
+    const currentYear = await getCurrentSchoolYear();
+    if (!currentYear) {
+      return res.status(400).json({ 
+        message: 'Không thể xác định năm học hiện tại' 
+      });
+    }
+    
     const currentTeacher = await Teacher.findOne({ accountId: req.user.accountId })
-      .select('isDepartmentHead departmentId _id')
+      .select('yearRoles _id')
       .lean();
       
-    if (!currentTeacher || !currentTeacher.isDepartmentHead || !currentTeacher.departmentId) {
+    if (!currentTeacher || !Array.isArray(currentTeacher.yearRoles)) {
+      return res.status(403).json({ 
+        message: 'Bạn không phải trưởng bộ môn' 
+      });
+    }
+    
+    // ✅ Tìm yearRole cho năm học hiện tại
+    const yearRole = currentTeacher.yearRoles.find(yr => String(yr.schoolYear) === String(currentYear));
+    if (!yearRole || !yearRole.isDepartmentHead || !yearRole.departmentId) {
       return res.status(403).json({ 
         message: 'Bạn không phải trưởng bộ môn' 
       });
     }
 
-    const departmentId = currentTeacher.departmentId._id || currentTeacher.departmentId;
+    const departmentId = yearRole.departmentId._id?.toString() || yearRole.departmentId.toString();
     
     // Xây dựng query
     const query = { 
@@ -677,17 +820,26 @@ exports.createBatchProposals = async (req, res) => {
       return res.status(400).json({ message: 'Thiếu năm học hoặc học kỳ' });
     }
 
+    // ✅ Lấy thông tin giáo viên hiện tại từ yearRoles theo năm học
     const currentTeacher = await Teacher.findOne({ accountId: req.user.accountId })
-      .select('isDepartmentHead departmentId _id')
+      .select('yearRoles _id')
       .lean();
       
-    if (!currentTeacher || !currentTeacher.isDepartmentHead || !currentTeacher.departmentId) {
+    if (!currentTeacher || !Array.isArray(currentTeacher.yearRoles)) {
       return res.status(403).json({ 
         message: 'Bạn không phải trưởng bộ môn' 
       });
     }
 
-    const departmentId = currentTeacher.departmentId._id || currentTeacher.departmentId;
+    // ✅ Tìm yearRole cho năm học được chỉ định
+    const yearRole = currentTeacher.yearRoles.find(yr => String(yr.schoolYear) === String(year));
+    if (!yearRole || !yearRole.isDepartmentHead || !yearRole.departmentId) {
+      return res.status(403).json({ 
+        message: 'Bạn không phải trưởng bộ môn trong năm học này' 
+      });
+    }
+
+    const departmentId = yearRole.departmentId._id?.toString() || yearRole.departmentId.toString();
     const department = await Department.findById(departmentId).lean();
     
     if (!department) {
@@ -714,8 +866,8 @@ exports.createBatchProposals = async (req, res) => {
         continue;
       }
 
-      // Kiểm tra giáo viên có thuộc tổ không
-      const targetTeacher = await Teacher.findById(teacherId).lean();
+      // ✅ Kiểm tra giáo viên có thuộc tổ không (theo yearRoles)
+      const targetTeacher = await Teacher.findById(teacherId).select('yearRoles').lean();
       if (!targetTeacher) {
         results.failed.push({
           teacherId,
@@ -725,7 +877,22 @@ exports.createBatchProposals = async (req, res) => {
         continue;
       }
 
-      if (!targetTeacher.departmentId || targetTeacher.departmentId.toString() !== departmentId.toString()) {
+      const targetYearRole = Array.isArray(targetTeacher.yearRoles) 
+        ? targetTeacher.yearRoles.find(yr => String(yr.schoolYear) === String(year))
+        : null;
+      
+      if (!targetYearRole || !targetYearRole.departmentId) {
+        results.failed.push({
+          teacherId,
+          subjectId,
+          error: 'Giáo viên không thuộc tổ bộ môn của bạn'
+        });
+        continue;
+      }
+
+      // ✅ Kiểm tra giáo viên có thuộc cùng tổ với QLBM không
+      const targetDeptId = targetYearRole.departmentId._id?.toString() || targetYearRole.departmentId.toString();
+      if (targetDeptId !== departmentId.toString()) {
         results.failed.push({
           teacherId,
           subjectId,

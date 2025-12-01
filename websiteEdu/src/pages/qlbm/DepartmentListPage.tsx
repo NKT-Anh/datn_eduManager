@@ -6,6 +6,7 @@ import { useDepartments, useDepartmentTeachers } from "@/hooks";
 import { useTeachers } from "@/hooks/teachers/useTeachers";
 import { useSubjects } from "@/hooks/subjects/useSubjects";
 import { useSchoolYears } from "@/hooks/schoolYear/useSchoolYears";
+import { useCurrentAcademicYear } from "@/hooks/useCurrentAcademicYear";
 import { useAuth } from "@/contexts/AuthContext";
 import { getTeacherDepartmentId } from "@/utils/teacher";
 import { Button } from "@/components/ui/button";
@@ -38,31 +39,34 @@ import {
 
 export default function DepartmentListPage() {
   const { backendUser } = useAuth();
-  const { departments, isLoading: loading } = useDepartments();
-  const { teachers } = useTeachers();
-  const { subjects } = useSubjects();
-  const { schoolYears, currentYear } = useSchoolYears();
+  const { schoolYears } = useSchoolYears();
+  const { currentYearCode } = useCurrentAcademicYear();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedYear, setSelectedYear] = useState<string>("");
+  
+  // ✅ Lấy tổ bộ môn theo năm học đã chọn
+  const { departments, isLoading: loading } = useDepartments(selectedYear || currentYearCode || undefined);
+  const { teachers } = useTeachers();
+  const { subjects } = useSubjects();
   const [filterHeadTeacher, setFilterHeadTeacher] = useState<string>("all"); // "all" | "me" | "others"
   const [viewingDepartment, setViewingDepartment] = useState<Department | null>(null);
   const [viewingTeachers, setViewingTeachers] = useState<Teacher[]>([]);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
 
-  // Lấy năm học hiện tại
+  // ✅ Set năm học hiện tại khi có dữ liệu
   useEffect(() => {
-    if (currentYear && !selectedYear) {
-      setSelectedYear(currentYear);
+    if (currentYearCode && !selectedYear) {
+      setSelectedYear(currentYearCode);
     }
-  }, [currentYear, selectedYear]);
+  }, [currentYearCode, selectedYear]);
 
-  // Lấy danh sách giáo viên trong tổ khi xem chi tiết
+  // Lấy danh sách giáo viên trong tổ khi xem chi tiết (theo năm học)
   useEffect(() => {
-    if (viewingDepartment?._id) {
+    if (viewingDepartment?._id && selectedYear) {
       const fetchTeachers = async () => {
         try {
           const { departmentApi } = await import("@/services/departmentApi");
-          const deptTeachers = await departmentApi.getTeachers(viewingDepartment._id);
+          const deptTeachers = await departmentApi.getTeachers(viewingDepartment._id, { year: selectedYear });
           setViewingTeachers(deptTeachers);
         } catch (error) {
           console.error("Error fetching department teachers:", error);
@@ -71,7 +75,7 @@ export default function DepartmentListPage() {
       };
       fetchTeachers();
     }
-  }, [viewingDepartment]);
+  }, [viewingDepartment, selectedYear]);
 
   // Lọc tổ bộ môn
   const filteredDepartments = useMemo(() => {
@@ -134,6 +138,20 @@ export default function DepartmentListPage() {
       const deptId = getTeacherDepartmentId(t, selectedYear || undefined);
       return deptId === departmentId || String(deptId) === String(departmentId);
     });
+  };
+
+  const getMemberCount = (departmentId: string): number => {
+    const members = getDepartmentTeachers(departmentId) || [];
+    const dept = departments.find((d) => d._id === departmentId);
+    const headTeacherId = dept
+      ? typeof dept.headTeacherId === "object" && dept.headTeacherId !== null
+        ? (dept.headTeacherId as any)._id
+        : dept.headTeacherId
+      : null;
+    const headIncluded = headTeacherId
+      ? members.some((m) => m._id === headTeacherId)
+      : false;
+    return members.length + (headTeacherId && !headIncluded ? 1 : 0);
   };
 
   const getSubjectNames = (subjectIds: (Subject | string)[]): string => {
@@ -260,7 +278,7 @@ export default function DepartmentListPage() {
                 ) : (
                   filteredDepartments.map((department) => {
                     const members = getDepartmentTeachers(department._id);
-                    const memberCount = members.length;
+                    const memberCount = getMemberCount(department._id);
                     const headTeacherId = typeof department.headTeacherId === "object" && department.headTeacherId !== null
                       ? department.headTeacherId._id
                       : department.headTeacherId;

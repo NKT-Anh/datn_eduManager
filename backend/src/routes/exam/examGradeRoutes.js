@@ -74,9 +74,10 @@ router.get("/exam/:examId",
   ctrl.getGradesByExam
 );
 
-// 🚀 Công bố điểm - Trưởng bộ môn / BGH
+// 🚀 Công bố điểm - Trưởng bộ môn / BGH / Admin
 router.post("/exam/:examId/publish",
   auth,
+  checkPermission([PERMISSIONS.EXAM_UPDATE], { checkContext: false }),
   ctrl.publishExamGrades
 );
 

@@ -60,6 +60,13 @@ const teacherSchema = new mongoose.Schema({
     default: []
   }, // Danh sách quyền bổ sung nếu cần
 
+  // ✅ Soft Delete - Không xóa thật vì liên quan đến lịch sử điểm và phân công
+  isDeleted: {
+    type: Boolean,
+    default: false,
+    description: 'Đánh dấu xóa mềm - giữ lịch sử học tập'
+  },
+
   // ==============================
   // Lịch sử quyền theo năm học
   // ==============================
@@ -89,6 +96,32 @@ const teacherSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Class',
     default: null
+  },
+  
+  // ==============================
+  // ✅ Khen thưởng & Danh hiệu
+  // ==============================
+  awards: [{
+    title: { type: String, required: true }, // VD: "Giáo viên xuất sắc", "Khen thưởng cuối năm"
+    year: { type: String }, // Năm học
+    semester: { type: String, enum: ['1', '2'] }, // Học kỳ (nếu có)
+    reason: { type: String }, // Lý do khen thưởng
+    awardedAt: { type: Date, default: Date.now }, // Ngày trao thưởng
+    awardedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Account' }, // Người trao thưởng
+    surveyAverageScore: { type: Number }, // Điểm trung bình khảo sát (nếu liên quan)
+  }],
+  
+  // ✅ Phân loại hiện tại dựa trên điểm khảo sát
+  currentRating: {
+    level: { 
+      type: String, 
+      enum: ['excellent', 'good', 'average', 'needs_improvement', null],
+      default: null 
+    }, // Xuất sắc, Khá, Trung bình, Cần cải thiện
+    averageScore: { type: Number }, // Điểm trung bình
+    year: { type: String }, // Năm học
+    semester: { type: String, enum: ['1', '2'] }, // Học kỳ
+    updatedAt: { type: Date }, // Ngày cập nhật
   },
   
   // ==============================

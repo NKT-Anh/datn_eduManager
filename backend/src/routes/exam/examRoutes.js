@@ -109,4 +109,11 @@ router.get('/summary/year',
   ctrl.getYearlyStats
 );
 
+// Phân tích điểm thi và so sánh với năm trước - Admin và BGH
+router.get('/:id/analysis', 
+  auth, 
+  checkPermission([PERMISSIONS.EXAM_VIEW, PERMISSIONS.DASHBOARD_VIEW_ALL], { checkContext: false }), 
+  ctrl.getExamGradeAnalysis
+);
+
 module.exports = router;

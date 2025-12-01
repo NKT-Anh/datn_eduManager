@@ -30,6 +30,18 @@ router.get('/:id',
   studentController.getStudentById
 );
 
+// ✅ Lấy thông tin chi tiết học sinh theo niên khóa - Tất cả roles có quyền xem
+router.get('/:id/year-detail', 
+  authMiddleware, 
+  checkPermission([
+    PERMISSIONS.STUDENT_VIEW,
+    PERMISSIONS.STUDENT_VIEW_HOMEROOM,
+    PERMISSIONS.STUDENT_VIEW_TEACHING,
+    PERMISSIONS.STUDENT_VIEW_SELF
+  ], { checkContext: true }),
+  studentController.getStudentYearDetail
+);
+
 // ✅ Thêm học sinh - Chỉ Admin
 router.post('/', 
   authMiddleware, 
@@ -57,17 +69,43 @@ router.put('/:id',
   studentController.updateStudent
 );
 
-// ✅ Xóa học sinh - Chỉ Admin
-router.delete('/:id', 
-  authMiddleware, 
+// ✅ Xóa mềm học sinh - Chỉ Admin (không xóa thật)
+router.delete('/:id',
+  authMiddleware,
   checkPermission(PERMISSIONS.STUDENT_DELETE),
   auditLog({
     action: 'DELETE',
     resource: 'STUDENT',
     getResourceId: (req) => req.params.id,
-    getDescription: (req) => `Xóa học sinh: ${req.params.id}`,
+    getDescription: (req) => `Xóa mềm học sinh: ${req.params.id}`,
   }),
-  studentController.deleteStudent
+  studentController.softDeleteStudent
+);
+
+// ✅ Khôi phục học sinh đã xóa mềm - Chỉ Admin
+router.patch('/:id/restore',
+  authMiddleware,
+  checkPermission(PERMISSIONS.STUDENT_DELETE),
+  auditLog({
+    action: 'UPDATE',
+    resource: 'STUDENT',
+    getResourceId: (req) => req.params.id,
+    getDescription: (req) => `Khôi phục học sinh: ${req.params.id}`,
+  }),
+  studentController.restoreStudent
+);
+
+// ✅ Xóa vĩnh viễn học sinh - Chỉ Admin (có thể force delete)
+router.delete('/:id/force',
+  authMiddleware,
+  checkPermission(PERMISSIONS.STUDENT_DELETE),
+  auditLog({
+    action: 'DELETE',
+    resource: 'STUDENT',
+    getResourceId: (req) => req.params.id,
+    getDescription: (req) => `Xóa vĩnh viễn học sinh: ${req.params.id}`,
+  }),
+  studentController.forceDeleteStudent
 );
 
 // ✅ Tự động phân lớp - Chỉ Admin

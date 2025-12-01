@@ -3,7 +3,7 @@ const Student = require('../../models/user/student');
 const Class = require('../../models/class/class');
 const Subject = require('../../models/subject/subject');
 const TeachingAssignment = require('../../models/subject/teachingAssignment');
-const Setting = require('../../models/settings');
+const { getCurrentSchoolYear, getEffectiveSchoolYear } = require('../../utils/schoolYearHelper');
 
 /**
  * 📋 Điểm danh vắng cho lớp chủ nhiệm theo buổi học (sáng/chiều)
@@ -57,11 +57,10 @@ exports.takeAttendance = async (req, res) => {
     }
     const teacherId = role === 'admin' ? null : teacher._id;
 
-    // Lấy năm học hiện tại nếu không có
+    // ✅ Lấy năm học hiện tại nếu không có
     let currentSchoolYear = schoolYear;
     if (!currentSchoolYear) {
-      const settings = await Setting.findOne({}).lean();
-      currentSchoolYear = settings?.currentSchoolYear || '2024-2025';
+      currentSchoolYear = await getEffectiveSchoolYear(req) || await getCurrentSchoolYear() || '2024-2025';
     }
 
     // ✅ Lấy thông tin lớp để lấy năm học
@@ -74,7 +73,8 @@ exports.takeAttendance = async (req, res) => {
     const allStudents = await Student.find({ 
       classId, 
       status: 'active',
-      currentYear: classInfo.year // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+      currentYear: classInfo.year, // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+      isDeleted: { $ne: true } // ✅ Không lấy học sinh đã bị xóa mềm
     }).lean();
     const allStudentIds = allStudents.map(s => String(s._id));
 
@@ -285,7 +285,8 @@ exports.getAttendance = async (req, res) => {
       const allStudents = await Student.find({ 
         classId, 
         status: 'active',
-        currentYear: classInfo2?.year // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+        currentYear: classInfo2?.year, // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+        isDeleted: { $ne: true } // ✅ Không lấy học sinh đã bị xóa mềm
       })
         .select('name studentCode')
         .sort({ name: 1 })
@@ -644,31 +645,61 @@ exports.getAttendanceStats = async (req, res) => {
 
     // Lấy tất cả học sinh trong lớp (để tính số học sinh có mặt)
     let totalStudents = 0;
+    let studentClassId = null;
+    
     if (classId) {
       totalStudents = await Student.countDocuments({ classId, status: 'active' });
     } else if (query.classId && query.classId.$in) {
       totalStudents = await Student.countDocuments({ classId: { $in: query.classId.$in }, status: 'active' });
+    } else if (query.studentId) {
+      // ✅ Khi query theo studentId, lấy classId của học sinh
+      const student = await Student.findById(query.studentId).select('classId').lean();
+      if (student && student.classId) {
+        studentClassId = student.classId;
+        totalStudents = await Student.countDocuments({ classId: studentClassId, status: 'active' });
+      }
     }
 
     const attendances = await Attendance.find(query).lean();
 
-    // ✅ Học sinh có mặt = tổng số học sinh - số học sinh có bản ghi điểm danh (vắng mặt)
+    // ✅ Đếm số buổi vắng/muộn
     const absentCount = attendances.filter(a => a.status === 'absent').length;
     const excusedCount = attendances.filter(a => a.status === 'excused').length;
     const lateCount = attendances.filter(a => a.status === 'late').length;
-    const totalAbsent = attendances.length; // Tổng số bản ghi = tổng số vắng mặt
-    const presentCount = totalStudents > 0 ? totalStudents - totalAbsent : 0;
+    const totalAbsent = attendances.length; // Tổng số bản ghi = tổng số vắng mặt (absent + excused + late)
+    
+    // ✅ Tính số buổi học thực tế trong kỳ
+    let totalSessions = 0;
+    if (startDate && endDate) {
+      // ✅ Tính số ngày học từ startDate đến endDate (trừ cuối tuần)
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      let schoolDays = 0;
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        const dayOfWeek = d.getDay();
+        // Chỉ tính thứ 2-6 (1-5)
+        if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+          schoolDays++;
+        }
+      }
+      totalSessions = schoolDays * 2; // 2 buổi/ngày (sáng + chiều)
+    } else if (semester) {
+      // ✅ Ước tính số buổi học trong kỳ: ~90 buổi/kỳ (2 buổi/ngày x 5 ngày/tuần x 9 tuần)
+      totalSessions = 90;
+    } else {
+      // ✅ Nếu không có thông tin, ước tính 90 buổi
+      totalSessions = 90;
+    }
+    
+    // ✅ Không tính "có mặt" vì mặc định đến ngày đó là có mặt
+    // Chỉ trả về số buổi vắng và muộn
 
     const stats = {
       totalStudents: totalStudents || 0,
-      present: presentCount,
       absent: absentCount,
       excused: excusedCount,
       late: lateCount,
       totalAbsent: totalAbsent, // Tổng số học sinh vắng (absent + excused + late)
-      attendanceRate: totalStudents > 0
-        ? ((presentCount / totalStudents) * 100).toFixed(1)
-        : 0,
     };
 
     res.json({
@@ -728,7 +759,8 @@ exports.getStudentsForAttendance = async (req, res) => {
     const students = await Student.find({ 
       classId, 
       status: 'active',
-      currentYear: classInfo3.year // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+      currentYear: classInfo3.year, // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+      isDeleted: { $ne: true } // ✅ Không lấy học sinh đã bị xóa mềm
     })
       .select('name studentCode')
       .sort({ name: 1 })
@@ -1546,7 +1578,8 @@ exports.getTodayAttendanceByClass = async (req, res) => {
     const students = await Student.find({ 
       classId, 
       status: 'active',
-      currentYear: classInfo4.year // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+      currentYear: classInfo4.year, // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+      isDeleted: { $ne: true } // ✅ Không lấy học sinh đã bị xóa mềm
     })
       .select('name studentCode avatarUrl')
       .sort({ name: 1 })

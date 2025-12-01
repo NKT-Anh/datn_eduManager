@@ -40,6 +40,7 @@ import { debounce } from "lodash";
 import { useStudents } from "@/hooks/auth/useStudents";
 // ✅ Sử dụng hooks thay vì API trực tiếp
 import { useSchoolYears } from "@/hooks";
+import { useCurrentAcademicYear } from "@/hooks/useCurrentAcademicYear";
 import { classApi } from "@/services/classApi";
 import { StudentCreatePayload } from "@/services/studentApi";
 import { Student } from "@/types/auth";
@@ -62,6 +63,7 @@ export default function StudentsList() {
   const [searchTerm, setSearchTerm] = useState<string>("");
   // ✅ Sử dụng hooks
   const { schoolYears: allSchoolYears } = useSchoolYears();
+  const { currentYearCode } = useCurrentAcademicYear();
   const schoolYears = useMemo(() => 
     allSchoolYears.map(y => ({ code: y.code, name: y.name })),
     [allSchoolYears]
@@ -70,7 +72,7 @@ export default function StudentsList() {
   const [selectedYear, setSelectedYear] = useState<string>("");
   const [selectedGrade, setSelectedGrade] = useState<string>("");
   const [selectedClass, setSelectedClass] = useState<string>("");
-  const [selectedStatus, setSelectedStatus] = useState<string>("");
+  const [selectedStatus, setSelectedStatus] = useState<string>("active"); // Mặc định "Đang học"
 
   const [sortField, setSortField] = useState<string>("");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
@@ -79,7 +81,6 @@ export default function StudentsList() {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingStudent, setDeletingStudent] = useState<Student | null>(null);
-  const [currentSchoolYear, setCurrentSchoolYear] = useState<string>("");
 
 
   // ===============================
@@ -114,22 +115,12 @@ export default function StudentsList() {
     setSelectedGrade("");
     setSelectedClass("");
   }, [selectedYear, fetchGroupedClasses]);
+// ✅ Set năm học hiện tại khi có dữ liệu
 useEffect(() => {
-  const fetchSetting = async () => {
-    try {
-      const res = await settingApi.getSettings();
-      setCurrentSchoolYear(res.data?.currentSchoolYear || "");
-    } catch {
-      toast({
-        title: "⚠️ Lỗi tải cấu hình trường",
-        description: "Không thể lấy năm học hiện tại từ hệ thống.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  fetchSetting();
-}, [toast]);
+  if (currentYearCode && !selectedYear) {
+    setSelectedYear(currentYearCode);
+  }
+}, [currentYearCode, selectedYear]);
   // ===============================
   // 🔍 Lọc + tìm kiếm + sắp xếp
   // ===============================
@@ -177,11 +168,12 @@ useEffect(() => {
   }, [students, searchTerm, selectedYear, selectedGrade, selectedClass, selectedStatus, sortField, sortOrder]);
 
   // ===============================
-  // 📊 Thống kê nhanh
-  // ===============================
+// 📊 Thống kê nhanh
+// ===============================
   const totalStudents = filteredStudents.length;
   const activeCount = filteredStudents.filter((s) => s.status === "active").length;
   const inactiveCount = filteredStudents.filter((s) => s.status === "inactive").length;
+  const graduatedCount = filteredStudents.filter((s) => s.status === "graduated").length;
   const classCount = new Set(filteredStudents.map((s) => s.classId?._id).filter(Boolean)).size;
 
   // ===============================
@@ -189,7 +181,7 @@ useEffect(() => {
   // ===============================
   const handleAutoAssign = async () => {
     try {
-      const currentYear = currentSchoolYear || "2025-2026";
+      const currentYear = currentYearCode || "2025-2026";
 
       const res = await autoAssign(currentYear);
       toast({ title: "✅ Phân lớp thành công", description: res?.message });
@@ -226,7 +218,7 @@ const handleExportExcel = () => {
     "Khối": s.grade || "",
     "Lớp": s.classId?.className || "",
     "Năm nhập học": s.admissionYear || "",
-    "Năm học hiện tại": s.currentYear || "",
+    "Năm học hiện tại": s.currentYear || currentYearCode || "",
     "Trạng thái":
       s.status === "active"
         ? "Đang học"
@@ -303,7 +295,7 @@ const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
             : undefined,
           grade: (row["Khối"] || "10") as "10" | "11" | "12",
           admissionYear: row["Năm nhập học"] || new Date().getFullYear(),
-          currentYear: row["Năm học hiện tại"] || currentSchoolYear,
+          currentYear: row["Năm học hiện tại"] || currentYearCode,
 
           phone: row["Số điện thoại"] || "",
           address: row["Địa chỉ"] || "",
@@ -461,10 +453,11 @@ const handleDownloadTemplate = () => {
       </div>
 
       {/* Quick stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <Card><CardContent className="flex items-center gap-3 py-3"><Users className="h-6 w-6 text-primary" /><div><p className="text-sm text-muted-foreground">Tổng học sinh</p><p className="text-2xl font-semibold">{totalStudents}</p></div></CardContent></Card>
         <Card><CardContent className="flex items-center gap-3 py-3"><BookOpen className="h-6 w-6 text-green-600" /><div><p className="text-sm text-muted-foreground">Đang học</p><p className="text-2xl font-semibold">{activeCount}</p></div></CardContent></Card>
         <Card><CardContent className="flex items-center gap-3 py-3"><PieChart className="h-6 w-6 text-gray-500" /><div><p className="text-sm text-muted-foreground">Ngưng học</p><p className="text-2xl font-semibold">{inactiveCount}</p></div></CardContent></Card>
+        <Card><CardContent className="flex items-center gap-3 py-3"><School className="h-6 w-6 text-purple-600" /><div><p className="text-sm text-muted-foreground">Đã tốt nghiệp</p><p className="text-2xl font-semibold">{graduatedCount}</p></div></CardContent></Card>
         <Card><CardContent className="flex items-center gap-3 py-3"><School className="h-6 w-6 text-blue-600" /><div><p className="text-sm text-muted-foreground">Số lớp</p><p className="text-2xl font-semibold">{classCount}</p></div></CardContent></Card>
       </div>
 
@@ -474,7 +467,7 @@ const handleDownloadTemplate = () => {
           <Input placeholder="🔍 Tìm kiếm theo tên, mã, email..." onChange={(e) => debouncedSearch(e.target.value)} className="flex-1 min-w-[220px]" />
 
           <Select value={selectedYear} onValueChange={setSelectedYear}>
-            <SelectTrigger className="w-[180px]"><SelectValue placeholder="Tất cả năm học" /></SelectTrigger>
+            <SelectTrigger className="w-[180px]"><SelectValue placeholder="Chọn năm học" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="0">Tất cả năm học</SelectItem>
               {schoolYears.map((y) => (<SelectItem key={y.code} value={y.code}>{y.name}</SelectItem>))}
@@ -505,11 +498,12 @@ const handleDownloadTemplate = () => {
           </Select>
 
           <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-            <SelectTrigger className="w-[140px]"><SelectValue placeholder="Trạng thái" /></SelectTrigger>
+            <SelectTrigger className="w-[140px]"><SelectValue placeholder="Chọn trạng thái" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="0">Tất cả</SelectItem>
               <SelectItem value="active">Đang học</SelectItem>
               <SelectItem value="inactive">Ngưng học</SelectItem>
+              <SelectItem value="graduated">Đã tốt nghiệp</SelectItem>
             </SelectContent>
           </Select>
 
@@ -568,6 +562,9 @@ const handleDownloadTemplate = () => {
 
   {s.status === "inactive" && (
     <Badge className="ml-2 bg-gray-200 text-gray-600">Ngưng học</Badge>
+  )}
+  {s.status === "graduated" && (
+    <Badge className="ml-2 bg-purple-200 text-purple-700">Đã tốt nghiệp</Badge>
   )}
 </div>
 

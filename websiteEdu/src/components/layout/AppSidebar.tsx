@@ -39,6 +39,8 @@ import {
   PieChart,
   Activity,
   Mail,
+  Trash2,
+  Trophy,
 } from "lucide-react";
 import logoSchool from "@/assets/logo_school.png";
 import { useAuth } from "@/contexts/AuthContext";
@@ -99,6 +101,7 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
               { id: "proposal-history", title: "Lịch sử đề xuất", url: `${prefix}/proposal-history`, icon: FileText },
               { id: "assignment", title: "Phân công giảng dạy", url: `${prefix}/teachingAssignmentPage`, icon: Presentation },
               { id: "schedule", title: "Thời khóa biểu", url: `${prefix}/schedule`, icon: Calendar },
+              { id: "survey-dashboard", title: "Dashboard khảo sát", url: `${prefix}/survey-dashboard`, icon: BarChart3 },
             ],
           },
           {
@@ -168,6 +171,8 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
           { id: "my-classes", title: "Lớp đang dạy", url: `${prefix}/my-classes`, icon: School },
           { id: "schedule", title: "Thời khóa biểu", url: `${prefix}/schedule`, icon: Calendar },
           { id: "grades", title: "Nhập điểm", url: `${prefix}/grades`, icon: BarChart3 },
+          { id: "awards", title: "Danh hiệu / Khen thưởng", url: `${prefix}/awards`, icon: Trophy },
+          { id: "survey-statistics", title: "Thống kê khảo sát", url: `${prefix}/survey-statistics`, icon: BarChart3 },
         ],
       },
       {
@@ -220,6 +225,8 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
           { id: "my-classes", title: "Lớp đang dạy", url: `${prefix}/my-classes`, icon: School },
           { id: "schedule", title: "Thời khóa biểu", url: `${prefix}/schedule`, icon: Calendar },
           { id: "grades", title: "Nhập điểm", url: `${prefix}/grades`, icon: BarChart3 },
+          { id: "awards", title: "Danh hiệu / Khen thưởng", url: `${prefix}/awards`, icon: Trophy },
+          { id: "survey-statistics", title: "Thống kê khảo sát", url: `${prefix}/survey-statistics`, icon: BarChart3 },
         ],
       },
       {
@@ -259,6 +266,8 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
           { id: "schedule", title: "Thời khóa biểu", url: `${prefix}/schedule`, icon: Calendar },
           { id: "schedule-weekly", title: "Lịch theo tuần", url: `${prefix}/schedule-weekly`, icon: Calendar },
           { id: "grades", title: "Nhập điểm", url: `${prefix}/grades`, icon: BarChart3 },
+          { id: "awards", title: "Danh hiệu / Khen thưởng", url: `${prefix}/awards`, icon: Trophy },
+          { id: "survey-statistics", title: "Thống kê khảo sát", url: `${prefix}/survey-statistics`, icon: BarChart3 },
           {
             id: "exams",
             title: "Kỳ thi",
@@ -338,6 +347,16 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
               ],
             },
             {
+              id: "surveys",
+              title: "Khảo sát",
+              icon: FileText,
+              children: [
+                { id: "survey-management", title: "Quản lý khảo sát", url: `${prefix}/surveys`, icon: FileText },
+                { id: "survey-dashboard", title: "Dashboard Khảo sát", url: `${prefix}/surveys/dashboard`, icon: BarChart3 },
+                { id: "award-management", title: "Danh hiệu / Khen thưởng", url: `${prefix}/awards`, icon: Trophy },
+              ],
+            },
+            {
               id: "exam",
               title: "Kỳ thi",
               icon: CalendarCheck2Icon,
@@ -378,6 +397,7 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
               ],
             },
             { id: "attendance", title: "Điểm danh", url: `${prefix}/attendance`, icon: ClipboardList },
+            { id: "conduct", title: "Hạnh kiểm", url: `${prefix}/conduct`, icon: ClipboardList },
           ],
         },
         {
@@ -387,12 +407,14 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
             { id: "grades-stats", title: "Thống kê điểm số", url: `${prefix}/grades-statistics`, icon: BarChart3 },
             { id: "exam-dashboard", title: "Thống kê kỳ thi", url: `${prefix}/exam/exam-dashboard`, icon: PieChart },
             { id: "attendance-stats", title: "Thống kê điểm danh", url: `${prefix}/attendance`, icon: TrendingUp },
+            { id: "survey-dashboard", title: "Dashboard Khảo sát", url: `${prefix}/surveys/dashboard`, icon: BarChart3 },
           ],
         },
         {
           label: "Giám sát",
           items: [
             { id: "audit-logs", title: "Log hoạt động", url: `${prefix}/audit-logs`, icon: Activity },
+            { id: "trash", title: "Thùng rác", url: `${prefix}/trash`, icon: Trash2 },
           ],
         },
         {
@@ -417,6 +439,7 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
             { id: "grades", title: "Điểm số", url: `${prefix}/grades`, icon: BarChart3 },
             { id: "conduct", title: "Hạnh kiểm", url: `${prefix}/conduct`, icon: ClipboardList },
             { id: "attendance", title: "Điểm danh", url: `${prefix}/attendance`, icon: ClipboardList },
+            { id: "surveys", title: "Khảo sát đánh giá", url: `${prefix}/surveys`, icon: FileText },
             {
               id: "exams",
               title: "Kỳ thi",
@@ -492,7 +515,24 @@ const AppSidebar = () => {
   };
 
   const isItemActive = (item: any) => {
-    if ("children" in item) return item.children.some((child: any) => location.pathname === child.url || location.pathname.startsWith(child.url + "/"));
+    if ("children" in item) {
+      // ✅ Chỉ active khi có child exact match hoặc sub-path của child
+      // Ưu tiên child có url dài hơn (specific hơn) nếu nhiều child match
+      return item.children.some((child: any) => {
+        if (location.pathname === child.url) return true;
+        if (location.pathname.startsWith(child.url + "/")) {
+          // ✅ Kiểm tra xem có child nào khác có url dài hơn và cũng match không
+          // Nếu có, thì pathname thuộc về child đó (specific hơn), không phải child hiện tại
+          const hasMoreSpecificChild = item.children.some((otherChild: any) => 
+            otherChild.url !== child.url && 
+            otherChild.url.length > child.url.length &&
+            location.pathname.startsWith(otherChild.url + "/")
+          );
+          return !hasMoreSpecificChild;
+        }
+        return false;
+      });
+    }
     return location.pathname === item.url || location.pathname.startsWith(item.url + "/");
   };
 
@@ -545,7 +585,18 @@ const AppSidebar = () => {
                         {openMenus[item.id] && !collapsed && (
                           <div className="ml-6 mt-1 space-y-1">
                             {item.children.map((child: any) => {
-                              const isActive = location.pathname === child.url || location.pathname.startsWith(child.url + "/");
+                              // ✅ Chỉ active khi exact match hoặc là sub-path của chính child đó
+                              // Ưu tiên child có url dài hơn (specific hơn) nếu nhiều child match
+                              let isActive = location.pathname === child.url;
+                              if (!isActive && location.pathname.startsWith(child.url + "/")) {
+                                // ✅ Kiểm tra xem có child nào khác có url dài hơn và cũng match không
+                                const hasMoreSpecificChild = item.children.some((otherChild: any) => 
+                                  otherChild.url !== child.url && 
+                                  otherChild.url.length > child.url.length &&
+                                  location.pathname.startsWith(otherChild.url + "/")
+                                );
+                                isActive = !hasMoreSpecificChild;
+                              }
                               return (
                                 <NavLink
                                   key={child.id}

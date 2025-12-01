@@ -8,6 +8,12 @@ exports.getAll = async (req, res) => {
     const { keyword, status, type } = req.query;
     const filter = {};
 
+    // ✅ Soft Delete: Filter isDeleted != true mặc định (bao gồm false, null, không có trường)
+    const { isDeleted = 'false' } = req.query;
+    if (isDeleted !== 'true') {
+      filter.isDeleted = { $ne: true };
+    }
+
     if (status && status !== "all") filter.status = status;
     if (type && type !== "all") filter.type = type;
     if (keyword) filter.roomCode = { $regex: keyword, $options: "i" };
@@ -131,16 +137,29 @@ exports.update = async (req, res) => {
 };
 
 // 🗑️ Xóa phòng
+// ✅ Soft Delete - Xóa mềm phòng (chỉ đánh dấu, không xóa thật)
 exports.remove = async (req, res) => {
   try {
-    const room = await Room.findByIdAndDelete(req.params.id);
-    if (!room) return res.status(404).json({ message: "Không tìm thấy phòng" });
+    const { id } = req.params;
+    const room = await Room.findById(id);
+    
+    if (!room) {
+      return res.status(404).json({ message: "Không tìm thấy phòng" });
+    }
+
+    // ✅ Đánh dấu isDeleted = true (soft delete)
+    room.isDeleted = true;
+    room.status = 'inactive'; // Đồng thời cập nhật status
+    await room.save();
 
     // 🧹 Gỡ roomId khỏi lớp nếu đang dùng phòng này
     await Class.updateMany({ roomId: room._id }, { $set: { roomId: null } });
     console.log(`🧹 Đã gỡ liên kết phòng ${room.roomCode} khỏi các lớp.`);
 
-    res.json({ message: `Đã xóa phòng ${room.roomCode}` });
+    res.json({ 
+      message: `Đã xóa phòng ${room.roomCode} thành công (soft delete)`,
+      room: room
+    });
   } catch (err) {
     console.error("❌ [removeRoom]", err);
     res.status(500).json({ message: "Không thể xóa phòng", error: err.message });

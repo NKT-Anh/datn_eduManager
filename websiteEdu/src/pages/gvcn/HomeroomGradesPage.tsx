@@ -7,16 +7,19 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { useSchoolYears } from '@/hooks';
+import { useCurrentAcademicYear } from '@/hooks/useCurrentAcademicYear';
 import schoolConfigApi from '@/services/schoolConfigApi';
 import gradesApi from '@/services/gradesApi';
 import { toast } from 'sonner';
-import { FileText, BarChart3, Award, Users } from 'lucide-react';
+import { FileText, BarChart3, Award, Users, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import api from '@/services/axiosInstance';
 
 export default function HomeroomGradesPage() {
   const { backendUser } = useAuth();
-  const { currentYearData, currentYear, schoolYears: allSchoolYears } = useSchoolYears();
+  const { schoolYears: allSchoolYears } = useSchoolYears();
+  const { currentYearCode, currentYearData } = useCurrentAcademicYear();
+  const currentYear = currentYearCode;
   const [loading, setLoading] = useState(true);
   const [homeroomClass, setHomeroomClass] = useState<any>(null);
   const [selectedYear, setSelectedYear] = useState<string>('');
@@ -86,7 +89,7 @@ export default function HomeroomGradesPage() {
       }
 
       try {
-        const res = await gradesApi.getHomeroomClassAllGrades({
+        const res = await gradesApi.getHomeroomClassAllGradesWithTrend({
           classId: homeroomClass._id,
           schoolYear: selectedYear,
           semester: selectedSemester,
@@ -301,11 +304,60 @@ export default function HomeroomGradesPage() {
                           <TableCell>{index + 1}</TableCell>
                           <TableCell className="font-medium">{student.name}</TableCell>
                           <TableCell>{student.studentCode}</TableCell>
-                          {student.subjects?.map((subject: any) => (
-                            <TableCell key={subject.subject._id} className="text-center">
-                              {subject.average !== null ? subject.average.toFixed(1) : '-'}
-                            </TableCell>
-                          ))}
+                          {student.subjects?.map((subject: any) => {
+                            // Lấy xu hướng cho môn học này
+                            const getSubjectTrend = () => {
+                              if (!student.trends) return null;
+                              // Ưu tiên so sánh với HK1 (nếu đang xem HK2)
+                              if (selectedSemester === '2' && student.trends.previousSemester) {
+                                return student.trends.previousSemester.comparison.find(
+                                  (c: any) => c.subjectId === subject.subject._id
+                                );
+                              }
+                              // So sánh với năm trước
+                              if (student.trends.previousYear) {
+                                return student.trends.previousYear.comparison.find(
+                                  (c: any) => c.subjectId === subject.subject._id
+                                );
+                              }
+                              return null;
+                            };
+
+                            const trend = getSubjectTrend();
+                            const getTrendIcon = (trend: number | null) => {
+                              if (trend === null || trend === undefined) return null;
+                              if (trend > 0) return <TrendingUp className="h-3 w-3 text-green-500" />;
+                              if (trend < 0) return <TrendingDown className="h-3 w-3 text-red-500" />;
+                              return <Minus className="h-3 w-3 text-gray-400" />;
+                            };
+                            const getTrendColor = (trend: number | null) => {
+                              if (trend === null || trend === undefined) return 'text-gray-500';
+                              if (trend > 0) return 'text-green-600';
+                              if (trend < 0) return 'text-red-600';
+                              return 'text-gray-500';
+                            };
+
+                            return (
+                              <TableCell key={subject.subject._id} className="text-center">
+                                <div className="flex flex-col items-center gap-1">
+                                  <span>{subject.average !== null ? subject.average.toFixed(1) : '-'}</span>
+                                  {trend && trend.trend !== null && trend.trend !== undefined && (
+                                    <div className="flex items-center gap-1 text-xs">
+                                      {getTrendIcon(trend.trend)}
+                                      <span className={getTrendColor(trend.trend)}>
+                                        {trend.trend > 0 ? '+' : ''}{trend.trend.toFixed(1)}
+                                      </span>
+                                      {trend.trendPercentage !== null && (
+                                        <span className={`text-xs ${getTrendColor(trend.trend)}`}>
+                                          ({trend.trendPercentage > 0 ? '+' : ''}{trend.trendPercentage.toFixed(1)}%)
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </TableCell>
+                            );
+                          })}
                           <TableCell className="text-center font-semibold">
                             {student.semesterAverage !== null && student.semesterAverage !== undefined 
                               ? student.semesterAverage.toFixed(2) 
@@ -456,7 +508,7 @@ export default function HomeroomGradesPage() {
                           <TableHead className="text-center">ĐTB</TableHead>
                           <TableHead className="text-center">Hạnh kiểm</TableHead>
                           <TableHead className="text-center">Học lực</TableHead>
-                          <TableHead className="text-center">Xếp hạng</TableHead>
+                          <TableHead className="text-center">Xếp hạng (Lớp/Khối)</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -475,7 +527,9 @@ export default function HomeroomGradesPage() {
                               {getAcademicLevelBadge(student.academicLevel)}
                             </TableCell>
                             <TableCell className="text-center">
-                              {student.rank || '-'}
+                              {student.rank || student.rankGrade 
+                                ? `Lớp: ${student.rank || '-'} / Khối: ${student.rankGrade || '-'}`
+                                : '-'}
                             </TableCell>
                           </TableRow>
                         ))}

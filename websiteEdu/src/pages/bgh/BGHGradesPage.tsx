@@ -20,18 +20,20 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Search, RefreshCw, Eye } from 'lucide-react';
+import { Search, RefreshCw, Eye, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import gradesApi from '@/services/gradesApi';
 import schoolConfigApi from '@/services/schoolConfigApi';
 import api from '@/services/axiosInstance';
 import { useSchoolYears } from '@/hooks';
+import { useCurrentAcademicYear } from '@/hooks/useCurrentAcademicYear';
 import { useAuth } from '@/contexts/AuthContext';
 import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
 
 const BGHGradesPage: React.FC = () => {
   const { backendUser } = useAuth();
-  const { schoolYears: allSchoolYears, currentYear, currentYearData } = useSchoolYears();
+  const { schoolYears: allSchoolYears } = useSchoolYears();
+  const { currentYearCode, currentYearData } = useCurrentAcademicYear();
   
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(false);
@@ -59,11 +61,10 @@ const BGHGradesPage: React.FC = () => {
 
   // ✅ Set default filters
   useEffect(() => {
-    const defaultYear = currentYearData?.code || currentYear || (allSchoolYears.length > 0 ? allSchoolYears[allSchoolYears.length - 1].code : '');
-    if (defaultYear && !filters.schoolYear) {
-      setFilters(prev => ({ ...prev, schoolYear: defaultYear, semester: '1' }));
+    if (currentYearCode && !filters.schoolYear) {
+      setFilters(prev => ({ ...prev, schoolYear: currentYearCode, semester: '1' }));
     }
-  }, [allSchoolYears, currentYearData, currentYear]);
+  }, [currentYearCode]);
 
   // ✅ Load semesters, classes, subjects, grades
   useEffect(() => {
@@ -94,7 +95,7 @@ const BGHGradesPage: React.FC = () => {
     }
     setLoading(true);
     try {
-      const res = await gradesApi.getAllStudentsGrades(filters);
+      const res = await gradesApi.getAllStudentsGradesWithTrend(filters);
       setStudentsGrades(res.data || []);
     } catch (err: any) {
       console.error('Load grades failed:', err);
@@ -330,7 +331,7 @@ const BGHGradesPage: React.FC = () => {
                           <TableHead>ĐTB CN</TableHead>
                           <TableHead>Học lực</TableHead>
                           <TableHead>Hạnh kiểm</TableHead>
-                          <TableHead>Xếp hạng</TableHead>
+                          <TableHead>Xếp hạng (Lớp/Khối)</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -356,7 +357,11 @@ const BGHGradesPage: React.FC = () => {
                               <TableCell>
                                 <Badge variant="outline">{student.conduct || '-'}</Badge>
                               </TableCell>
-                              <TableCell>{student.rank || '-'}</TableCell>
+                              <TableCell>
+                                {student.rank || student.rankGrade 
+                                  ? `Lớp: ${student.rank || '-'} / Khối: ${student.rankGrade || '-'}`
+                                  : '-'}
+                              </TableCell>
                             </TableRow>
                           ))}
                       </TableBody>
@@ -423,8 +428,56 @@ const BGHGradesPage: React.FC = () => {
                                     <TableCell>{subject.averages?.quiz45 || '-'}</TableCell>
                                     <TableCell>{subject.averages?.midterm || '-'}</TableCell>
                                     <TableCell>{subject.averages?.final || '-'}</TableCell>
-                                    <TableCell className={getAverageColor(subject.average)}>
-                                      {subject.average?.toFixed(1) || '-'}
+                                    <TableCell>
+                                      <div className="flex flex-col items-center gap-1">
+                                        <span className={getAverageColor(subject.average)}>
+                                          {subject.average?.toFixed(1) || '-'}
+                                        </span>
+                                        {/* Hiển thị xu hướng */}
+                                        {(() => {
+                                          if (!student.trends) return null;
+                                          const getSubjectTrend = () => {
+                                            if (filters.semester === '2' && student.trends?.previousSemester) {
+                                              return student.trends.previousSemester.comparison.find(
+                                                (c: any) => c.subjectId === subject.subject?._id
+                                              );
+                                            }
+                                            if (student.trends?.previousYear) {
+                                              return student.trends.previousYear.comparison.find(
+                                                (c: any) => c.subjectId === subject.subject?._id
+                                              );
+                                            }
+                                            return null;
+                                          };
+                                          const trend = getSubjectTrend();
+                                          if (!trend || trend.trend === null || trend.trend === undefined) return null;
+                                          
+                                          const getTrendIcon = (t: number) => {
+                                            if (t > 0) return <TrendingUp className="h-3 w-3 text-green-500" />;
+                                            if (t < 0) return <TrendingDown className="h-3 w-3 text-red-500" />;
+                                            return <Minus className="h-3 w-3 text-gray-400" />;
+                                          };
+                                          const getTrendColor = (t: number) => {
+                                            if (t > 0) return 'text-green-600';
+                                            if (t < 0) return 'text-red-600';
+                                            return 'text-gray-500';
+                                          };
+
+                                          return (
+                                            <div className="flex items-center gap-1 text-xs">
+                                              {getTrendIcon(trend.trend)}
+                                              <span className={getTrendColor(trend.trend)}>
+                                                {trend.trend > 0 ? '+' : ''}{trend.trend.toFixed(1)}
+                                              </span>
+                                              {trend.trendPercentage !== null && (
+                                                <span className={`text-xs ${getTrendColor(trend.trend)}`}>
+                                                  ({trend.trendPercentage > 0 ? '+' : ''}{trend.trendPercentage.toFixed(1)}%)
+                                                </span>
+                                              )}
+                                            </div>
+                                          );
+                                        })()}
+                                      </div>
                                     </TableCell>
                                   </TableRow>
                                 ))}

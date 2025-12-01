@@ -39,12 +39,12 @@ import {
 } from "lucide-react";
 // ✅ Sử dụng hooks thay vì API trực tiếp
 import { useClasses, useTeachers, useAutoAssignRooms, useAutoAssignHomeroomTeachers, useSchoolYears } from "@/hooks";
+import { useCurrentAcademicYear } from "@/hooks/useCurrentAcademicYear";
 import { classApiNoToken } from "@/services/classApi";
 import * as XLSX from "xlsx";
 import { useStudents } from "@/hooks/auth/useStudents";
 import { saveAs } from "file-saver";
 import CreateClassesDialog from "@/components/dialogs/CreateClassesDialog";
-import settingApi from "@/services/settingApi";
 import {
   Table,
   TableBody,
@@ -92,7 +92,6 @@ export default function ClassesPage() {
   const [selectedClassForDetail, setSelectedClassForDetail] = useState<ClassType | null>(null);
   
   // ✅ State cho phần xem giáo viên chủ nhiệm
-  const [currentSchoolYear, setCurrentSchoolYear] = useState<string>("");
   const [isHomeroomViewOpen, setIsHomeroomViewOpen] = useState<boolean>(false);
 
   const {
@@ -103,11 +102,18 @@ export default function ClassesPage() {
   } = useStudents();
 
   // ✅ Lấy năm học hiện tại từ hooks
-  const { schoolYears, currentYear, currentYearData } = useSchoolYears();
+  const { schoolYears } = useSchoolYears();
+  const { currentYearCode, currentYearData } = useCurrentAcademicYear();
+  const currentYear = currentYearCode;
 
   const yearOptions = useMemo(
     () => {
+      // ✅ cls.year luôn là code (ví dụ: "2025-2026"), không phải name
       const years = Array.from(new Set(classes.map((cls) => cls.year)));
+      // ✅ Đảm bảo năm học hiện tại (code) luôn có trong danh sách (ngay cả khi chưa có lớp)
+      if (currentYearCode && !years.includes(currentYearCode)) {
+        years.push(currentYearCode);
+      }
       // ✅ Ưu tiên năm học hiện tại (isActive: true) lên đầu
       return years.sort((a, b) => {
         // Nếu có currentYear, ưu tiên nó lên đầu
@@ -119,42 +125,33 @@ export default function ClassesPage() {
         return b.localeCompare(a);
       });
     },
-    [classes, currentYear]
+    [classes, currentYear, currentYearCode]
   );
 
-  // ✅ Lấy năm học hiện tại từ settings
+  // ✅ Set năm học hiện tại khi có dữ liệu (ưu tiên chọn năm học hiện tại thay vì "Tất cả")
   useEffect(() => {
-    const fetchCurrentYear = async () => {
-      try {
-        const settings = await settingApi.getSettings();
-        const year = settings?.currentSchoolYear || "";
-        setCurrentSchoolYear(year);
-        // Mặc định chọn năm học hiện tại cho bộ lọc
-        if (year && (selectedYear === "" || selectedYear === "Tất cả")) {
-          setSelectedYear(year);
-        }
-      } catch (error) {
-        console.error("Lỗi lấy năm học hiện tại:", error);
+    // Chỉ set khi đang là "Tất cả" hoặc rỗng, và đã có yearOptions
+    if ((selectedYear === "" || selectedYear === "Tất cả") && yearOptions.length > 0 && currentYearCode) {
+      // ✅ cls.year luôn là code, nên tìm theo currentYearCode
+      const matchedYear = yearOptions.find(y => y === currentYearCode);
+      if (matchedYear) {
+        setSelectedYear(matchedYear);
+        return;
       }
-    };
-    fetchCurrentYear();
-  }, [selectedYear]);
-
-  // When the hook provides the active year data, prefer its `name` as the default
-  useEffect(() => {
-    const yearName = currentYearData?.name || currentYear || null;
-    if (yearName && (selectedYear === "" || selectedYear === "Tất cả")) {
-      setSelectedYear(yearName);
+      // Nếu không tìm thấy, chọn năm đầu tiên trong danh sách (đã được sắp xếp ưu tiên năm hiện tại)
+      if (yearOptions.length > 0) {
+        setSelectedYear(yearOptions[0]);
+      }
     }
-  }, [currentYearData, currentYear, selectedYear]);
+  }, [currentYearCode, selectedYear, yearOptions]);
 
   // ✅ Lấy danh sách lớp và giáo viên chủ nhiệm theo năm học (chỉ load khi mở)
   const homeroomClassesData = useMemo(() => {
     // Chỉ tính toán khi phần này được mở
     if (!isHomeroomViewOpen) return [];
 
-    // Sử dụng selectedYear từ toolbar, nếu là "Tất cả" thì dùng currentSchoolYear
-    const year = selectedYear === "Tất cả" ? currentSchoolYear : selectedYear;
+    // Sử dụng selectedYear từ toolbar, nếu là "Tất cả" thì dùng năm học hiện tại (code)
+    const year = selectedYear === "Tất cả" ? (currentYearCode || "") : selectedYear;
     if (!year) return [];
 
     // Lọc lớp theo năm học
@@ -194,7 +191,7 @@ export default function ClassesPage() {
         }
         return a.class.className.localeCompare(b.class.className);
       });
-  }, [classes, teachers, selectedYear, currentSchoolYear, isHomeroomViewOpen]);
+  }, [classes, teachers, selectedYear, currentYearData, currentYearCode, isHomeroomViewOpen]);
 
   const truncateText = (text: string = "", maxLength = 35): string =>
     text.length > maxLength ? text.slice(0, maxLength) + "..." : text;
@@ -598,8 +595,8 @@ export default function ClassesPage() {
           {homeroomClassesData.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">
               {selectedYear === "Tất cả" 
-                ? (currentSchoolYear 
-                    ? `Không có lớp nào trong năm học ${currentSchoolYear}`
+                ? (currentYearData?.name || currentYearCode
+                    ? `Không có lớp nào trong năm học ${currentYearData?.name || currentYearCode}`
                     : "Vui lòng chọn năm học")
                 : `Không có lớp nào trong năm học ${selectedYear}`}
             </p>

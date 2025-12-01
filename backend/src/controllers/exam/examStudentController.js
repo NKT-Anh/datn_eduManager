@@ -54,6 +54,7 @@ exports.addStudentsToExam = async (req, res) => {
       currentYear: exam.year, // ✅ Lấy học sinh có currentYear trùng với năm của kỳ thi
       grade: { $in: targetGrades }, // ✅ Lấy theo grades của kỳ thi
       classId: { $in: classIdsInCurrentYear }, // ✅ Chỉ lấy học sinh ở lớp của năm học hiện tại
+      isDeleted: { $ne: true } // ✅ Không lấy học sinh đã bị xóa mềm
     })
       .populate({
         path: "classId",
@@ -163,6 +164,7 @@ exports.addMultipleStudents = async (req, res) => {
       currentYear: exam.year, // ✅ Chỉ lấy học sinh cùng năm học
       grade: { $in: exam.grades }, // ✅ Chỉ lấy học sinh thuộc khối tham gia
       classId: { $in: classIdsInCurrentYear }, // ✅ Chỉ lấy học sinh ở lớp của năm học hiện tại
+      isDeleted: { $ne: true } // ✅ Không lấy học sinh đã bị xóa mềm
     })
       .populate({
         path: "classId",
@@ -304,6 +306,9 @@ exports.getCandidatesForExam = async (req, res) => {
         { studentCode: regex },
       ];
     }
+
+    // ✅ Không lấy học sinh đã bị xóa mềm
+    filter.isDeleted = { $ne: true };
 
     let query = Student.find(filter)
       .populate({
@@ -611,6 +616,7 @@ exports.addAllStudentsByGrades = async (req, res) => {
       currentYear: exam.year,
       grade: { $in: targetGrades },
       classId: { $in: classIdsInCurrentYear }, // ✅ Chỉ lấy học sinh ở lớp của năm học hiện tại
+      isDeleted: { $ne: true } // ✅ Không lấy học sinh đã bị xóa mềm
     })
       .populate({
         path: "classId",
@@ -846,6 +852,7 @@ exports.getExamScheduleForStudent = async (req, res) => {
     const schedules = await ExamSchedule.find({
       exam: examId,
       grade: String(grade),
+      isDeleted: { $ne: true } // ✅ Chỉ lấy lịch thi chưa bị xóa
     })
       .populate("subject", "name code")
       .sort({ date: 1, startTime: 1 })

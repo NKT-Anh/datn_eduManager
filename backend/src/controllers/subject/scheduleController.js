@@ -1,13 +1,21 @@
 const Schedule = require("../../models/subject/schedule");
 const TeachingAssignment = require("../../models/subject/teachingAssignment");
 const Class = require("../../models/class/class");
+const { getCurrentSchoolYear } = require("../../utils/schoolYearHelper");
 exports.getAllSchedules = async (req, res) => {
   try {
     // ✅ Kiểm tra quyền: Admin/BGH có thể xem tất cả, Student/Teacher chỉ xem lịch đã khóa
     const userRole = req.user?.role;
     const isAdmin = userRole === 'admin' || userRole === 'bgh';
-    
+
     const query = {};
+
+    // ✅ Soft Delete: Filter isDeleted != true mặc định (bao gồm false, null, không có trường)
+    const { isDeleted = 'false' } = req.query;
+    if (isDeleted !== 'true') {
+      query.isDeleted = { $ne: true };
+    }
+
     if (!isAdmin) {
       query.isLocked = true;
     }
@@ -91,6 +99,15 @@ exports.createSchedule = async (req, res) => {
 
     // 🔒 Ràng buộc: Không được tạo thời khóa biểu nếu chưa có năm học active
     const SchoolYear = require('../../models/schoolYear');
+    const activeYearCode = await getCurrentSchoolYear();
+    
+    if (!activeYearCode) {
+      return res.status(400).json({ 
+        message: "Không thể tạo thời khóa biểu. Vui lòng kích hoạt một năm học trước." 
+      });
+    }
+
+    // ✅ Lấy thông tin năm học active để kiểm tra
     const activeYear = await SchoolYear.findOne({ isActive: true });
     if (!activeYear) {
       return res.status(400).json({ 
@@ -245,17 +262,32 @@ exports.updateSchedule = async (req, res) => {
 };
 
 // 🧩 Xóa thời khóa biểu
+// ✅ Soft Delete - Xóa mềm thời khóa biểu (chỉ đánh dấu, không xóa thật)
 exports.deleteSchedule = async (req, res) => {
   try {
     const { id } = req.params;
-    await Schedule.findByIdAndDelete(id);
-    res.status(200).json({ message: "Đã xóa thành công." });
+    const schedule = await Schedule.findById(id);
+    
+    if (!schedule) {
+      return res.status(404).json({ message: "Không tìm thấy thời khóa biểu" });
+    }
+
+    // ✅ Đánh dấu isDeleted = true (soft delete)
+    schedule.isDeleted = true;
+    await schedule.save();
+
+    res.status(200).json({ 
+      message: "Đã xóa thời khóa biểu thành công (soft delete)",
+      schedule: schedule
+    });
   } catch (err) {
+    console.error('❌ Lỗi khi xóa thời khóa biểu:', err);
     res.status(500).json({ message: err.message });
   }
 };
 
 
+// ✅ Soft Delete - Xóa mềm thời khóa biểu theo khối/năm học/học kỳ
 exports.deleteScheduleByGradeYearSemester = async (req, res) => {
   try {
     const { year, semester, grade } = req.body;
@@ -268,14 +300,23 @@ exports.deleteScheduleByGradeYearSemester = async (req, res) => {
     const classes = await Class.find({ grade });
     const classIds = classes.map(c => c._id);
 
-    // Xóa tất cả lịch
-    const result = await Schedule.deleteMany({
-      classId: { $in: classIds },
-      year,
-      semester,
-    });
+    // ✅ Soft Delete - Đánh dấu isDeleted = true (không xóa vĩnh viễn)
+    const result = await Schedule.updateMany(
+      {
+        classId: { $in: classIds },
+        year,
+        semester,
+        isDeleted: { $ne: true } // Chỉ cập nhật các bản ghi chưa bị xóa
+      },
+      {
+        $set: { isDeleted: true }
+      }
+    );
 
-    res.status(200).json({ message: "Đã xóa TKB thành công", deletedCount: result.deletedCount });
+    res.status(200).json({ 
+      message: "Đã xóa TKB thành công (soft delete)", 
+      deletedCount: result.modifiedCount 
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Lỗi khi xóa TKB" });

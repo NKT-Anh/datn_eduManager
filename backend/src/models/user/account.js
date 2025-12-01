@@ -15,6 +15,11 @@ const accountSchema = new mongoose.Schema({
     // ✅ OTP cho đăng nhập
     loginOTP: { type: String },
     loginOTPExpiry: { type: Date },
+    // ✅ Khóa tài khoản (không cho đăng nhập)
+    isLocked: { type: Boolean, default: false },
+    lockedAt: { type: Date },
+    lockedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Account' }, // Admin nào đã khóa
+    lockReason: { type: String }, // Lý do khóa
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now }
 });

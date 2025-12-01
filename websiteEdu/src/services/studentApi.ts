@@ -45,13 +45,15 @@ export interface StudentUpdatePayload extends Partial<StudentCreatePayload> {}
 const studentApi = {
   // 📋 Lấy danh sách học sinh (hỗ trợ params: page, limit, grade, classId, year, search...)
   async getAll(params?: Record<string, any>) {
-    const res = await api.get("/students", { params });
+    const queryParams = { isDeleted: 'false', ...(params || {}) };
+    const res = await api.get("/students", { params: queryParams });
     return res.data;
   },
 
   // 🔍 Lấy chi tiết 1 học sinh
-  async getById(id: string) {
-    const res = await api.get(`/students/${id}`);
+  async getById(id: string, params?: Record<string, any>) {
+    const queryParams = { isDeleted: 'false', ...(params || {}) };
+    const res = await api.get(`/students/${id}`, { params: queryParams });
     return res.data;
   },
 
@@ -113,6 +115,12 @@ const studentApi = {
     autoAssignClass?: boolean;
   }) {
     const res = await api.post("/students/promote", data);
+    return res.data;
+  },
+
+  // 📘 Lấy thông tin chi tiết học sinh theo niên khóa
+  async getYearDetail(id: string, year: string) {
+    const res = await api.get(`/students/${id}/year-detail`, { params: { year } });
     return res.data;
   },
 };

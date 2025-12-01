@@ -20,6 +20,13 @@ const mongoose = require('mongoose');
       teacherId: { type: mongoose.Schema.Types.ObjectId, ref: 'Teacher' },
       date: { type: Date, default: Date.now },
       notes: { type: String },
+
+      // ✅ Soft Delete - Không xóa thật vì là dữ liệu pháp lý (học bạ)
+      isDeleted: {
+        type: Boolean,
+        default: false,
+        description: 'Đánh dấu xóa mềm - giữ hồ sơ học bạ'
+      },
     },
     { timestamps: true }
   );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Button,
   Table,
@@ -30,6 +30,7 @@ import {
   Search,
   FileSpreadsheet,
   File,
+  TrendingUp,
 } from "lucide-react"; // ✅ thay thế bộ icon 
 import {
   DropdownMenu,
@@ -63,6 +64,8 @@ import type { Exam } from "@/services/exams/examApi";
 import ExamForm from "./ExamForm";
 import schoolConfigApi from "@/services/schoolConfigApi";
 import { schoolYearApi } from "@/services/schoolYearApi";
+import { useSchoolYears } from "@/hooks";
+import { useCurrentAcademicYear } from "@/hooks/useCurrentAcademicYear";
 import { useAuth } from "@/contexts/AuthContext";
 import { isAdminOrBGH } from "@/utils/permissions";
 
@@ -139,7 +142,13 @@ export default function ExamListPage() {
   const [statsExam, setStatsExam] = useState<Exam | null>(null);
   const [modalKey, setModalKey] = useState(0);
 
-  const [schoolYears, setSchoolYears] = useState<{ code: string; name: string }[]>([]);
+  // ✅ Sử dụng hooks để lấy năm học
+  const { schoolYears: allSchoolYears } = useSchoolYears();
+  const { currentYearCode } = useCurrentAcademicYear();
+  const schoolYears = useMemo(() => 
+    allSchoolYears.map(y => ({ code: y.code, name: y.name })),
+    [allSchoolYears]
+  );
   const [semesters, setSemesters] = useState<{ code: string; name: string }[]>([]);
   const [grades, setGrades] = useState<{ code: string; name: string }[]>([]);
   const [pagination, setPagination] = useState({
@@ -199,17 +208,14 @@ const fetchExams = async (page = pagination.current, limit = pagination.pageSize
   useEffect(() => {
     const fetchConfigs = async () => {
       try {
-        const [yearsData, sRes, gRes] = await Promise.all([
-          schoolYearApi.getAll(),
+        const [sRes, gRes] = await Promise.all([
           schoolConfigApi.getSemesters(),
           schoolConfigApi.getGrades(),
         ]);
-        // Map SchoolYear[] sang format { code, name }
-        setSchoolYears(yearsData.map(y => ({ code: y.code, name: y.name })));
         setSemesters(sRes.data || []);
         setGrades(gRes.data || []);
       } catch {
-        message.error("Lỗi khi tải cấu hình năm học / học kỳ");
+        message.error("Lỗi khi tải cấu hình học kỳ / khối");
       }
     };
     fetchConfigs();
@@ -658,7 +664,37 @@ try {
           <Button size="small" icon={<BarChart3 size={16} />} onClick={() => setStatsExam(r)}>
             Thống kê
           </Button>
-          <Button size="small" icon={<Eye size={16} />} onClick={() => navigate(`/admin/exam/${r._id}`)}>
+          {(backendUser?.role === 'admin' || (backendUser?.role === 'teacher' && backendUser?.teacherFlags?.isLeader)) && (
+            <Button
+              size="small"
+              icon={<TrendingUp size={16} />}
+              onClick={() => {
+                const base =
+                  backendUser?.role === 'admin'
+                    ? '/admin/exam'
+                    : backendUser?.role === 'bgh' || (backendUser?.role === 'teacher' && backendUser?.teacherFlags?.isLeader)
+                    ? '/bgh/exam'
+                    : '/admin/exam';
+                navigate(`${base}/${r._id}/analysis`);
+              }}
+            >
+              Phân tích điểm
+            </Button>
+          )}
+          <Button
+            size="small"
+            icon={<Eye size={16} />}
+            onClick={() => {
+              // ✅ Điều hướng theo role: Admin → /admin/exam/:id, BGH → /bgh/exam/:id
+              const base =
+                backendUser?.role === 'admin'
+                  ? '/admin/exam'
+                  : backendUser?.role === 'bgh'
+                  ? '/bgh/exam'
+                  : '/admin/exam';
+              navigate(`${base}/${r._id}`);
+            }}
+          >
             Xem
           </Button>
           {hasPermission(PERMISSIONS.EXAM_UPDATE) && (

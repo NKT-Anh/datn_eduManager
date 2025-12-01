@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useDepartmentManagement } from "@/hooks/departments/useDepartmentManagement";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSchoolYears } from "@/hooks/schoolYear/useSchoolYears";
+import { useCurrentAcademicYear } from "@/hooks/useCurrentAcademicYear";
 import { 
   Users, 
   BookOpen, 
@@ -22,16 +23,17 @@ export default function DepartmentManagementDashboard() {
   const { backendUser } = useAuth();
   const navigate = useNavigate();
   const { dashboard, loading, fetchDashboard } = useDepartmentManagement();
-  const { schoolYears, currentYear } = useSchoolYears();
+  const { schoolYears } = useSchoolYears();
+  const { currentYearCode } = useCurrentAcademicYear();
   const [selectedYear, setSelectedYear] = useState<string>("");
   const [selectedSemester, setSelectedSemester] = useState<"1" | "2">("1");
 
-  // Lấy năm học hiện tại từ SchoolYear có isActive: true
+  // ✅ Set năm học hiện tại khi có dữ liệu
   useEffect(() => {
-    if (currentYear && !selectedYear) {
-      setSelectedYear(currentYear);
+    if (currentYearCode && !selectedYear) {
+      setSelectedYear(currentYearCode);
     }
-  }, [currentYear, selectedYear]);
+  }, [currentYearCode, selectedYear]);
 
   useEffect(() => {
     if (selectedYear) {

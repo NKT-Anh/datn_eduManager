@@ -20,7 +20,8 @@ import {
   GraduationCap,
   Settings,
   User,
-  BarChart3
+  BarChart3,
+  Trash2
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -42,6 +43,7 @@ export function AdminSidebar() {
     { title: "Thời khóa biểu", url: `${prefix}/schedule`, icon: Calendar },
     { title: "Quản lý điểm", url: `${prefix}/grades`, icon: ClipboardList },
     { title: "Cấu hình điểm số", url: `${prefix}/grade-config`, icon: BarChart3 },
+    { title: "Thùng rác", url: `${prefix}/trash`, icon: Trash2 },
     { title: "Hồ sơ", url: `${prefix}/profile`, icon: User },
     { title: "Cài đặt", url: `${prefix}/settings`, icon: Settings },
   ];

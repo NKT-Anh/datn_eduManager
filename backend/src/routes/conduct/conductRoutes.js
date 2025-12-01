@@ -12,7 +12,9 @@ const {
   createConduct,
   calculateSuggestedConduct,
   approveConduct,
-  getPendingConducts
+  getPendingConducts,
+  bulkApproveConducts,
+  updateYearNote
 } = require('../../controllers/conduct/conductController');
 
 // Tất cả routes đều cần xác thực
@@ -116,11 +118,52 @@ router.post(
   approveConduct
 );
 
+// ✅ Phê duyệt hàng loạt hạnh kiểm (BGH)
+router.post(
+  '/approve/bulk',
+  checkPermission(PERMISSIONS.CONDUCT_VIEW, { checkContext: true }),
+  auditLog({
+    action: 'APPROVE_CONDUCT_BULK',
+    resource: 'CONDUCT',
+    getDescription: async (req) => {
+      const action = req.body?.action || 'approve';
+      const year = req.body?.year || 'ALL';
+      const semester = req.body?.semester || 'ALL';
+      const actionMap = {
+        approve: 'Phê duyệt hàng loạt',
+        lock: 'Chốt hàng loạt'
+      };
+      return `${actionMap[action] || 'Phê duyệt hàng loạt'} hạnh kiểm - Năm học: ${year}, Học kỳ: ${semester}`;
+    },
+  }),
+  bulkApproveConducts
+);
+
 // 📋 Lấy danh sách hạnh kiểm chờ phê duyệt (BGH)
 router.get(
   '/pending/list',
   checkPermission(PERMISSIONS.CONDUCT_VIEW, { checkContext: true }),
   getPendingConducts
+);
+
+// 📝 Cập nhật nhận xét cuối năm của GVCN
+router.put(
+  '/year-note/update',
+  checkPermission([
+    PERMISSIONS.CONDUCT_ENTER,
+    PERMISSIONS.CONDUCT_VIEW
+  ], { checkContext: true }),
+  auditLog({
+    action: 'UPDATE',
+    resource: 'STUDENT_YEAR_NOTE',
+    getDescription: async (req) => {
+      const studentId = req.body?.studentId;
+      const year = req.body?.year || 'N/A';
+      const studentName = await getStudentName(studentId);
+      return `Cập nhật nhận xét cuối năm: Học sinh ${studentName}, Năm học ${year}`;
+    },
+  }),
+  updateYearNote
 );
 
 module.exports = router;

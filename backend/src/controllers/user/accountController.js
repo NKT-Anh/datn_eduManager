@@ -92,35 +92,21 @@ exports.getMyAccount = async (req, res) => {
     }
 
     // Helper: resolve effective school year (request -> active SchoolYear -> settings -> env)
-    const SchoolYearModel = require('../../models/schoolYear');
-    const Setting = require('../../models/settings');
-    const getEffectiveSchoolYear = async () => {
-      const fromReq = (req.headers && (req.headers['x-school-year'] || req.headers['x-school-year-code']))
-        || req.query?.year || req.query?.schoolYear || req.body?.schoolYear || null;
-      if (fromReq) return String(fromReq);
-      try {
-        const active = await SchoolYearModel.findOne({ isActive: true }).lean();
-        if (active && active.code) return String(active.code);
-      } catch (e) {}
-      try {
-        const s = await Setting.findOne().lean();
-        if (s && s.currentSchoolYear) return String(s.currentSchoolYear);
-      } catch (e) {}
-      return process.env.SCHOOL_YEAR || null;
-    };
+    // ✅ Sử dụng utility function để xác định năm học hiện tại
+    const { getEffectiveSchoolYear } = require('../../utils/schoolYearHelper');
 
     // ✅ Lấy thông tin flags nếu là teacher
     let teacherFlags = null;
     if (teacherId) {
       const Teacher = require('../../models/user/teacher');
-      // ✅ QUAN TRỌNG: Phải select yearRoles và currentHomeroomClassId để lấy đúng flags theo năm học
-      const teacher = await Teacher.findById(teacherId).select('isHomeroom isDepartmentHead isLeader permissions yearRoles currentHomeroomClassId');
+      // ✅ QUAN TRỌNG: CHỈ select yearRoles và isLeader (top-level), KHÔNG select top-level isHomeroom/isDepartmentHead/departmentId/currentHomeroomClassId
+      const teacher = await Teacher.findById(teacherId).select('isLeader permissions yearRoles');
       if (teacher) {
           // ✅ QUAN TRỌNG: Chỉ lấy flags theo năm học hiện tại (currentYear)
           // Nếu không có yearRoleEntry cho năm hiện tại → không có flag đó trong năm này
           // Role gốc (teacher) giữ nguyên, nhưng flags thay đổi theo năm học
           let roleForYear = null;
-          const currentYear = await getEffectiveSchoolYear();
+          const currentYear = await getEffectiveSchoolYear(req);
 
           if (currentYear && Array.isArray(teacher.yearRoles) && teacher.yearRoles.length > 0) {
             roleForYear = teacher.yearRoles.find(r => String(r.schoolYear) === String(currentYear)) || null;
@@ -132,24 +118,22 @@ exports.getMyAccount = async (req, res) => {
             isHomeroom: Boolean(roleForYear.isHomeroom),
             isDepartmentHead: Boolean(roleForYear.isDepartmentHead),
             isLeader: Boolean(teacher.isLeader), // ✅ CHỈ lấy từ top-level - BGH được set cứng
-            permissions: Array.isArray(roleForYear.permissions) ? roleForYear.permissions : (roleForYear.permissions ? [roleForYear.permissions] : [])
+            permissions: Array.isArray(roleForYear.permissions) ? roleForYear.permissions : (roleForYear.permissions ? [roleForYear.permissions] : []),
+            // ✅ Lấy departmentId và currentHomeroomClassId từ yearRoles
+            departmentId: roleForYear.departmentId || null,
+            currentHomeroomClassId: roleForYear.currentHomeroomClassId || null
           };
-        } else if (currentYear && !roleForYear) {
-          // ✅ Không có yearRoleEntry cho năm hiện tại → không có flags trong năm này (trừ isLeader)
+        } else {
+          // ✅ Không có yearRoleEntry cho năm hiện tại HOẶC không có currentYear
+          // → không có flags trong năm này (trừ isLeader)
+          // ✅ QUAN TRỌNG: Không fallback về top-level fields, chỉ sử dụng yearRoles
           teacherFlags = {
             isHomeroom: false,
             isDepartmentHead: false,
             isLeader: Boolean(teacher.isLeader), // ✅ CHỈ lấy từ top-level - BGH được set cứng
-            permissions: []
-          };
-        } else {
-          // ✅ Nếu không có currentYear → fallback về legacy (chỉ khi không có năm học)
-          // Điều này chỉ xảy ra khi hệ thống chưa có cấu hình năm học
-          teacherFlags = {
-            isHomeroom: teacher.isHomeroom || false,
-            isDepartmentHead: teacher.isDepartmentHead || false,
-            isLeader: Boolean(teacher.isLeader), // ✅ CHỈ lấy từ top-level - BGH được set cứng
-            permissions: teacher.permissions || []
+            permissions: [],
+            departmentId: null,
+            currentHomeroomClassId: null
           };
         }
       }
@@ -314,6 +298,14 @@ exports.createTeacherAccount = async (req, res) => {
  */
 exports.updateAccountRole = async (req, res) => {
   try {
+    // ✅ Kiểm tra quyền: BGH không được sửa role tài khoản
+    const user = req.user;
+    if (user?.role === 'teacher' && user?.teacherFlags?.isLeader) {
+      return res.status(403).json({ 
+        message: 'Ban Giám Hiệu không có quyền sửa role tài khoản. Vui lòng liên hệ quản trị viên.' 
+      });
+    }
+
     const { accountId } = req.params; // Lấy từ URL params
     const { newRole } = req.body;
 
@@ -396,24 +388,9 @@ exports.getAllAccountsWithPermissions = async (req, res) => {
     );
 
     // Gắn thông tin chi tiết vào từng account
-      // Determine current year for admin listing (allow override via query)
-      const SchoolYearModel = require('../../models/schoolYear');
-      const Setting = require('../../models/settings');
-      const getEffectiveSchoolYear = async () => {
-        const fromReq = (req.headers && (req.headers['x-school-year'] || req.headers['x-school-year-code']))
-          || req.query?.year || req.query?.schoolYear || null;
-        if (fromReq) return String(fromReq);
-        try {
-          const active = await SchoolYearModel.findOne({ isActive: true }).lean();
-          if (active && active.code) return String(active.code);
-        } catch (e) {}
-        try {
-          const s = await Setting.findOne().lean();
-          if (s && s.currentSchoolYear) return String(s.currentSchoolYear);
-        } catch (e) {}
-        return process.env.SCHOOL_YEAR || null;
-      };
-      const currentYear = await getEffectiveSchoolYear();
+      // ✅ Sử dụng utility function để xác định năm học hiện tại
+      const { getEffectiveSchoolYear } = require('../../utils/schoolYearHelper');
+      const currentYear = await getEffectiveSchoolYear(req);
 
     const accountsWithPermissions = accounts.map(acc => {
       const accIdStr = acc._id.toString();
@@ -451,7 +428,10 @@ exports.getAllAccountsWithPermissions = async (req, res) => {
             isHomeroom: Boolean(roleForYear.isHomeroom),
             isDepartmentHead: Boolean(roleForYear.isDepartmentHead),
             isLeader: Boolean(teacher.isLeader), // ✅ CHỈ lấy từ top-level - BGH được set cứng
-            permissions: Array.isArray(roleForYear.permissions) ? roleForYear.permissions : (roleForYear.permissions ? [roleForYear.permissions] : [])
+            permissions: Array.isArray(roleForYear.permissions) ? roleForYear.permissions : (roleForYear.permissions ? [roleForYear.permissions] : []),
+            // ✅ Lấy departmentId và currentHomeroomClassId từ yearRoles
+            departmentId: roleForYear.departmentId || null,
+            currentHomeroomClassId: roleForYear.currentHomeroomClassId || null
           };
         } else if (currentYear && !roleForYear) {
           // ✅ Không có yearRoleEntry cho năm hiện tại → không có flags trong năm này (trừ isLeader)
@@ -459,7 +439,9 @@ exports.getAllAccountsWithPermissions = async (req, res) => {
             isHomeroom: false,
             isDepartmentHead: false,
             isLeader: Boolean(teacher.isLeader), // ✅ CHỈ lấy từ top-level - BGH được set cứng
-            permissions: []
+            permissions: [],
+            departmentId: null,
+            currentHomeroomClassId: null
           };
         } else {
           // ✅ Nếu không có currentYear → fallback về legacy (chỉ khi không có năm học)
@@ -468,7 +450,10 @@ exports.getAllAccountsWithPermissions = async (req, res) => {
             isHomeroom: teacher.isHomeroom || false,
             isDepartmentHead: teacher.isDepartmentHead || false,
             isLeader: Boolean(teacher.isLeader), // ✅ CHỈ lấy từ top-level - BGH được set cứng
-            permissions: teacher.permissions || []
+            permissions: teacher.permissions || [],
+            // ✅ Fallback về top-level nếu không có yearRoles
+            departmentId: teacher.departmentId || null,
+            currentHomeroomClassId: teacher.currentHomeroomClassId || null
           };
         }
         // ✅ Trả về cả yearRoles để frontend có thể hiển thị quyền theo năm
@@ -477,7 +462,10 @@ exports.getAllAccountsWithPermissions = async (req, res) => {
           isHomeroom: Boolean(yr.isHomeroom),
           isDepartmentHead: Boolean(yr.isDepartmentHead),
           isLeader: Boolean(yr.isLeader),
-          permissions: Array.isArray(yr.permissions) ? yr.permissions : (yr.permissions ? [yr.permissions] : [])
+          permissions: Array.isArray(yr.permissions) ? yr.permissions : (yr.permissions ? [yr.permissions] : []),
+          // ✅ Thêm departmentId và currentHomeroomClassId vào yearRoles response
+          departmentId: yr.departmentId || null,
+          currentHomeroomClassId: yr.currentHomeroomClassId || null
         })) : [];
       } else if (acc.role === 'admin' && adminMap.has(accIdStr)) {
         const admin = adminMap.get(accIdStr);
@@ -517,18 +505,27 @@ exports.getAllAccountsWithPermissions = async (req, res) => {
   }
 };
 
-/**
- * ✅ Cập nhật role của account
- */
-exports.updateAccountRole = async (req, res) => {
-  try {
-    const { accountId } = req.params;
-    const { role } = req.body;
 
-    if (!role || !['admin', 'student', 'teacher'].includes(role)) {
-      return res.status(400).json({ 
-        message: 'Role không hợp lệ. Chỉ chấp nhận: admin, student, teacher' 
+/**
+ * 🔒 Khóa tài khoản (không cho đăng nhập)
+ * Chỉ Admin mới có quyền khóa tài khoản
+ */
+exports.lockAccount = async (req, res) => {
+  try {
+    // ✅ Kiểm tra quyền: BGH không được khóa tài khoản
+    const user = req.user;
+    if (user?.role === 'teacher' && user?.teacherFlags?.isLeader) {
+      return res.status(403).json({ 
+        message: 'Ban Giám Hiệu không có quyền khóa tài khoản. Vui lòng liên hệ quản trị viên.' 
       });
+    }
+
+    const { accountId } = req.params;
+    const { reason } = req.body;
+    const adminAccountId = req.user?.accountId; // Admin đang thực hiện khóa
+
+    if (!accountId) {
+      return res.status(400).json({ message: 'Thiếu accountId' });
     }
 
     const account = await Account.findById(accountId);
@@ -536,21 +533,105 @@ exports.updateAccountRole = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy tài khoản' });
     }
 
-    account.role = role;
+    // ✅ Không cho phép khóa chính mình
+    if (String(account._id) === String(adminAccountId)) {
+      return res.status(400).json({ message: 'Không thể khóa chính tài khoản của bạn' });
+    }
+
+    // ✅ Khóa tài khoản
+    account.isLocked = true;
+    account.lockedAt = new Date();
+    account.lockedBy = adminAccountId;
+    account.lockReason = reason || 'Tài khoản bị khóa bởi quản trị viên';
     await account.save();
 
+    // ✅ Vô hiệu hóa tài khoản trên Firebase
+    try {
+      if (account.uid) {
+        await admin.auth().updateUser(account.uid, { disabled: true });
+      }
+    } catch (firebaseError) {
+      console.error('❌ Lỗi khi vô hiệu hóa tài khoản trên Firebase:', firebaseError);
+      // Không throw error, chỉ log vì đã khóa trong DB
+    }
+
     res.json({
-      message: 'Đã cập nhật role thành công',
+      message: 'Đã khóa tài khoản thành công',
       account: {
         _id: account._id,
         email: account.email,
-        role: account.role
+        phone: account.phone,
+        role: account.role,
+        isLocked: account.isLocked,
+        lockedAt: account.lockedAt,
+        lockReason: account.lockReason
       }
     });
   } catch (error) {
-    console.error('Error updating account role:', error);
+    console.error('Error locking account:', error);
     res.status(500).json({ 
-      message: 'Lỗi khi cập nhật role', 
+      message: 'Lỗi khi khóa tài khoản', 
+      error: error.message 
+    });
+  }
+};
+
+/**
+ * 🔓 Mở khóa tài khoản (cho phép đăng nhập lại)
+ * Chỉ Admin mới có quyền mở khóa tài khoản
+ */
+exports.unlockAccount = async (req, res) => {
+  try {
+    // ✅ Kiểm tra quyền: BGH không được mở khóa tài khoản
+    const user = req.user;
+    if (user?.role === 'teacher' && user?.teacherFlags?.isLeader) {
+      return res.status(403).json({ 
+        message: 'Ban Giám Hiệu không có quyền mở khóa tài khoản. Vui lòng liên hệ quản trị viên.' 
+      });
+    }
+
+    const { accountId } = req.params;
+
+    if (!accountId) {
+      return res.status(400).json({ message: 'Thiếu accountId' });
+    }
+
+    const account = await Account.findById(accountId);
+    if (!account) {
+      return res.status(404).json({ message: 'Không tìm thấy tài khoản' });
+    }
+
+    // ✅ Mở khóa tài khoản
+    account.isLocked = false;
+    account.lockedAt = undefined;
+    account.lockedBy = undefined;
+    account.lockReason = undefined;
+    await account.save();
+
+    // ✅ Kích hoạt lại tài khoản trên Firebase
+    try {
+      if (account.uid) {
+        await admin.auth().updateUser(account.uid, { disabled: false });
+      }
+    } catch (firebaseError) {
+      console.error('❌ Lỗi khi kích hoạt lại tài khoản trên Firebase:', firebaseError);
+      // Không throw error, chỉ log vì đã mở khóa trong DB
+    }
+
+    res.json({
+      message: 'Đã mở khóa tài khoản thành công',
+      account: {
+        _id: account._id,
+        email: account.email,
+        phone: account.phone,
+        role: account.role,
+        isLocked: account.isLocked
+      }
+    });
+  } catch (error) {
+    console.error('Error unlocking account:', error);
+    res.status(500).json({ 
+      message: 'Lỗi khi mở khóa tài khoản', 
       error: error.message 
     });
   }

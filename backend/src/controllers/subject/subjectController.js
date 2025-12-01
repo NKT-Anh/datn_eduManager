@@ -113,6 +113,13 @@ exports.getSubjects = async (req, res) => {
   try {
     const { grade } = req.query;
     const query = grade ? { grades: grade } : {};
+
+    // ✅ Soft Delete: Filter isDeleted != true mặc định (bao gồm false, null, không có trường)
+    const { isDeleted = 'false' } = req.query;
+    if (isDeleted !== 'true') {
+      query.isDeleted = { $ne: true };
+    }
+
     const subjects = await Subject.find(query);
     res.json(subjects);
   } catch (err) {
@@ -208,12 +215,26 @@ exports.updateSubject = async (req, res) => {
 /* =========================================================
    🗑️ XÓA MÔN HỌC
 ========================================================= */
+// ✅ Soft Delete - Xóa mềm môn học (chỉ đánh dấu, không xóa thật)
 exports.deleteSubject = async (req, res) => {
   try {
-    const deleted = await Subject.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ error: "Subject not found" });
-    res.json({ message: "Subject deleted" });
+    const { id } = req.params;
+    const subject = await Subject.findById(id);
+    
+    if (!subject) {
+      return res.status(404).json({ error: "Không tìm thấy môn học" });
+    }
+
+    // ✅ Đánh dấu isDeleted = true (soft delete)
+    subject.isDeleted = true;
+    await subject.save();
+
+    res.json({ 
+      message: "Đã xóa môn học thành công (soft delete)",
+      subject: subject
+    });
   } catch (err) {
+    console.error('❌ Lỗi khi xóa môn học:', err);
     res.status(500).json({ error: err.message });
   }
 };

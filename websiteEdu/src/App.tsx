@@ -38,9 +38,13 @@ import GradesStatisticsPage from "./pages/admin/GradesStatisticsPage.tsx";
 import StatisticsDashboardPage from "./pages/admin/StatisticsDashboardPage.tsx";
 import InitGradeTablePage from "./pages/admin/InitGradeTablePage.tsx";
 import AuditLogPage from "./pages/admin/AuditLogPage.tsx";
+import TrashPage from "./pages/admin/TrashPage.tsx";
 import ExamListPage from "./pages/admin/exam/ExamListPage.tsx";
 import ExamDashboard from "./pages/admin/exam/ExamDashboard.tsx";
+import SurveyManagementPage from "./pages/admin/SurveyManagementPage.tsx";
+import AwardManagementPage from "./pages/admin/AwardManagementPage.tsx";
 import ExamDetailPage from "./pages/admin/exam/ExamDetailPage.tsx";
+import ExamGradeAnalysisPage from "./pages/admin/exam/ExamGradeAnalysisPage.tsx";
 import AllExamSchedulesPage from "./pages/admin/exam/allPage/AllExamSchedulesPage.tsx";
 import ExamSchedulePage from "./pages/admin/exam/ExamSchedulePage.tsx";
 import ExamRoomAssignmentPage from "./pages/admin/exam/ExamRoomAssignmentPage.tsx";
@@ -59,6 +63,8 @@ import TeacherDashboard from "./pages/teacher/TeacherDashboard";
 import TeacherEnterGradesPage from "./pages/teacher/TeacherEnterGradesPage";
 import TeacherSchedulePage from "./pages/teacher/TeacherSchedulePage";
 import MyClassesPage from "./pages/teacher/MyClassesPage";
+import TeacherAwardsPage from "./pages/teacher/TeacherAwardsPage";
+import TeacherSurveyStatisticsPage from "./pages/teacher/TeacherSurveyStatisticsPage";
 
 // 👨‍🏫 QLBM Pages
 import ProposalsPage from "./pages/qlbm/ProposalsPage.tsx";
@@ -75,13 +81,16 @@ import BGHGradesPage from "./pages/bgh/BGHGradesPage.tsx";
 import BGHAttendancePage from "./pages/bgh/BGHAttendancePage.tsx";
 import BGHConductApprovalPage from "./pages/bgh/BGHConductApprovalPage.tsx";
 import EmailStatsPage from "./pages/bgh/EmailStatsPage.tsx";
+import BGHSurveyDashboardPage from "./pages/bgh/BGHSurveyDashboardPage.tsx";
 import ConductPage from "./pages/common/ConductPage.tsx";
+import StudentConductPage from "./pages/student/StudentConductPage.tsx";
 
 // 👨‍🎓 Student Pages
 import StudentDashboard from "./pages/student/StudentDashboard";
 import StudentGradesPage from "./pages/student/StudentGradesPage";
 import StudentSchedulePage from "./pages/student/StudentSchedulePage";
 import StudentAttendancePage from "./pages/student/StudentAttendancePage";
+import StudentSurveyPage from "./pages/student/StudentSurveyPage";
 
 // // 🧪 Exam Pages (admin or others)
 // import ExamList from "./pages/examss/ExamList";
@@ -144,15 +153,21 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/admin/audit-logs", element: <AuditLogPage /> },
     { path: "/admin/init-grades", element: <InitGradeTablePage /> },
     { path: "/admin/backup", element: <BackupManagementPage /> },
+    { path: "/admin/surveys", element: <SurveyManagementPage /> },
+    { path: "/admin/surveys/dashboard", element: <BGHSurveyDashboardPage /> },
+    { path: "/admin/awards", element: <AwardManagementPage /> },
     { path: "/admin/exam/exam-list", element: <ExamListPage /> },
     // { path: "/admin/exam/new", element: <ExamForm /> },
     { path: "/admin/exam/:examId", element: <ExamDetailPage /> },
+    { path: "/admin/exam/:examId/analysis", element: <ExamGradeAnalysisPage /> },
     { path: "/admin/exam/exam-dashboard", element: <ExamDashboard /> },
     { path: "/admin/exam/schedule", element: <ExamSchedulePage /> },
     { path: "/admin/exam/room-assignment", element: <ExamRoomAssignmentPage /> },
     { path: "/admin/exam/supervisor-assignment", element: <ExamSupervisorAssignmentPage /> },
     { path: "/admin/notifications", element: <NotificationsPage /> },
     { path: "/admin/notifications/:id", element: <NotificationDetailPage /> },
+    { path: "/admin/conduct", element: <ConductPage /> },
+    { path: "/admin/trash", element: <TrashPage /> },
     // { path: "/admin/exam/room-assignments", element: <RoomAssignments /> },
     // { path: "/admin/exam/schedule", element: <AllExamSchedulesPage /> },
   ],
@@ -161,6 +176,8 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/teacher/my-classes", element: <MyClassesPage /> },
     { path: "/teacher/schedule", element: <TeacherSchedulePage /> },
     { path: "/teacher/grades", element: <TeacherEnterGradesPage /> },
+    { path: "/teacher/awards", element: <TeacherAwardsPage /> },
+    { path: "/teacher/survey-statistics", element: <TeacherSurveyStatisticsPage /> },
     { path: "/teacher/profile", element: <ProfilePage /> },
     { path: "/teacher/exams/supervisor-schedule", element: <SupervisorSchedule /> },
     { path: "/teacher/exams/supervisor-rooms", element: <SupervisorRooms /> },
@@ -171,7 +188,8 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/student/schedule", element: <StudentSchedulePage /> },
     { path: "/student/grades", element: <StudentGradesPage /> },
     { path: "/student/attendance", element: <StudentAttendancePage /> },
-    { path: "/student/conduct", element: <ConductPage /> },
+    { path: "/student/surveys", element: <StudentSurveyPage /> },
+    { path: "/student/conduct", element: <StudentConductPage /> },
     { path: "/student/notifications", element: <NotificationsPage /> },
     { path: "/student/notifications/:id", element: <NotificationDetailPage /> },
     { path: "/student/incidents", element: <StudentIncidentsPage /> },
@@ -194,6 +212,8 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/qlbm/exams/supervisor-schedule", element: <SupervisorSchedule /> },
     { path: "/qlbm/exams/supervisor-rooms", element: <SupervisorRooms /> },
     { path: "/qlbm/exams/enter-grades", element: <TeacherExamGradePage /> },
+    { path: "/qlbm/awards", element: <TeacherAwardsPage /> },
+    { path: "/qlbm/survey-statistics", element: <TeacherSurveyStatisticsPage /> },
     { path: "/qlbm/profile", element: <ProfilePage /> },
   ],
   // GVCN (Giáo viên chủ nhiệm) - sử dụng lại pages từ teacher
@@ -204,8 +224,11 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/gvcn/attendance", element: <HomeroomAttendancePage /> },
     { path: "/gvcn/my-classes", element: <MyClassesPage /> },
     { path: "/gvcn/students", element: <StudentsList /> },
+    { path: "/gvcn/students/:id", element: <StudentDetail /> },
     { path: "/gvcn/schedule", element: <TeacherSchedulePage /> },
     { path: "/gvcn/grades", element: <TeacherEnterGradesPage /> },
+    { path: "/gvcn/awards", element: <TeacherAwardsPage /> },
+    { path: "/gvcn/survey-statistics", element: <TeacherSurveyStatisticsPage /> },
     { path: "/gvcn/conduct", element: <HomeroomConductPage /> },
     { path: "/gvcn/exams/supervisor-schedule", element: <SupervisorSchedule /> },
     { path: "/gvcn/exams/supervisor-rooms", element: <SupervisorRooms /> },
@@ -221,6 +244,8 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/gvbm/schedule", element: <TeacherSchedulePage /> },
     { path: "/gvbm/schedule-weekly", element: <TeacherSchedulePage /> },
     { path: "/gvbm/grades", element: <TeacherEnterGradesPage /> },
+    { path: "/gvbm/awards", element: <TeacherAwardsPage /> },
+    { path: "/gvbm/survey-statistics", element: <TeacherSurveyStatisticsPage /> },
     { path: "/gvbm/exams", element: <ExamListPage /> },
     { path: "/gvbm/exams/supervisor-schedule", element: <SupervisorSchedule /> },
     { path: "/gvbm/exams/supervisor-rooms", element: <SupervisorRooms /> },
@@ -245,6 +270,8 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/bgh/teachingAssignmentPage", element: <TeachingAssignmentPage /> },
     { path: "/bgh/schedule", element: <SchedulePage /> },
     { path: "/bgh/exam/exam-list", element: <ExamListPage /> },
+    { path: "/bgh/exam/:examId", element: <ExamDetailPage /> },
+    { path: "/bgh/exam/:examId/analysis", element: <ExamGradeAnalysisPage /> },
     { path: "/bgh/exam/exam-dashboard", element: <ExamDashboard /> },
     { path: "/bgh/exam/schedule", element: <ExamSchedulePage /> },
     { path: "/bgh/notifications", element: <NotificationsPage /> },
@@ -253,6 +280,7 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/bgh/settings", element: <SettingsPage /> },
     { path: "/bgh/send-email", element: <SendBulkEmailPage /> },
     { path: "/bgh/email-stats", element: <EmailStatsPage /> },
+    { path: "/bgh/survey-dashboard", element: <BGHSurveyDashboardPage /> },
   ],
 };
 

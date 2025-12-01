@@ -128,7 +128,8 @@ exports.autoAssignTeaching = async (req, res) => {
       Subject.find({ isActive: { $ne: false } }).lean(), // Lấy tất cả môn (isActive không phải false, bao gồm null/undefined)
       Teacher.find({ 
         status: 'active',
-        isLeader: { $ne: true } // Loại bỏ BGH
+        isLeader: { $ne: true }, // Loại bỏ BGH
+        isDeleted: { $ne: true } // ✅ Không lấy giáo viên đã bị xóa mềm
       }).lean(),
       TeachingAssignment.find({ year, semester }).populate('teacherId subjectId classId').lean(),
       ScheduleConfig.findOne({ isActive: true }).lean(),
@@ -517,11 +518,19 @@ async function calculateAutoAssignments(
   
   console.log(`📋 Tổng số tasks cần phân công: ${tasks.length}`);
   
+  // ✅ Bước 6.5: Shuffle tasks để tránh thiên vị theo thứ tự lớp
+  // Sắp xếp ngẫu nhiên tasks để đảm bảo công bằng giữa các lớp
+  const shuffledTasks = [...tasks];
+  for (let i = shuffledTasks.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffledTasks[i], shuffledTasks[j]] = [shuffledTasks[j], shuffledTasks[i]];
+  }
+  
   const newAssignments = [];
   const unassigned = [];
   
-  // ✅ Bước 7: Xử lý từng task
-  for (const task of tasks) {
+  // ✅ Bước 7: Xử lý từng task (đã shuffle)
+  for (const task of shuffledTasks) {
     const { classId, className, classGrade, subjectId, subjectName } = task;
     const classIdStr = classId.toString();
     const subjectIdStr = subjectId.toString();
@@ -626,9 +635,11 @@ async function calculateAutoAssignments(
       
       // Bước 7.3: Sắp xếp và chọn giáo viên
       // ✅ Ưu tiên 1: mainSubject
-      // ✅ Ưu tiên 2: Giáo viên ít số tiết cho môn này nhất (cân bằng số tiết giữa các giáo viên cùng môn)
-      // ✅ Ưu tiên 3: Giáo viên ít lớp cho môn/khối này nhất (chia đều)
-      // ✅ Ưu tiên 4: Giáo viên ít lớp nhất (tổng)
+      // ✅ Ưu tiên 2: Giáo viên có tỷ lệ tải thấp nhất (cân bằng tải giảng dạy)
+      // ✅ Ưu tiên 3: Giáo viên ít số tiết cho môn này nhất (cân bằng số tiết giữa các giáo viên cùng môn)
+      // ✅ Ưu tiên 4: Giáo viên ít lớp cho môn/khối này nhất (chia đều)
+      // ✅ Ưu tiên 5: Giáo viên ít lớp nhất (tổng)
+      // ✅ Ưu tiên 6: Random (tránh thiên vị khi tất cả đều bằng nhau)
       validTeachers.sort((a, b) => {
         const aId = a._id.toString();
         const bId = b._id.toString();
@@ -641,6 +652,20 @@ async function calculateAutoAssignments(
         
         if (aIsMain && !bIsMain) return -1;
         if (!aIsMain && bIsMain) return 1;
+        
+        // ✅ Tính tỷ lệ tải (load ratio) để cân bằng tốt hơn
+        // Tỷ lệ tải = (số tiết hiện tại + số tiết mới) / số tiết tối đa
+        const aCurrentWeeklyLessons = teacherWeeklyLessonsMap.get(aId) || 0;
+        const bCurrentWeeklyLessons = teacherWeeklyLessonsMap.get(bId) || 0;
+        const aMaxWeeklyLessons = a.effectiveWeeklyLessons || 17;
+        const bMaxWeeklyLessons = b.effectiveWeeklyLessons || 17;
+        const aLoadRatio = aMaxWeeklyLessons > 0 ? (aCurrentWeeklyLessons + periodsPerWeek) / aMaxWeeklyLessons : 999;
+        const bLoadRatio = bMaxWeeklyLessons > 0 ? (bCurrentWeeklyLessons + periodsPerWeek) / bMaxWeeklyLessons : 999;
+        
+        // Ưu tiên giáo viên có tỷ lệ tải thấp hơn
+        if (Math.abs(aLoadRatio - bLoadRatio) > 0.01) { // Chỉ so sánh nếu khác biệt > 1%
+          return aLoadRatio - bLoadRatio;
+        }
         
         // ✅ Ưu tiên giáo viên ít số tiết cho môn này nhất (cân bằng số tiết giữa các giáo viên cùng môn)
         const aSubjectLessons = teacherSubjectLessonsMap.get(aId)?.get(subjectIdStr) || 0;
@@ -663,10 +688,44 @@ async function calculateAutoAssignments(
         const aLoad = teacherLoadMap.get(aId) || 0;
         const bLoad = teacherLoadMap.get(bId) || 0;
         
-        return aLoad - bLoad;
+        if (aLoad !== bLoad) {
+          return aLoad - bLoad;
+        }
+        
+        // ✅ Nếu tất cả đều bằng nhau → random để tránh thiên vị
+        return Math.random() - 0.5;
       });
       
-      selectedTeacher = validTeachers[0];
+      // ✅ Nếu có nhiều giáo viên có cùng điểm số cao nhất, chọn ngẫu nhiên trong top 3
+      // Điều này giúp tránh thiên vị khi có nhiều giáo viên phù hợp như nhau
+      if (validTeachers.length > 1) {
+        const firstTeacher = validTeachers[0];
+        const firstId = firstTeacher._id.toString();
+        const firstLoadRatio = (teacherWeeklyLessonsMap.get(firstId) || 0) / (firstTeacher.effectiveWeeklyLessons || 17);
+        const firstSubjectLessons = teacherSubjectLessonsMap.get(firstId)?.get(subjectIdStr) || 0;
+        const subjectGradeKey = `${subjectIdStr}-${classGrade}`;
+        const firstSubjectGradeCount = teacherSubjectGradeCountMap.get(firstId)?.get(subjectGradeKey) || 0;
+        const firstLoad = teacherLoadMap.get(firstId) || 0;
+        
+        const topCandidates = validTeachers.filter(t => {
+          const tId = t._id.toString();
+          const tLoadRatio = (teacherWeeklyLessonsMap.get(tId) || 0) / (t.effectiveWeeklyLessons || 17);
+          const tSubjectLessons = teacherSubjectLessonsMap.get(tId)?.get(subjectIdStr) || 0;
+          const tSubjectGradeCount = teacherSubjectGradeCountMap.get(tId)?.get(subjectGradeKey) || 0;
+          const tLoad = teacherLoadMap.get(tId) || 0;
+          
+          return Math.abs(tLoadRatio - firstLoadRatio) < 0.01 &&
+                 tSubjectLessons === firstSubjectLessons &&
+                 tSubjectGradeCount === firstSubjectGradeCount &&
+                 tLoad === firstLoad;
+        });
+        
+        // Chọn ngẫu nhiên trong top candidates (tối đa 3)
+        const candidatesToChoose = topCandidates.slice(0, Math.min(3, topCandidates.length));
+        selectedTeacher = candidatesToChoose[Math.floor(Math.random() * candidatesToChoose.length)];
+      } else {
+        selectedTeacher = validTeachers[0];
+      }
     }
     
     if (!selectedTeacher) {
@@ -850,7 +909,8 @@ async function canTeacherTeach(
   
   // ✅ 6. Kiểm tra availableMatrix (lịch rảnh)
   // Note: Ở đây chỉ phân công, chưa xếp thời khóa biểu cụ thể
-  // Có thể kiểm tra cơ bản: giáo viên có ít nhất một slot rảnh không
+  // Vì phân công trước, xếp TKB sau → chỉ kiểm tra cơ bản: giáo viên có ít nhất một slot rảnh không
+  // Không kiểm tra chi tiết số slot vì sẽ được xử lý khi xếp TKB
   if (teacher.availableMatrix && Array.isArray(teacher.availableMatrix)) {
     let hasAvailableSlot = false;
     for (let day = 0; day < teacher.availableMatrix.length; day++) {
@@ -869,6 +929,7 @@ async function canTeacherTeach(
     }
   }
   
+  // ✅ Nếu không có availableMatrix → cho phép (sẽ xử lý khi xếp TKB)
   return true;
 }
 

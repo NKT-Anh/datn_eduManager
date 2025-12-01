@@ -13,6 +13,8 @@ import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import attendanceApi from '@/services/attendanceApi';
+import { useSchoolYears } from '@/hooks';
+import { useCurrentAcademicYear } from '@/hooks/useCurrentAcademicYear';
 import {
   ClipboardList,
   Calendar,
@@ -76,15 +78,17 @@ const StudentAttendancePage = () => {
   const [schoolYear, setSchoolYear] = useState<string>('');
   const [semester, setSemester] = useState<string>('1');
   const [viewMode, setViewMode] = useState<ViewMode>('day');
+  
+  // ✅ Lấy năm học hiện tại từ hooks
+  const { schoolYears: allSchoolYears } = useSchoolYears();
+  const { currentYearCode } = useCurrentAcademicYear();
 
-  // Tính năm học hiện tại
+  // ✅ Set năm học hiện tại khi có dữ liệu
   useEffect(() => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
-    const currentYear = month >= 8 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
-    setSchoolYear(currentYear);
-  }, []);
+    if (currentYearCode && !schoolYear) {
+      setSchoolYear(currentYearCode);
+    }
+  }, [currentYearCode, schoolYear]);
 
   // Tính tuần hiện tại
   useEffect(() => {
@@ -515,16 +519,16 @@ const StudentAttendancePage = () => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Array.from({ length: 3 }, (_, i) => {
-                    const year = new Date().getFullYear();
-                    const offset = i - 1;
-                    const y = year + offset;
-                    return (
-                      <SelectItem key={`${y}-${y + 1}`} value={`${y}-${y + 1}`}>
-                        {y}-{y + 1}
-                      </SelectItem>
-                    );
-                  })}
+                  {allSchoolYears
+                    .filter((year) => (year.code || year.name) && (year.code || year.name).trim() !== "")
+                    .map((year) => {
+                      const yearValue = year.code || year.name;
+                      return (
+                        <SelectItem key={year._id} value={yearValue}>
+                          {year.name} {year.isActive && "(Năm học hiện tại)"}
+                        </SelectItem>
+                      );
+                    })}
                 </SelectContent>
               </Select>
               <Select value={semester} onValueChange={setSemester}>

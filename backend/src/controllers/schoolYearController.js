@@ -1,5 +1,6 @@
 const SchoolYear = require('../models/schoolYear');
 const Setting = require('../models/settings');
+const { getCurrentSchoolYear } = require('../utils/schoolYearHelper');
 
 /**
  * 🔄 Tính trạng thái năm học dựa vào ngày hiện tại
@@ -503,21 +504,25 @@ exports.deactivateSchoolYear = async (req, res) => {
  */
 exports.getCurrentSchoolYear = async (req, res) => {
   try {
-    const currentYear = await SchoolYear.findOne({ isActive: true });
+    // ✅ Sử dụng utility function để lấy năm học hiện tại
+    const currentYearCode = await getCurrentSchoolYear();
+    
+    if (!currentYearCode) {
+      return res.status(404).json({
+        success: false,
+        message: 'Chưa có năm học nào được kích hoạt'
+      });
+    }
+
+    // ✅ Lấy thông tin đầy đủ của năm học
+    const currentYear = await SchoolYear.findOne({ 
+      $or: [
+        { isActive: true },
+        { code: currentYearCode }
+      ]
+    });
     
     if (!currentYear) {
-      // Fallback: lấy từ Settings
-      const setting = await Setting.findOne({});
-      if (setting && setting.currentSchoolYear) {
-        const yearByCode = await SchoolYear.findOne({ code: setting.currentSchoolYear });
-        if (yearByCode) {
-          return res.json({
-            success: true,
-            data: yearByCode
-          });
-        }
-      }
-      
       return res.status(404).json({
         success: false,
         message: 'Chưa có năm học nào được kích hoạt'

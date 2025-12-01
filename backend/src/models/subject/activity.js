@@ -31,6 +31,13 @@ const activitySchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+
+    // ✅ Soft Delete - Không xóa thật vì liên quan đến lịch sử hoạt động
+    isDeleted: {
+      type: Boolean,
+      default: false,
+      description: 'Đánh dấu xóa mềm - giữ lịch sử hoạt động'
+    },
   },
   {
     timestamps: true,

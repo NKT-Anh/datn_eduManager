@@ -12,6 +12,7 @@ import {
   useClasses,
   useTeachers,
   useSchoolYears,
+  useCurrentAcademicYear,
 } from "@/hooks";
 import {
   Select,
@@ -36,20 +37,16 @@ export default function TeachingAssignmentsPage() {
   const { classes } = useClasses();
   const { teachers } = useTeachers();
   const { schoolYears: allSchoolYears } = useSchoolYears();
+  const { currentYearCode } = useCurrentAcademicYear();
   const { teachers: deptTeachers, fetchTeachers } = useDepartmentManagement();
 
-  // ✅ Map school years và tìm năm học hiện tại
-  const { schoolYears, currentYear } = useMemo(() => {
-    const mapped = allSchoolYears.map((y: any) => ({
+  // ✅ Map school years
+  const schoolYears = useMemo(() => {
+    return allSchoolYears.map((y: any) => ({
       code: y.code,
       name: y.name,
       isCurrent: y.isActive,
     }));
-    const current = mapped.find((y) => y.isCurrent) || mapped[0];
-    return {
-      schoolYears: mapped,
-      currentYear: current?.code || "", // Sử dụng code thay vì name
-    };
   }, [allSchoolYears]);
 
   const [filterYear, setFilterYear] = useState<string>("");
@@ -179,12 +176,12 @@ export default function TeachingAssignmentsPage() {
     }
   }, [allFilteredAssignments, activeTab, backendUser?.teacherId, deptTeachers]);
 
-  // ✅ Set filterYear khi currentYear thay đổi
+  // ✅ Set filterYear khi currentYearCode thay đổi
   useEffect(() => {
-    if (currentYear && !filterYear) {
-      setFilterYear(currentYear);
+    if (currentYearCode && !filterYear) {
+      setFilterYear(currentYearCode);
     }
-  }, [currentYear, filterYear]);
+  }, [currentYearCode, filterYear]);
 
   // ✅ Load teacher load status
   useEffect(() => {
@@ -735,7 +732,7 @@ export default function TeachingAssignmentsPage() {
           <CardHeader>
             <CardTitle>Danh sách phân công ({assignments.length})</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Năm học: {filterYear || "Chưa chọn"} (Năm học hiện tại: {currentYear || "N/A"}) | Học kỳ: {filterSemester === "1" ? "Học kỳ 1" : "Học kỳ 2"}
+              Năm học: {filterYear || "Chưa chọn"} (Năm học hiện tại: {currentYearCode || "N/A"}) | Học kỳ: {filterSemester === "1" ? "Học kỳ 1" : "Học kỳ 2"}
             </p>
           </CardHeader>
           <CardContent>

@@ -8,8 +8,13 @@ const { PERMISSIONS } = require('../config/permissions');
 // ✅ Public route - Lấy thông tin công khai của trường (không cần auth)
 router.get('/public', settingController.getPublicSchoolInfo);
 
-// ✅ Settings - Admin và BGH có thể xem (read-only), chỉ Admin mới được sửa
-router.get('/', authMiddleware, checkPermission(PERMISSIONS.ROLE_MANAGE, { checkContext: false }), settingController.getSettings);
+// ✅ Settings - Admin, BGH, GVCN và QLBM có thể xem (read-only), chỉ Admin mới được sửa
+// GVCN và QLBM cần xem để lấy currentSchoolYear
+router.get('/', authMiddleware, checkPermission([
+  PERMISSIONS.ROLE_MANAGE,
+  PERMISSIONS.CLASS_VIEW_HOMEROOM,
+  PERMISSIONS.YEAR_VIEW  // ✅ QLBM có YEAR_VIEW để xem năm học hiện tại
+], { checkContext: false }), settingController.getSettings);
 router.put('/', authMiddleware, checkPermission(PERMISSIONS.ROLE_MANAGE, { checkContext: false }), settingController.updateSettings);
 router.post('/reset', authMiddleware, checkPermission(PERMISSIONS.ROLE_MANAGE, { checkContext: false }), settingController.resetSettings);
 router.post('/test-email', authMiddleware, checkPermission(PERMISSIONS.ROLE_MANAGE, { checkContext: false }), settingController.testEmail)

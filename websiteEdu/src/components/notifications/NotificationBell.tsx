@@ -10,7 +10,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import axios from "axios";
+import axiosClient from "@/services/axiosInstance";
 import { formatDistanceToNow } from "date-fns";
 import { vi } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
@@ -24,8 +24,6 @@ import {
   Info,
   GraduationCap,
 } from "lucide-react";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
 
 const NOTIFICATION_TYPES = {
   exam: { label: "Lịch kiểm tra / lịch thi", icon: Calendar, color: "text-blue-600" },
@@ -61,10 +59,8 @@ export const NotificationBell = () => {
 
   const fetchUnreadCount = async () => {
     try {
-      const token = backendUser?.idToken;
-      const res = await axios.get(`${API_BASE_URL}/notifications/unread/count`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      if (!backendUser) return;
+      const res = await axiosClient.get('/notifications/unread/count');
       setUnreadCount(res.data.unreadCount || 0);
     } catch (error) {
       console.error("Lỗi fetch unread count:", error);
@@ -72,14 +68,11 @@ export const NotificationBell = () => {
   };
 
   const fetchNotifications = async () => {
-    if (!isOpen) return;
+    if (!isOpen || !backendUser) return;
     
     setLoading(true);
     try {
-      const token = backendUser?.idToken;
-      const res = await axios.get(`${API_BASE_URL}/notifications`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await axiosClient.get('/notifications');
       // Lấy 10 thông báo mới nhất
       const allNotifications = res.data.data || [];
       setNotifications(allNotifications.slice(0, 10));
@@ -96,14 +89,8 @@ export const NotificationBell = () => {
 
   const markAsRead = async (notificationId: string) => {
     try {
-      const token = backendUser?.idToken;
-      await axios.post(
-        `${API_BASE_URL}/notifications/${notificationId}/read`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      if (!backendUser) return;
+      await axiosClient.post(`/notifications/${notificationId}/read`, {});
       
       // Cập nhật local state
       setNotifications((prev) =>
@@ -119,14 +106,8 @@ export const NotificationBell = () => {
 
   const markAllAsRead = async () => {
     try {
-      const token = backendUser?.idToken;
-      await axios.post(
-        `${API_BASE_URL}/notifications/read-all`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      if (!backendUser) return;
+      await axiosClient.post('/notifications/read-all', {});
       
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
       setUnreadCount(0);

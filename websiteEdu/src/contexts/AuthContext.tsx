@@ -57,6 +57,8 @@ interface BackendUser {
     isDepartmentHead?: boolean;
     isLeader?: boolean;
     permissions?: any[];
+    departmentId?: string | null; // ✅ Tổ bộ môn từ yearRoles
+    currentHomeroomClassId?: string | null; // ✅ Lớp chủ nhiệm từ yearRoles
   };
   effectivePermissions?: string[]; // ✅ Permissions đã được mở rộng dựa trên role và teacherFlags
   currentSchoolYear?: string | null; // ✅ Năm học hiện tại đang active
@@ -124,14 +126,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           
           setBackendUser(data);
           persistUser(data);
-          console.log("✅ [Auth] Đã lấy thông tin user từ backend:", {
-            role: data.role,
-            schoolYear: effectiveYear,
-            permissionsCount: effectivePermissions.length,
-            isLeader: data.teacherFlags?.isLeader,
-            isHomeroom: data.teacherFlags?.isHomeroom,
-            isDepartmentHead: data.teacherFlags?.isDepartmentHead,
-          });
+          
+          // ✅ Log thông tin user với format rõ ràng hơn
+          if (data.role === 'teacher' && data.teacherFlags) {
+            console.log("✅ [Auth] Đã lấy thông tin user từ backend:", {
+              role: data.role,
+              schoolYear: effectiveYear,
+              permissionsCount: effectivePermissions.length,
+              teacherFlags: {
+                isLeader: data.teacherFlags.isLeader,
+                isHomeroom: data.teacherFlags.isHomeroom,
+                isDepartmentHead: data.teacherFlags.isDepartmentHead,
+                departmentId: data.teacherFlags.departmentId,
+                currentHomeroomClassId: data.teacherFlags.currentHomeroomClassId,
+              }
+            });
+          } else {
+            console.log("✅ [Auth] Đã lấy thông tin user từ backend:", {
+              role: data.role,
+              schoolYear: effectiveYear,
+              permissionsCount: effectivePermissions.length,
+              teacherFlags: data.role === 'teacher' ? 'null (không có teacherFlags)' : 'N/A (không phải teacher)'
+            });
+          }
         } catch (error: any) {
           // ✅ Kiểm tra lỗi kết nối backend
           const isConnectionError = 

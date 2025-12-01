@@ -4,6 +4,7 @@ const Teacher = require('../../models/user/teacher');
 const Class = require('../../models/class/class');
 const { checkConductEntryTime, isConductLocked } = require('../../utils/conductTimeHelper');
 const { calculateConduct } = require('./conductConfigController');
+const { getCurrentSchoolYear } = require('../../utils/schoolYearHelper');
 
 /**
  * 📋 LẤY DANH SÁCH HẠNH KIỂM
@@ -18,37 +19,104 @@ exports.getConducts = async (req, res) => {
     const { year, semester, classId, studentId } = req.query;
     
     let filter = {};
+    let targetStudentIds = null; // Danh sách học sinh cần lấy
     
-    // Admin: Xem tất cả
-    if (role === 'admin') {
-      // Không giới hạn
+    const isBGH =
+      role === 'bgh' || (role === 'teacher' && req.user.teacherFlags?.isLeader);
+    
+    // Admin & BGH: Xem tất cả (có thể filter thêm theo year/semester/classId/studentId qua query)
+    if (role === 'admin' || isBGH) {
+      // Không giới hạn thêm ngoài filter query phía dưới
     } 
-    // Teacher với isHomeroom flag: Xem hạnh kiểm lớp chủ nhiệm
+    // Teacher (GVCN): Xem hạnh kiểm lớp chủ nhiệm
     else if (role === 'teacher') {
       const teacher = await Teacher.findOne({ accountId })
-        .populate('homeroomClassIds')
-        .populate('currentHomeroomClassId');
+        .select('yearRoles currentHomeroomClassId homeroomClassIds')
+        .lean();
       
-      // Kiểm tra permission context từ middleware
-      const permissionContext = req.permissionContext || {};
-      const isHomeroom = permissionContext.isHomeroom || false;
-      const homeroomClassIds = permissionContext.homeroomClassIds || [];
-      
-      if (isHomeroom && homeroomClassIds.length > 0) {
-        // GVCN: Chỉ xem hạnh kiểm lớp chủ nhiệm
-        filter.classId = { $in: homeroomClassIds };
-      } else {
-        // Không phải GVCN, không có quyền xem hạnh kiểm
+      if (!teacher) {
         return res.json({ success: true, total: 0, data: [] });
       }
+
+      // ✅ Xác định năm học cần lấy
+      
+      let targetYear = year || null;
+      if (!targetYear) {
+        targetYear = await getCurrentSchoolYear();
+      }
+      
+      if (!targetYear) {
+        return res.json({ success: true, total: 0, data: [] });
+      }
+
+      // ✅ Tìm lớp chủ nhiệm từ yearRoles theo năm học
+      let homeroomClassId = null;
+      if (Array.isArray(teacher.yearRoles) && teacher.yearRoles.length > 0) {
+        const yearRole = teacher.yearRoles.find(yr => String(yr.schoolYear) === String(targetYear));
+        if (yearRole && yearRole.isHomeroom && yearRole.currentHomeroomClassId) {
+          homeroomClassId = yearRole.currentHomeroomClassId;
+        }
+      }
+
+      // ✅ Fallback về currentHomeroomClassId hoặc homeroomClassIds
+      if (!homeroomClassId && teacher.currentHomeroomClassId && !year) {
+        const classInfo = await Class.findById(teacher.currentHomeroomClassId).lean();
+        if (classInfo && String(classInfo.year) === String(targetYear)) {
+          homeroomClassId = teacher.currentHomeroomClassId;
+        }
+      }
+
+      // ✅ Fallback về homeroomClassIds (lịch sử)
+      if (!homeroomClassId && teacher.homeroomClassIds && Array.isArray(teacher.homeroomClassIds) && teacher.homeroomClassIds.length > 0) {
+        // Tìm lớp có năm học khớp
+        const classes = await Class.find({ 
+          _id: { $in: teacher.homeroomClassIds },
+          year: targetYear
+        }).lean();
+        if (classes.length > 0) {
+          homeroomClassId = classes[0]._id;
+        }
+      }
+
+      if (!homeroomClassId) {
+        return res.json({ success: true, total: 0, data: [] });
+      }
+
+      // ✅ Lấy thông tin lớp để lấy năm học
+      const classInfo = await Class.findById(homeroomClassId).select('year').lean();
+      if (!classInfo) {
+        return res.json({ success: true, total: 0, data: [] });
+      }
+
+      // ✅ Lấy danh sách học sinh trong lớp chủ nhiệm - CHỈ lấy học sinh của niên khóa tương ứng
+      const students = await Student.find({ 
+        classId: homeroomClassId, 
+        status: 'active',
+        currentYear: classInfo.year || targetYear,
+        isDeleted: { $ne: true } // ✅ Không lấy học sinh đã bị xóa mềm
+      })
+        .select('_id')
+        .lean();
+      
+      targetStudentIds = students.map(s => s._id);
+      
+      if (targetStudentIds.length === 0) {
+        return res.json({ success: true, total: 0, data: [] });
+      }
+
+      // ✅ Filter theo danh sách học sinh
+      filter.studentId = { $in: targetStudentIds };
+      filter.classId = homeroomClassId;
     }
-    // Học sinh: Xem hạnh kiểm của mình
+    // Học sinh: Xem hạnh kiểm của mình - CHỈ xem khi đã được BGH phê duyệt
     else if (role === 'student') {
       const student = await Student.findOne({ accountId });
       if (!student) {
         return res.json({ success: true, total: 0, data: [] });
       }
       filter.studentId = student._id;
+      // ✅ Học sinh chỉ xem được hạnh kiểm đã được phê duyệt (approved) hoặc đã chốt (locked)
+      filter.conductStatus = { $in: ['approved', 'locked'] };
     } else {
       return res.status(403).json({ error: 'Không có quyền truy cập' });
     }
@@ -59,11 +127,51 @@ exports.getConducts = async (req, res) => {
     if (classId && role === 'admin') filter.classId = classId;
     if (studentId && role === 'admin') filter.studentId = studentId;
     
+    // ✅ Lấy records từ StudentYearRecord
     const records = await StudentYearRecord.find(filter)
       .populate('studentId', 'name studentCode')
       .populate('classId', 'className grade')
       .populate('homeroomTeacherId', 'name teacherCode')
-      .sort({ year: -1, semester: 1 });
+      .sort({ year: -1, semester: 1 })
+      .lean();
+    
+    // ✅ Nếu là GVCN và có học sinh nhưng chưa có record, tạo record rỗng cho các học sinh chưa có
+    if (role === 'teacher' && targetStudentIds && targetStudentIds.length > 0) {
+      const existingStudentIds = records.map(r => String(r.studentId._id || r.studentId));
+      const missingStudentIds = targetStudentIds.filter(id => !existingStudentIds.includes(String(id)));
+      
+      if (missingStudentIds.length > 0 && year && semester) {
+        // Lấy thông tin học sinh và lớp để tạo record
+        const missingStudents = await Student.find({ _id: { $in: missingStudentIds } })
+          .populate('classId', 'className grade')
+          .lean();
+        
+        const emptyRecords = missingStudents.map(student => ({
+          _id: null, // Sẽ được tạo khi save
+          studentId: {
+            _id: student._id,
+            name: student.name,
+            studentCode: student.studentCode
+          },
+          classId: student.classId ? {
+            _id: student.classId._id,
+            className: student.classId.className,
+            grade: student.classId.grade
+          } : null,
+          year: year,
+          semester: semester,
+          conduct: null,
+          conductSuggested: null,
+          conductNote: '',
+          conductStatus: 'draft',
+          gpa: null,
+          academicLevel: null,
+          note: null
+        }));
+        
+        records.push(...emptyRecords);
+      }
+    }
     
     res.json({ success: true, total: records.length, data: records });
   } catch (error) {
@@ -94,6 +202,10 @@ exports.getConductById = async (req, res) => {
       const student = await Student.findOne({ accountId });
       if (String(record.studentId._id) !== String(student._id)) {
         return res.status(403).json({ error: 'Không có quyền truy cập' });
+      }
+      // ✅ Học sinh chỉ xem được hạnh kiểm đã được phê duyệt (approved) hoặc đã chốt (locked)
+      if (!['approved', 'locked'].includes(record.conductStatus)) {
+        return res.status(403).json({ error: 'Hạnh kiểm chưa được phê duyệt' });
       }
     } else if (role === 'teacher') {
       // Kiểm tra permission context từ middleware
@@ -128,14 +240,54 @@ exports.updateConduct = async (req, res) => {
   try {
     const { id } = req.params;
     const { role, accountId } = req.user;
-    const { conduct, conductNote, action } = req.body; // action: 'save' (bản nháp) hoặc 'submit' (gửi phê duyệt)
+    const { conduct, conductNote, action, studentId, year, semester } = req.body; // action: 'save' (bản nháp) hoặc 'submit' (gửi phê duyệt)
     
-    const record = await StudentYearRecord.findById(id)
+    let record = null;
+    
+    // ✅ Nếu có id, tìm record hiện có
+    if (id && id !== 'null' && id !== 'undefined') {
+      record = await StudentYearRecord.findById(id)
+        .populate('classId')
+        .populate('studentId');
+    }
+    
+    // ✅ Nếu không tìm thấy record nhưng có studentId, year, semester, tạo mới hoặc tìm theo các thông tin này
+    if (!record && studentId && year && semester) {
+      record = await StudentYearRecord.findOne({
+        studentId: studentId,
+        year: year,
+        semester: semester
+      })
       .populate('classId')
       .populate('studentId');
+      
+      // ✅ Nếu vẫn không có, tạo record mới
+      if (!record) {
+        const student = await Student.findById(studentId)
+          .populate('classId')
+          .lean();
+        
+        if (!student) {
+          return res.status(404).json({ error: 'Không tìm thấy học sinh' });
+        }
+        
+        record = new StudentYearRecord({
+          studentId: studentId,
+          classId: student.classId?._id || student.classId,
+          year: year,
+          semester: semester,
+          conduct: conduct || null,
+          conductNote: conductNote || '',
+          conductStatus: 'draft',
+          gpa: null,
+          academicLevel: null,
+          note: null
+        });
+      }
+    }
     
     if (!record) {
-      return res.status(404).json({ error: 'Không tìm thấy hạnh kiểm' });
+      return res.status(404).json({ error: 'Không tìm thấy hạnh kiểm. Vui lòng cung cấp studentId, year và semester nếu tạo mới.' });
     }
     
     // ✅ Admin/BGH: Luôn được phép nhập (có thể override thời gian)
@@ -200,15 +352,21 @@ exports.updateConduct = async (req, res) => {
       
       // Xử lý action
       if (action === 'submit') {
+        // ✅ Gửi phê duyệt: cần có hạnh kiểm
+        if (!conduct) {
+          return res.status(400).json({ error: 'Vui lòng nhập hạnh kiểm trước khi gửi phê duyệt' });
+        }
         // Gửi phê duyệt: chuyển từ draft → pending
-        if (record.conductStatus === 'draft') {
+        if (record.conductStatus === 'draft' || !record.conductStatus) {
           record.conductStatus = 'pending';
         }
       } else if (action === 'save') {
         // Lưu bản nháp: giữ nguyên draft
         record.conductStatus = 'draft';
+      } else {
+        // Nếu không có action, mặc định là draft
+        record.conductStatus = record.conductStatus || 'draft';
       }
-      // Nếu không có action, giữ nguyên trạng thái hiện tại
     }
     // BGH: Phê duyệt/chốt hạnh kiểm
     else if (role === 'teacher' && req.user.teacherFlags?.isLeader) {
@@ -373,8 +531,11 @@ exports.getPendingConducts = async (req, res) => {
     const { role } = req.user;
     const { year, semester, classId } = req.query;
     
+    const isBGH =
+      role === 'bgh' || (role === 'teacher' && req.user.teacherFlags?.isLeader);
+    
     // Chỉ BGH và Admin mới xem được
-    if (role !== 'admin' && (role !== 'teacher' || !req.user.teacherFlags?.isLeader)) {
+    if (!isBGH && role !== 'admin') {
       return res.status(403).json({ error: 'Không có quyền truy cập' });
     }
     
@@ -397,8 +558,222 @@ exports.getPendingConducts = async (req, res) => {
 };
 
 /**
+ * ✅ PHÊ DUYỆT HÀNG LOẠT HẠNH KIỂM (BGH)
+ * - action = 'approve': pending → approved
+ * - action = 'lock': approved → locked
+ */
+exports.bulkApproveConducts = async (req, res) => {
+  try {
+    const { role, accountId } = req.user;
+    const { action = 'approve', comment, year, semester, classId, ids } = req.body;
+
+    // Chỉ BGH mới được phê duyệt hàng loạt
+    if (role !== 'teacher' || !req.user.teacherFlags?.isLeader) {
+      return res.status(403).json({ error: 'Chỉ Ban Giám Hiệu mới được phê duyệt hạnh kiểm' });
+    }
+
+    if (!['approve', 'lock'].includes(action)) {
+      return res.status(400).json({ error: 'Action không hợp lệ. Phải là: approve hoặc lock' });
+    }
+
+    const teacher = await Teacher.findOne({ accountId });
+    if (!teacher) {
+      return res.status(404).json({ error: 'Không tìm thấy thông tin giáo viên' });
+    }
+
+    const filter = {};
+    if (action === 'approve') {
+      filter.conductStatus = 'pending';
+    } else if (action === 'lock') {
+      filter.conductStatus = 'approved';
+    }
+    // Nếu truyền danh sách id cụ thể, chỉ áp dụng cho các bản ghi đó
+    if (Array.isArray(ids) && ids.length > 0) {
+      filter._id = { $in: ids };
+    }
+    if (year) filter.year = year;
+    if (semester) filter.semester = semester;
+    if (classId) filter.classId = classId;
+
+    const update = {};
+    const now = new Date();
+
+    if (action === 'approve') {
+      update.conductStatus = 'approved';
+      update.conductApprovedBy = teacher._id;
+      update.conductApprovedAt = now;
+      if (comment) update.conductComment = comment;
+    } else if (action === 'lock') {
+      update.conductStatus = 'locked';
+      update.conductLockedAt = now;
+      if (comment) update.conductComment = comment;
+    }
+
+    const result = await StudentYearRecord.updateMany(filter, { $set: update });
+
+    res.json({
+      success: true,
+      action,
+      matchedCount: result.matchedCount ?? result.nMatched ?? 0,
+      modifiedCount: result.modifiedCount ?? result.nModified ?? 0,
+    });
+  } catch (error) {
+    console.error('❌ Lỗi bulkApproveConducts:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
  * ➕ TẠO HẠNH KIỂM (Chỉ Admin)
  */
+/* =========================================================
+   📝 CẬP NHẬT NHẬN XÉT CỦA GVCN (HK1, HK2, Cuối năm)
+   - Chỉ GVCN mới có quyền
+   - Cập nhật trường note trong StudentYearRecord với semester='HK1', 'HK2', hoặc 'CN'
+========================================================= */
+exports.updateYearNote = async (req, res) => {
+  try {
+    const { role, accountId } = req.user;
+    const { studentId, year, semester, note } = req.body;
+
+    if (!studentId || !year || !semester) {
+      return res.status(400).json({ error: 'Vui lòng cung cấp studentId, year và semester (HK1, HK2, hoặc CN)' });
+    }
+
+    // ✅ Validate semester
+    if (!['HK1', 'HK2', 'CN'].includes(semester)) {
+      return res.status(400).json({ error: 'Semester phải là HK1, HK2 hoặc CN' });
+    }
+
+    // ✅ Chỉ GVCN mới có quyền
+    if (role !== 'teacher' && role !== 'admin' && role !== 'bgh') {
+      return res.status(403).json({ error: 'Chỉ giáo viên chủ nhiệm mới có quyền cập nhật nhận xét' });
+    }
+
+    // ✅ Kiểm tra học sinh tồn tại
+    const student = await Student.findById(studentId)
+      .populate('classId', 'className year homeroomTeacherId')
+      .lean();
+    
+    if (!student) {
+      return res.status(404).json({ error: 'Không tìm thấy học sinh' });
+    }
+
+    // ✅ Kiểm tra quyền GVCN (trừ admin/bgh)
+    if (role === 'teacher') {
+      const teacher = await Teacher.findOne({ accountId })
+        .select('yearRoles currentHomeroomClassId homeroomClassIds')
+        .lean();
+      if (!teacher) {
+        return res.status(404).json({ error: 'Không tìm thấy thông tin giáo viên' });
+      }
+
+      const studentClassId = student.classId?._id || student.classId;
+      const studentClassYear = student.classId?.year || year;
+      
+      // Kiểm tra từ yearRoles
+      let isHomeroom = false;
+      if (teacher.yearRoles && Array.isArray(teacher.yearRoles)) {
+        const yearRole = teacher.yearRoles.find(yr => String(yr.schoolYear) === String(studentClassYear));
+        if (yearRole && yearRole.isHomeroom && yearRole.currentHomeroomClassId) {
+          if (String(yearRole.currentHomeroomClassId) === String(studentClassId)) {
+            isHomeroom = true;
+          }
+        }
+      }
+      
+      // Kiểm tra từ homeroomClassIds (lịch sử)
+      if (!isHomeroom && teacher.homeroomClassIds && Array.isArray(teacher.homeroomClassIds)) {
+        const hasHomeroom = teacher.homeroomClassIds.some(
+          id => String(id._id || id) === String(studentClassId)
+        );
+        if (hasHomeroom) {
+          isHomeroom = true;
+        }
+      }
+      
+      // Kiểm tra trực tiếp từ lớp học sinh
+      if (!isHomeroom && student.classId && student.classId.homeroomTeacherId) {
+        const Class = require('../../models/class/class');
+        const studentClass = await Class.findById(studentClassId)
+          .select('homeroomTeacherId year')
+          .lean();
+        
+        if (studentClass && studentClass.homeroomTeacherId) {
+          const TeacherModel = require('../../models/user/teacher');
+          const homeroomTeacher = await TeacherModel.findById(studentClass.homeroomTeacherId)
+            .select('accountId')
+            .lean();
+          
+          if (homeroomTeacher && String(homeroomTeacher.accountId) === String(accountId)) {
+            isHomeroom = true;
+          }
+        }
+      }
+
+      if (!isHomeroom) {
+        return res.status(403).json({ error: 'Bạn không phải giáo viên chủ nhiệm của học sinh này' });
+      }
+
+      // Kiểm tra năm học của lớp có khớp không
+      if (student.classId?.year && String(student.classId.year) !== String(year)) {
+        return res.status(403).json({ error: 'Năm học không khớp với lớp của học sinh' });
+      }
+    }
+
+    // ✅ Tìm hoặc tạo StudentYearRecord với semester tương ứng
+    const semesterMap = {
+      'HK1': 'HK1',
+      'HK2': 'HK2',
+      'CN': 'CN',
+      '1': 'HK1',
+      '2': 'HK2',
+      'cuoi-nam': 'CN'
+    };
+    const semesterValue = semesterMap[semester] || semester;
+
+    const yearRecord = await StudentYearRecord.findOneAndUpdate(
+      {
+        studentId: studentId,
+        year: year,
+        semester: semesterValue
+      },
+      {
+        $set: {
+          note: note || null,
+          studentId: studentId,
+          classId: student.classId?._id || student.classId,
+          year: year,
+          semester: semesterValue,
+          homeroomTeacherId: role === 'teacher' ? (await Teacher.findOne({ accountId }).lean())?._id : undefined
+        }
+      },
+      {
+        upsert: true,
+        new: true
+      }
+    )
+      .populate('studentId', 'name studentCode')
+      .populate('classId', 'className')
+      .lean();
+
+    const semesterLabel = {
+      'HK1': 'học kỳ 1',
+      'HK2': 'học kỳ 2',
+      'CN': 'cuối năm'
+    };
+
+    res.json({
+      success: true,
+      message: `Đã cập nhật nhận xét ${semesterLabel[semesterValue] || semesterValue} thành công`,
+      data: yearRecord
+    });
+  } catch (error) {
+    console.error('❌ Lỗi updateYearNote:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
 exports.createConduct = async (req, res) => {
   try {
     const { role } = req.user;
@@ -424,9 +799,11 @@ exports.createConduct = async (req, res) => {
       classId,
       year,
       semester,
-      conduct: conduct || 'Tốt',
-      gpa: gpa || 0,
-      rank: rank || 0,
+      conduct: conduct || null, // ✅ Không tự động gắn "Tốt", để GVCN nhập thủ công
+      conductNote: conductNote || '',
+      conductStatus: 'draft',
+      gpa: gpa || null,
+      rank: rank || null,
       note: note || ''
     });
     

@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useSchoolYears } from '@/hooks';
+import { useCurrentAcademicYear } from '@/hooks/useCurrentAcademicYear';
 import api from '@/services/axiosInstance';
 import { toast } from 'sonner';
 import { 
@@ -18,12 +19,19 @@ import {
   Award, 
   AlertCircle,
   FileText,
-  BookOpen
+  BookOpen,
+  MessageSquare,
+  Edit,
+  ExternalLink
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import conductApi from '@/services/conductApi';
+import { useNavigate } from 'react-router-dom';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
@@ -89,7 +97,9 @@ interface GradeTableData {
 
 export default function HomeroomClassPage() {
   const { backendUser } = useAuth();
-  const { currentYearData, currentYear, schoolYears: allSchoolYears } = useSchoolYears();
+  const { schoolYears: allSchoolYears } = useSchoolYears();
+  const { currentYearCode, currentYearData } = useCurrentAcademicYear();
+  const currentYear = currentYearCode;
   const [loading, setLoading] = useState(true);
   const [students, setStudents] = useState<Student[]>([]);
   const [gradeTable, setGradeTable] = useState<GradeTableData | null>(null);
@@ -99,6 +109,12 @@ export default function HomeroomClassPage() {
   const [allHomeroomClasses, setAllHomeroomClasses] = useState<Array<{ schoolYear: string; class: any }>>([]);
   const [yearSearchOpen, setYearSearchOpen] = useState(false);
   const [studentSearchTerm, setStudentSearchTerm] = useState('');
+  const [noteDialogOpen, setNoteDialogOpen] = useState(false);
+  const [selectedStudentForNote, setSelectedStudentForNote] = useState<Student | null>(null);
+  const [selectedSemester, setSelectedSemester] = useState<'HK1' | 'HK2' | 'CN'>('CN');
+  const [yearNote, setYearNote] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const navigate = useNavigate();
 
   // ✅ Lấy tất cả lớp chủ nhiệm qua các năm học
   useEffect(() => {
@@ -497,6 +513,37 @@ export default function HomeroomClassPage() {
                         {student.academicLevel && getAcademicLevelBadge(student.academicLevel)}
                         {student.conduct && getConductBadge(student.conduct)}
                       </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => navigate(`/gvcn/students/${student._id}`)}
+                          title="Xem chi tiết học sinh"
+                        >
+                          <ExternalLink className="h-4 w-4 mr-1" />
+                          Chi tiết
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            // Load nhận xét hiện có từ yearRecords
+                            const yearRecord = student.yearRecords?.year;
+                            const hk1Record = student.yearRecords?.hk1;
+                            const hk2Record = student.yearRecords?.hk2;
+                            
+                            // Mặc định chọn cuối năm và load nhận xét cuối năm
+                            setSelectedSemester('CN');
+                            setYearNote(yearRecord?.note || '');
+                            setSelectedStudentForNote(student);
+                            setNoteDialogOpen(true);
+                          }}
+                          title="Nhận xét học kỳ và cuối năm"
+                        >
+                          <MessageSquare className="h-4 w-4 mr-1" />
+                          Nhận xét
+                        </Button>
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -745,6 +792,115 @@ export default function HomeroomClassPage() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Dialog nhập nhận xét */}
+      <Dialog open={noteDialogOpen} onOpenChange={setNoteDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Nhận xét học sinh</DialogTitle>
+            <DialogDescription>
+              Nhận xét của giáo viên chủ nhiệm về học sinh {selectedStudentForNote?.name} ({selectedStudentForNote?.studentCode})
+              <br />
+              Năm học: {allSchoolYears.find(sy => sy.code === selectedYear)?.name || selectedYear}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="semester">Chọn học kỳ</Label>
+              <Select
+                value={selectedSemester}
+                onValueChange={(value: 'HK1' | 'HK2' | 'CN') => {
+                  setSelectedSemester(value);
+                  // Load nhận xét tương ứng khi đổi học kỳ
+                  if (selectedStudentForNote) {
+                    if (value === 'HK1') {
+                      setYearNote(selectedStudentForNote.yearRecords?.hk1?.note || '');
+                    } else if (value === 'HK2') {
+                      setYearNote(selectedStudentForNote.yearRecords?.hk2?.note || '');
+                    } else {
+                      setYearNote(selectedStudentForNote.yearRecords?.year?.note || '');
+                    }
+                  }
+                }}
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="HK1">Học kỳ 1</SelectItem>
+                  <SelectItem value="HK2">Học kỳ 2</SelectItem>
+                  <SelectItem value="CN">Cuối năm</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="yearNote">Nhận xét</Label>
+              <Textarea
+                id="yearNote"
+                placeholder={
+                  selectedSemester === 'CN' 
+                    ? "Nhập nhận xét về học tập, rèn luyện, gợi ý cho năm sau..."
+                    : `Nhập nhận xét về học tập, rèn luyện trong ${selectedSemester === 'HK1' ? 'học kỳ 1' : 'học kỳ 2'}...`
+                }
+                value={yearNote}
+                onChange={(e) => setYearNote(e.target.value)}
+                rows={8}
+                className="mt-2"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setNoteDialogOpen(false);
+                setYearNote('');
+                setSelectedSemester('CN');
+                setSelectedStudentForNote(null);
+              }}
+            >
+              Hủy
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!selectedStudentForNote || !selectedYear) return;
+                try {
+                  setSavingNote(true);
+                  await conductApi.updateYearNote({
+                    studentId: selectedStudentForNote._id,
+                    year: selectedYear,
+                    semester: selectedSemester,
+                    note: yearNote
+                  });
+                  const semesterLabel = {
+                    'HK1': 'học kỳ 1',
+                    'HK2': 'học kỳ 2',
+                    'CN': 'cuối năm'
+                  };
+                  toast.success(`Đã lưu nhận xét ${semesterLabel[selectedSemester]} thành công`);
+                  setNoteDialogOpen(false);
+                  setYearNote('');
+                  setSelectedSemester('CN');
+                  setSelectedStudentForNote(null);
+                  // Refresh danh sách học sinh để cập nhật nhận xét
+                  const res = await api.get('/class/homeroom/students', { params: { year: selectedYear } });
+                  if (res.data.success) {
+                    setStudents(res.data.data || []);
+                  }
+                } catch (error: any) {
+                  console.error('Error saving note:', error);
+                  toast.error(error.response?.data?.error || 'Không thể lưu nhận xét');
+                } finally {
+                  setSavingNote(false);
+                }
+              }}
+              disabled={savingNote}
+            >
+              {savingNote ? 'Đang lưu...' : 'Lưu nhận xét'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

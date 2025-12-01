@@ -5,6 +5,7 @@ import schoolConfigApi from "@/services/schoolConfigApi";
 import gradeConfigApi from "@/services/gradeConfigApi";
 // ✅ Sử dụng hooks thay vì API trực tiếp
 import { useSchoolYears } from "@/hooks";
+import { useCurrentAcademicYear } from "@/hooks/useCurrentAcademicYear";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -57,14 +58,16 @@ const TeacherEnterGradesPage: React.FC = () => {
   
 
   // ✅ Lấy danh sách năm học từ hooks
-  const { schoolYears: allSchoolYears, currentYear, currentYearData } = useSchoolYears();
+  const { schoolYears: allSchoolYears } = useSchoolYears();
+  const { currentYearCode, currentYearData } = useCurrentAcademicYear();
+  
   useEffect(() => {
     setSchoolYears(allSchoolYears.map((y) => ({ code: y.code, name: y.name })));
 
     // Prefer the active school year's code as default when not selected yet
-    const defaultCode = currentYearData?.code || currentYear || (allSchoolYears.length ? allSchoolYears[allSchoolYears.length - 1].code : '');
+    const defaultCode = currentYearCode || (allSchoolYears.length ? allSchoolYears[allSchoolYears.length - 1].code : '');
     if (defaultCode && !selectedYear) setSelectedYear(defaultCode);
-  }, [allSchoolYears, currentYearData, currentYear, selectedYear]);
+  }, [allSchoolYears, currentYearCode, selectedYear]);
 
   // 🔹 Lấy danh sách học kỳ và set học kỳ hiện tại
   useEffect(() => {

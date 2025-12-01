@@ -16,6 +16,13 @@ const teachingAssignmentSchema = new mongoose.Schema({
   isPublished: { type: Boolean, default: false }, // Trạng thái công bố
   publishedAt: { type: Date, default: null }, // Thời gian công bố
   publishedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null }, // Người công bố
+
+  // ✅ Soft Delete - Không xóa thật vì dùng để xem lịch sử phân công
+  isDeleted: {
+    type: Boolean,
+    default: false,
+    description: 'Đánh dấu xóa mềm - giữ lịch sử phân công giảng dạy'
+  },
 }, { timestamps: true });
 
 teachingAssignmentSchema.index(

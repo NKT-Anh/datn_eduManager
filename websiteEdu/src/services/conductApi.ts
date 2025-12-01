@@ -50,6 +50,19 @@ const conductApi = {
     return res.data;
   },
 
+  // ✅ Phê duyệt hàng loạt hạnh kiểm (BGH)
+  bulkApproveConducts: async (payload: {
+    action: 'approve' | 'lock';
+    year?: string;
+    semester?: string;
+    classId?: string;
+    ids?: string[];
+    comment?: string;
+  }) => {
+    const res = await axiosClient.post('/conducts/approve/bulk', payload);
+    return res.data;
+  },
+
   // ✅ Lấy danh sách hạnh kiểm chờ phê duyệt
   getPendingConducts: async (params?: {
     year?: string;
@@ -72,6 +85,17 @@ const conductApi = {
     note?: string;
   }) => {
     const res = await axiosClient.post('/conducts', payload);
+    return res.data;
+  },
+
+  // ✅ Cập nhật nhận xét của GVCN (HK1, HK2, Cuối năm)
+  updateYearNote: async (payload: {
+    studentId: string;
+    year: string;
+    semester: 'HK1' | 'HK2' | 'CN' | '1' | '2' | 'cuoi-nam';
+    note: string;
+  }) => {
+    const res = await axiosClient.put('/conducts/year-note/update', payload);
     return res.data;
   },
 };

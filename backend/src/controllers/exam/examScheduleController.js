@@ -26,6 +26,7 @@ const checkScheduleConflict = async ({
   const conflict = await ExamSchedule.findOne({
     exam,
     grade,
+    isDeleted: { $ne: true }, // ✅ Chỉ kiểm tra lịch thi chưa bị xóa
     date: {
       $gte: dayjs(date).startOf("day").toDate(),
       $lte: dayjs(date).endOf("day").toDate(),
@@ -106,6 +107,9 @@ exports.getAllSchedules = async (req, res) => {
       const kw = keyword.trim();
       filter.$or = [{ notes: { $regex: kw, $options: "i" } }];
     }
+
+    // ✅ Chỉ lấy lịch thi chưa bị xóa
+    filter.isDeleted = { $ne: true };
 
     const query = ExamSchedule.find(filter)
       .populate("subject", "name code")
@@ -591,6 +595,9 @@ exports.getSchedulesByExam = async (req, res) => {
       query.grade = String(grade); // ✅ ép kiểu String để Mongo lọc đúng
     }
 
+    // ✅ Thêm filter isDeleted vào query
+    query.isDeleted = { $ne: true }; // ✅ Chỉ lấy lịch thi chưa bị xóa
+    
     const schedules = await ExamSchedule.find(query)
       .populate("subject", "name code")
       .sort({ grade: 1, date: 1, startTime: 1 })
@@ -613,7 +620,10 @@ exports.getSchedulesByExam = async (req, res) => {
 ========================================================= */
 exports.getScheduleById = async (req, res) => {
   try {
-    const schedule = await ExamSchedule.findById(req.params.id)
+    const schedule = await ExamSchedule.findOne({
+      _id: req.params.id,
+      isDeleted: { $ne: true } // ✅ Chỉ lấy lịch thi chưa bị xóa
+    })
       .populate("exam", "name year semester")
       .populate("subject", "name code");
     if (!schedule) return res.status(404).json({ error: "Không tìm thấy." });
@@ -744,7 +754,11 @@ exports.autoGenerateSchedules = async (req, res) => {
             }
 
             // 🔹 Bỏ môn đã có lịch cho khối hiện tại
-            const existing = await ExamSchedule.find({ exam: examId, grade: currentGrade })
+            const existing = await ExamSchedule.find({ 
+              exam: examId, 
+              grade: currentGrade,
+              isDeleted: { $ne: true } // ✅ Chỉ lấy lịch thi chưa bị xóa
+            })
                 .populate("subject", "name")
                 .select("subject date startTime endTime duration")
                 .lean();

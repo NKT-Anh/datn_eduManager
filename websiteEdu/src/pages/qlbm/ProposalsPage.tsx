@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useDepartmentManagement } from "@/hooks/departments/useDepartmentManagement";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSchoolYears } from "@/hooks/schoolYear/useSchoolYears";
+import { useCurrentAcademicYear } from "@/hooks/useCurrentAcademicYear";
 import { useSubjects } from "@/hooks/subjects/useSubjects";
 import { useClasses } from "@/hooks/classes/useClasses";
 import { useAssignments } from "@/hooks";
@@ -56,7 +57,8 @@ export default function ProposalsPage() {
   const { backendUser } = useAuth();
   const { toast } = useToast();
   const { proposals, teachers: deptTeachers, loading, fetchProposals, fetchTeachers, createProposal, cancelProposal, cancelAllProposals } = useDepartmentManagement();
-  const { schoolYears, currentYear } = useSchoolYears();
+  const { schoolYears } = useSchoolYears();
+  const { currentYearCode } = useCurrentAcademicYear();
   const { subjects } = useSubjects();
   const { classes } = useClasses();
   const [selectedYear, setSelectedYear] = useState<string>("");
@@ -77,12 +79,12 @@ export default function ProposalsPage() {
   // ✅ Lấy assignments để kiểm tra giáo viên đã được phân công
   const { assignments } = useAssignments(selectedYear ? { year: selectedYear } : undefined);
 
-  // Lấy năm học hiện tại từ SchoolYear có isActive: true
+  // ✅ Set năm học hiện tại khi có dữ liệu
   useEffect(() => {
-    if (currentYear && !selectedYear) {
-      setSelectedYear(currentYear);
+    if (currentYearCode && !selectedYear) {
+      setSelectedYear(currentYearCode);
     }
-  }, [currentYear, selectedYear]);
+  }, [currentYearCode, selectedYear]);
 
   useEffect(() => {
     if (selectedYear) {

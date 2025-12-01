@@ -1,47 +1,9 @@
 const admin = require('../config/firebaseAdmin');
 const Account = require('../models/user/account');
+const { getEffectiveSchoolYear } = require('../utils/schoolYearHelper');
 
 // Middleware xác thực Firebase token
 const authMiddleware = async (req, res, next) => {
-  // try {
-  //   const authHeader = req.headers.authorization;
-  //   console.log('Authorization header 1 :', authHeader); // ✅ kiểm tra token có gửi đến không
-  //   console.log('Authorization header 2 :', req.headers.authorization);
-  //   console.log('Incoming headers:', req.headers);
-
-
-
-    
-  //   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-  //     return res.status(401).json({ message: "Không có token" });
-  //   }
-
-  //   const idToken = authHeader.split(" ")[1];
-  //   console.log('ID Token:', idToken); // ✅ xem token Firebase nhận được
-
-  //   const decodedToken = await admin.auth().verifyIdToken(idToken);
-  //   console.log('Decoded token:', decodedToken); // ✅ thông tin user từ Firebase
-
-  //   // Tìm account trong MongoDB dựa trên uid
-  //   const account = await Account.findOne({ uid: decodedToken.uid });
-  //   if (!account) {
-  //     return res.status(401).json({ message: "Tài khoản không tồn tại trong hệ thống" });
-  //   }
-
-  //   // Gắn thông tin vào request để controller sử dụng
-  //   req.user = {
-  //     uid: decodedToken.uid,
-  //     accountId: account._id,
-  //     role: account.role,
-  //     email: account.email,
-  //     phone: account.phone
-  //   };
-
-  //   next();
-  // } catch (error) {
-  //   console.error("Lỗi xác thực:", error.message, error.code, error);
-  //   res.status(401).json({ message: "Sai token hoặc tài khoản" });
-  // }
 try {
   const authHeader = req.headers.authorization;
   
@@ -82,6 +44,17 @@ try {
     return res.status(401).json({ message: "Tài khoản không tồn tại trong hệ thống" });
   }
 
+  // ✅ Kiểm tra tài khoản có bị khóa không
+  if (account.isLocked === true) {
+    console.log("❌ [Auth] Tài khoản đã bị khóa. UID:", decodedToken.uid);
+    return res.status(403).json({ 
+      message: 'Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.',
+      code: 'ACCOUNT_LOCKED',
+      lockedAt: account.lockedAt,
+      lockReason: account.lockReason
+    });
+  }
+
   console.log("✅ [Auth] Xác thực thành công. Role:", account.role);
   
   // ✅ Gắn thông tin user vào request
@@ -100,41 +73,8 @@ try {
     const teacher = await Teacher.findOne({ accountId: account._id })
       .select('isHomeroom isDepartmentHead isLeader permissions yearRoles currentHomeroomClassId');
     if (teacher) {
-      // Xác định năm học hiện tại: ưu tiên header `x-school-year`, sau đó query `?year=`,
-      // cuối cùng fallback về env. Giúp frontend truyền năm hiện tại khi cần.
-      const currentYear = (req.headers && (req.headers['x-school-year'] || req.headers['x-school-year-code']))
-        || req.query?.year
-        || process.env.SCHOOL_YEAR
-        || null;
-
-      let teacherFlags = null;
-
-      // ✅ Xác định năm học hiện tại: ưu tiên header > query > active SchoolYear > settings > env
-      const SchoolYearModel = require('../models/schoolYear');
-      const Setting = require('../models/settings');
-      
-      let effectiveYear = (req.headers && (req.headers['x-school-year'] || req.headers['x-school-year-code']))
-        || req.query?.year
-        || null;
-      
-      // Nếu không có từ request, lấy từ active SchoolYear hoặc settings
-      if (!effectiveYear) {
-        try {
-          const active = await SchoolYearModel.findOne({ isActive: true }).lean();
-          if (active && active.code) {
-            effectiveYear = String(active.code);
-          } else {
-            const s = await Setting.findOne().lean();
-            if (s && s.currentSchoolYear) {
-              effectiveYear = String(s.currentSchoolYear);
-            } else {
-              effectiveYear = process.env.SCHOOL_YEAR || null;
-            }
-          }
-        } catch (e) {
-          effectiveYear = process.env.SCHOOL_YEAR || null;
-        }
-      }
+      // ✅ Xác định năm học hiện tại bằng utility function
+      const effectiveYear = await getEffectiveSchoolYear(req);
 
       // ✅ QUAN TRỌNG: Chỉ lấy flags theo năm học hiện tại (effectiveYear)
       // Nếu không có yearRoleEntry cho năm hiện tại → không có flag đó trong năm này
@@ -208,7 +148,6 @@ try {
     hint: error.code === "auth/argument-error" ? "Đảm bảo token là Firebase ID token hợp lệ, không bị cắt hoặc thay đổi" : undefined
   });
 }
-
 };
 
 module.exports = authMiddleware;

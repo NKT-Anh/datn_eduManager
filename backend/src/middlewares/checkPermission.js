@@ -2,6 +2,7 @@ const { PERMISSIONS, hasPermission, hasAnyPermission, hasAllPermissions } = requ
 const Account = require('../models/user/account');
 const Teacher = require('../models/user/teacher');
 const Student = require('../models/user/student');
+const { getEffectiveSchoolYear } = require('../utils/schoolYearHelper');
 
 /**
  * ✅ Middleware kiểm tra quyền truy cập
@@ -41,6 +42,7 @@ module.exports = (requiredPermissions, options = {}) => {
       }
 
       const userRole = userInfo.role;
+      const isTeacherLikeRole = ['teacher', 'bgh', 'gvcn', 'gvbm', 'qlbm'].includes(userRole);
       const accountId = userInfo.accountId;
       
       // Gắn lại vào req.user để các phần khác sử dụng
@@ -50,34 +52,11 @@ module.exports = (requiredPermissions, options = {}) => {
       // ✅ Admin luôn có tất cả quyền
       if (userRole === 'admin') {
         hasAccess = true;
-      } else if (userRole === 'teacher') {
+      } else if (isTeacherLikeRole) {
         // Lấy thông tin teacher để kiểm tra flags
           const Teacher = require('../models/user/teacher');
-          // compute effective schoolYear: prefer request -> active SchoolYear -> settings -> env
-          const SchoolYearModel = require('../models/schoolYear');
-          const Setting = require('../models/settings');
-          const getEffectiveSchoolYear = async () => {
-            const fromReq = (req.headers && (req.headers['x-school-year'] || req.headers['x-school-year-code']))
-              || (req.query && (req.query.year || req.query.schoolYear))
-              || (req.body && req.body.schoolYear) || null;
-            if (fromReq) return String(fromReq);
-            // try active SchoolYear
-            try {
-              const active = await SchoolYearModel.findOne({ isActive: true }).lean();
-              if (active && active.code) return String(active.code);
-            } catch (e) {
-              // ignore and fallback
-            }
-            // try settings.currentSchoolYear
-            try {
-              const s = await Setting.findOne().lean();
-              if (s && s.currentSchoolYear) return String(s.currentSchoolYear);
-            } catch (e) {
-              // ignore
-            }
-            // fallback to env
-            return process.env.SCHOOL_YEAR || null;
-          };
+          // ✅ Sử dụng utility function để xác định năm học hiện tại
+          const schoolYear = await getEffectiveSchoolYear(req);
 
           const teacher = await Teacher.findOne({ accountId })
             .select('isHomeroom isDepartmentHead isLeader permissions yearRoles currentHomeroomClassId')
@@ -86,7 +65,6 @@ module.exports = (requiredPermissions, options = {}) => {
         if (teacher) {
           // ✅ Xác định năm học hiện tại: ưu tiên header > query > active SchoolYear > settings > env
           // QUAN TRỌNG: Luôn kiểm tra theo năm học hiện tại, KHÔNG dùng lịch sử
-          const schoolYear = await getEffectiveSchoolYear();
           let yearRoleEntry = null;
           if (schoolYear && Array.isArray(teacher.yearRoles)) {
             yearRoleEntry = teacher.yearRoles.find(r => r && String(r.schoolYear) === String(schoolYear));
@@ -144,6 +122,8 @@ module.exports = (requiredPermissions, options = {}) => {
               PERMISSIONS.NOTIFICATION_VIEW,
               PERMISSIONS.DASHBOARD_VIEW_ALL,
               PERMISSIONS.ROLE_MANAGE, // ✅ BGH có thể xem settings (read-only)
+              PERMISSIONS.USER_VIEW, // ✅ BGH có thể xem danh sách tài khoản
+              PERMISSIONS.SURVEY_VIEW_RESULTS_ALL, // ✅ BGH có thể xem kết quả khảo sát của tất cả giáo viên
             ];
             const bghHasAccess = requireAll
               ? permissions.every(p => bghPermissions.includes(p))
@@ -154,6 +134,7 @@ module.exports = (requiredPermissions, options = {}) => {
           // Trưởng bộ môn
           if (flags.isDepartmentHead) {
             const deptHeadPermissions = [
+              PERMISSIONS.YEAR_VIEW,              // ✅ Xem năm học (cần để lấy currentSchoolYear từ settings)
               PERMISSIONS.DEPARTMENT_VIEW,
               PERMISSIONS.DEPARTMENT_MANAGE,
               PERMISSIONS.DEPARTMENT_ASSIGN_TEACHING,
@@ -204,6 +185,40 @@ module.exports = (requiredPermissions, options = {}) => {
               ? permissions.every(p => homeroomPermissions.includes(p))
               : permissions.some(p => homeroomPermissions.includes(p));
             teacherHasAccess = teacherHasAccess || homeroomHasAccess;
+          }
+
+          // ✅ BGH (Ban Giám Hiệu) - Quyền xem mạnh, ít chỉnh sửa
+          if (flags.isLeader) {
+            const bghPermissions = [
+              // Quyền xem tất cả
+              PERMISSIONS.STUDENT_VIEW,           // Xem tất cả học sinh
+              PERMISSIONS.GRADE_VIEW,             // Xem tất cả điểm
+              PERMISSIONS.GRADE_VIEW_ALL,
+              PERMISSIONS.CONDUCT_VIEW,           // Xem hạnh kiểm
+              PERMISSIONS.ATTENDANCE_VIEW_ALL,    // Xem điểm danh tất cả
+              PERMISSIONS.INCIDENT_VIEW,          // Xem kỷ luật
+              PERMISSIONS.CLASS_VIEW,             // Xem tất cả lớp
+              PERMISSIONS.TEACHER_VIEW,           // Xem giáo viên
+              PERMISSIONS.SUBJECT_VIEW,           // Xem môn học
+              PERMISSIONS.SURVEY_VIEW_RESULTS_ALL, // ✅ BGH có thể xem kết quả khảo sát của tất cả giáo viên
+              PERMISSIONS.EXAM_VIEW,              // Xem kỳ thi
+              PERMISSIONS.DASHBOARD_VIEW_ALL,     // Xem thống kê toàn trường
+              PERMISSIONS.YEAR_VIEW,              // Xem năm học
+              PERMISSIONS.DEPARTMENT_VIEW,        // Xem tổ bộ môn
+
+              // Quyền phê duyệt (ít chỉnh sửa)
+              PERMISSIONS.CONDUCT_ENTER,          // Phê duyệt hạnh kiểm
+              PERMISSIONS.INCIDENT_HANDLE,        // Xử lý kỷ luật
+              PERMISSIONS.NOTIFICATION_CREATE,    // Tạo thông báo
+
+              // Quyền quản lý hệ thống
+              PERMISSIONS.ROLE_MANAGE,           // Quản lý phân quyền
+              PERMISSIONS.SETTINGS_UPDATE,       // Cập nhật cài đặt
+            ];
+            const bghHasAccess = requireAll
+              ? permissions.every(p => bghPermissions.includes(p))
+              : permissions.some(p => bghPermissions.includes(p));
+            teacherHasAccess = teacherHasAccess || bghHasAccess;
           }
 
           const hasCustomPermission = flags.permissions && flags.permissions.length > 0
@@ -272,8 +287,10 @@ async function checkContextPermissions(role, accountId, permissions, req) {
     return { allowed: true, context: { role } };
   }
 
+  const isTeacherLikeRole = ['teacher', 'bgh', 'gvcn', 'gvbm', 'qlbm'].includes(role);
+
   // ✅ BGH (isLeader) có quyền xem tất cả - kiểm tra trước khi load user
-  if (role === 'teacher') {
+  if (isTeacherLikeRole) {
     const Teacher = require('../models/user/teacher');
     const teacher = await Teacher.findOne({ accountId })
       .select('isLeader')
@@ -286,31 +303,14 @@ async function checkContextPermissions(role, accountId, permissions, req) {
 
   // ✅ Lấy thông tin user chi tiết
   let user = null;
-  if (role === 'teacher') {
+  if (isTeacherLikeRole) {
     // Tìm Teacher qua accountId (lấy yearRoles để ưu tiên flags theo năm)
     user = await Teacher.findOne({ accountId })
       .populate('homeroomClassIds')
       .populate('currentHomeroomClassId')
       .populate('subjects.subjectId');
-    const SchoolYearModel = require('../models/schoolYear');
-    const Setting = require('../models/settings');
-    const getEffectiveSchoolYear = async () => {
-      const fromReq = (req.headers && (req.headers['x-school-year'] || req.headers['x-school-year-code']))
-        || (req.query && (req.query.year || req.query.schoolYear))
-        || (req.body && req.body.schoolYear) || null;
-      if (fromReq) return String(fromReq);
-      try {
-        const active = await SchoolYearModel.findOne({ isActive: true }).lean();
-        if (active && active.code) return String(active.code);
-      } catch (e) {}
-      try {
-        const s = await Setting.findOne().lean();
-        if (s && s.currentSchoolYear) return String(s.currentSchoolYear);
-      } catch (e) {}
-      return process.env.SCHOOL_YEAR || null;
-    };
-
-    const schoolYear = await getEffectiveSchoolYear();
+    // ✅ Sử dụng utility function để xác định năm học hiện tại
+    const schoolYear = await getEffectiveSchoolYear(req);
     let yearRoleEntry = null;
     if (user && schoolYear && Array.isArray(user.yearRoles)) {
       yearRoleEntry = user.yearRoles.find(r => r && String(r.schoolYear) === String(schoolYear));
@@ -349,6 +349,32 @@ async function checkContextPermissions(role, accountId, permissions, req) {
     isLeader: eff.isLeader || false,
   };
 
+  // ✅ Bổ sung danh sách lớp chủ nhiệm vào context cho giáo viên
+  // Để các controller (ví dụ: hạnh kiểm) có thể kiểm tra lớp mà không phụ thuộc vào tên permission
+  if (role === 'teacher') {
+    try {
+      const homeroomIds = [];
+      if (Array.isArray(user.homeroomClassIds)) {
+        user.homeroomClassIds.forEach((id) => {
+          if (id) {
+            homeroomIds.push(String(id._id || id));
+          }
+        });
+      }
+      const currentHomeroom =
+        eff.currentHomeroomClassId || user.currentHomeroomClassId;
+      if (currentHomeroom) {
+        homeroomIds.push(String(currentHomeroom._id || currentHomeroom));
+      }
+      if (homeroomIds.length > 0) {
+        context.homeroomClassIds = [...new Set(homeroomIds)];
+      }
+    } catch (e) {
+      // Không chặn request nếu có lỗi context, chỉ log để debug
+      console.warn('[checkPermission] Không thể thiết lập homeroomClassIds trong context:', e.message);
+    }
+  }
+
   // ✅ Kiểm tra từng permission với context
   for (const permission of permissions) {
     const check = await checkSinglePermissionContext(permission, role, user, req, context);
@@ -364,9 +390,11 @@ async function checkContextPermissions(role, accountId, permissions, req) {
  * ✅ Kiểm tra một permission cụ thể với context
  */
 async function checkSinglePermissionContext(permission, role, user, req, context) {
+  const isTeacherLikeRole = ['teacher', 'bgh', 'gvcn', 'gvbm', 'qlbm'].includes(role);
+
   // ✅ Quyền xem lớp chủ nhiệm
   if (permission.includes('homeroom')) {
-    if (role === 'teacher' && (user?._effectiveFlags?.isHomeroom)) {
+    if (isTeacherLikeRole && (user?._effectiveFlags?.isHomeroom)) {
       if (!user) return { allowed: false, message: 'Không tìm thấy thông tin giáo viên' };
       
       const classId = (req.params && req.params.classId) 
@@ -389,14 +417,14 @@ async function checkSinglePermissionContext(permission, role, user, req, context
         // Nếu không có classId, lưu tất cả lớp chủ nhiệm
         context.homeroomClassIds = (user.homeroomClassIds || []).map(id => String(id._id || id));
       }
-    } else if (role === 'teacher' && !(user?._effectiveFlags?.isHomeroom)) {
+    } else if (isTeacherLikeRole && !(user?._effectiveFlags?.isHomeroom)) {
       return { allowed: false, message: 'Bạn không phải giáo viên chủ nhiệm' };
     }
   }
 
   // ✅ Quyền xem lớp đang dạy
   if (permission.includes('teaching')) {
-    if (role === 'teacher') {
+    if (isTeacherLikeRole) {
       if (!user) return { allowed: false, message: 'Không tìm thấy thông tin giáo viên' };
       // Use TeachingAssignment collection to verify teacher actually teaches the subject/class
       const TeachingAssignment = require('../models/subject/teachingAssignment');
@@ -406,24 +434,8 @@ async function checkSinglePermissionContext(permission, role, user, req, context
       const subjectId = (req.params && req.params.subjectId) 
         || (req.query && req.query.subjectId) 
         || (req.body && req.body.subjectId);
-      const SchoolYearModel = require('../models/schoolYear');
-      const Setting = require('../models/settings');
-      const getEffectiveSchoolYear = async () => {
-        const fromReq = (req.headers && (req.headers['x-school-year'] || req.headers['x-school-year-code']))
-          || (req.query && (req.query.year || req.query.schoolYear))
-          || (req.body && req.body.schoolYear) || null;
-        if (fromReq) return String(fromReq);
-        try {
-          const active = await SchoolYearModel.findOne({ isActive: true }).lean();
-          if (active && active.code) return String(active.code);
-        } catch (e) {}
-        try {
-          const s = await Setting.findOne().lean();
-          if (s && s.currentSchoolYear) return String(s.currentSchoolYear);
-        } catch (e) {}
-        return process.env.SCHOOL_YEAR || null;
-      };
-      const schoolYear = await getEffectiveSchoolYear();
+      // ✅ Sử dụng utility function để xác định năm học hiện tại
+      const schoolYear = await getEffectiveSchoolYear(req);
       const semester = (req.params && req.params.semester) 
         || (req.query && req.query.semester) 
         || (req.body && req.body.semester) 
@@ -467,7 +479,7 @@ async function checkSinglePermissionContext(permission, role, user, req, context
 
   // ✅ Quyền xem môn dạy
   if (permission.includes('teaching') || permission.includes('subject')) {
-    if (role === 'teacher') {
+    if (isTeacherLikeRole) {
       if (!user) return { allowed: false, message: 'Không tìm thấy thông tin giáo viên' };
       
       const subjectId = (req.params && req.params.subjectId) 
@@ -497,7 +509,7 @@ async function checkSinglePermissionContext(permission, role, user, req, context
   if (permission.includes('attendance')) {
     // attendance:create, attendance:view_class - GVCN chỉ điểm danh/xem lớp chủ nhiệm
     if (permission.includes('create') || permission.includes('view_class')) {
-      if (role === 'teacher' && (user?._effectiveFlags?.isHomeroom)) {
+      if (isTeacherLikeRole && (user?._effectiveFlags?.isHomeroom)) {
         if (!user) return { allowed: false, message: 'Không tìm thấy thông tin giáo viên' };
         
         const classId = (req.params && req.params.classId) 
@@ -519,7 +531,7 @@ async function checkSinglePermissionContext(permission, role, user, req, context
         } else {
           context.homeroomClassIds = (user.homeroomClassIds || []).map(id => String(id._id || id));
         }
-      } else if (role === 'teacher' && !(user?._effectiveFlags?.isHomeroom)) {
+      } else if (isTeacherLikeRole && !(user?._effectiveFlags?.isHomeroom)) {
         return { allowed: false, message: 'Chỉ giáo viên chủ nhiệm mới được điểm danh' };
       }
     }
@@ -589,7 +601,7 @@ async function checkSinglePermissionContext(permission, role, user, req, context
 
   // ✅ Quyền xem/quản lý bộ môn (Trưởng bộ môn)
   if (permission.includes('department')) {
-    if (role === 'teacher' && (user._effectiveFlags?.isDepartmentHead)) {
+    if (isTeacherLikeRole && (user._effectiveFlags?.isDepartmentHead)) {
       // Trưởng bộ môn có thể xem/quản lý tất cả môn trong tổ của mình
       context.departmentSubjects = user.subjects?.map(sub => String(sub.subjectId?._id || sub.subjectId)) || [];
       context.departmentId = user.departmentId ? String(user.departmentId._id || user.departmentId) : null;
@@ -615,14 +627,14 @@ async function checkSinglePermissionContext(permission, role, user, req, context
           }
         }
       }
-    } else if (role === 'teacher' && !(user._effectiveFlags?.isDepartmentHead)) {
+    } else if (isTeacherLikeRole && !(user._effectiveFlags?.isDepartmentHead)) {
       return { allowed: false, message: 'Bạn không phải trưởng bộ môn' };
     }
   }
 
   // ✅ Quyền nhập/xem điểm (grade:enter, grade:view)d
   if (permission.includes('grade:')) {
-    if (role === 'teacher') {
+    if (isTeacherLikeRole) {
       if (!user) return { allowed: false, message: 'Không tìm thấy thông tin giáo viên' };
       
       // Use TeachingAssignment collection to verify teacher actually teaches the subject/class
@@ -633,24 +645,8 @@ async function checkSinglePermissionContext(permission, role, user, req, context
       const subjectId = (req.params && req.params.subjectId) 
         || (req.query && req.query.subjectId) 
         || (req.body && req.body.subjectId);
-      const SchoolYearModel = require('../models/schoolYear');
-      const Setting = require('../models/settings');
-      const getEffectiveSchoolYear = async () => {
-        const fromReq = (req.headers && (req.headers['x-school-year'] || req.headers['x-school-year-code']))
-          || (req.query && (req.query.year || req.query.schoolYear))
-          || (req.body && req.body.schoolYear) || null;
-        if (fromReq) return String(fromReq);
-        try {
-          const active = await SchoolYearModel.findOne({ isActive: true }).lean();
-          if (active && active.code) return String(active.code);
-        } catch (e) {}
-        try {
-          const s = await Setting.findOne().lean();
-          if (s && s.currentSchoolYear) return String(s.currentSchoolYear);
-        } catch (e) {}
-        return process.env.SCHOOL_YEAR || null;
-      };
-      const schoolYear = await getEffectiveSchoolYear();
+      // ✅ Sử dụng utility function để xác định năm học hiện tại
+      const schoolYear = await getEffectiveSchoolYear(req);
       const semester = (req.params && req.params.semester) 
         || (req.query && req.query.semester) 
         || (req.body && req.body.semester) 

@@ -2,8 +2,8 @@ const User = require('../../models/user/user');
 const Account = require('../../models/user/account');
 const Student = require('../../models/user/student');
 const Teacher = require('../../models/user/teacher');
-const Setting = require('../../models/settings');
 const admin = require('../../config/firebaseAdmin');
+const { getEffectiveSchoolYear } = require('../../utils/schoolYearHelper');
 
 /* =========================================================
    🧠 LẤY THÔNG TIN CÁ NHÂN
@@ -51,12 +51,7 @@ exports.getProfile = async (req, res) => {
       if (teacher) {
           // ✅ Lấy danh sách lớp đang dạy từ TeachingAssignment
           const TeachingAssignment = require('../../models/subject/teachingAssignment');
-          const setting = await Setting.findOne().select('currentSchoolYear').lean();
-          const effectiveYear = (req.headers && (req.headers['x-school-year'] || req.headers['x-school-year-code']))
-            || req.query?.year
-            || setting?.currentSchoolYear
-            || process.env.SCHOOL_YEAR
-            || new Date().getFullYear().toString();
+          const effectiveYear = await getEffectiveSchoolYear(req) || new Date().getFullYear().toString();
 
           const assignments = await TeachingAssignment.find({
             teacherId: teacher._id,
@@ -351,12 +346,7 @@ if (maxClasses !== undefined) teacherUpdate.maxClasses = maxClasses;
       if (teacher) {
         // ✅ Lấy danh sách lớp đang dạy từ TeachingAssignment
         const TeachingAssignment = require('../../models/subject/teachingAssignment');
-        const setting = await Setting.findOne().select('currentSchoolYear').lean();
-        const effectiveYear = (req.headers && (req.headers['x-school-year'] || req.headers['x-school-year-code']))
-          || req.query?.year
-          || setting?.currentSchoolYear
-          || process.env.SCHOOL_YEAR
-          || new Date().getFullYear().toString();
+        const effectiveYear = await getEffectiveSchoolYear(req) || new Date().getFullYear().toString();
 
         const assignments = await TeachingAssignment.find({
           teacherId: teacher._id,

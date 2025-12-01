@@ -32,7 +32,14 @@ import { Search, Shield, User, Edit, X, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import userApi from "@/services/userApi";
 import { useSchoolYears } from "@/hooks";
+import { useCurrentAcademicYear } from "@/hooks/useCurrentAcademicYear";
 import { useAuth } from "@/contexts/AuthContext";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface AccountWithPermissions {
   _id: string;
@@ -62,7 +69,8 @@ interface AccountWithPermissions {
 const PermissionManagementPage = () => {
   const { toast } = useToast();
   const { backendUser } = useAuth();
-  const { schoolYears, currentYearData } = useSchoolYears();
+  const { schoolYears } = useSchoolYears();
+  const { currentYearCode, currentYearData } = useCurrentAcademicYear();
   const [accounts, setAccounts] = useState<AccountWithPermissions[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -114,11 +122,10 @@ const PermissionManagementPage = () => {
 
   // ✅ Set năm học hiện tại khi component mount
   useEffect(() => {
-    if (currentYearData && !viewYear) {
-      const currentYearCode = String(currentYearData.code || currentYearData.name);
+    if (currentYearCode && !viewYear) {
       setViewYear(currentYearCode);
     }
-  }, [currentYearData, viewYear]);
+  }, [currentYearCode, viewYear]);
 
   // ✅ Load accounts khi viewYear thay đổi
   useEffect(() => {
@@ -149,7 +156,7 @@ const PermissionManagementPage = () => {
     }
     setEditingAccount(account);
     // ✅ Set năm học mặc định là năm học đang xem (viewYear) hoặc năm học hiện tại
-    const defaultYear = viewYear || currentYearData?.code || currentYearData?.name || "";
+    const defaultYear = viewYear || currentYearCode || "";
     setSelectedSchoolYear(defaultYear);
     
     // ✅ Load flags từ yearRoles của năm học đang xem (viewYear), không gộp quyền từ các năm khác
@@ -297,12 +304,39 @@ const PermissionManagementPage = () => {
           <Badge variant="outline" className="text-xs">GVCN</Badge>
         )}
         {flags.isDepartmentHead && (
-          <Badge variant="outline" className="text-xs">TBM</Badge>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="outline" className="text-xs cursor-help">TBM</Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="font-medium mb-1">Trưởng bộ môn (QLBM)</p>
+                <p className="text-xs">
+                  {flags.permissions && flags.permissions.length > 0
+                    ? `Có ${flags.permissions.length} quyền tự động được gán khi làm trưởng bộ môn`
+                    : 'Quyền được tự động gán khi làm trưởng bộ môn'}
+                </p>
+                {flags.permissions && flags.permissions.length > 0 && (
+                  <div className="mt-2 text-xs">
+                    <p className="font-medium mb-1">Danh sách quyền:</p>
+                    <ul className="list-disc list-inside space-y-0.5 max-h-32 overflow-y-auto">
+                      {flags.permissions.slice(0, 10).map((perm, idx) => (
+                        <li key={idx}>{perm}</li>
+                      ))}
+                      {flags.permissions.length > 10 && (
+                        <li className="text-muted-foreground">... và {flags.permissions.length - 10} quyền khác</li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
         {flags.isLeader && (
           <Badge variant="outline" className="text-xs">BGH</Badge>
         )}
-        {flags.permissions && flags.permissions.length > 0 && (
+        {flags.permissions && flags.permissions.length > 0 && !flags.isDepartmentHead && (
           <Badge variant="secondary" className="text-xs">
             +{flags.permissions.length} quyền
           </Badge>

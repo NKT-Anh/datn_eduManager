@@ -50,6 +50,7 @@ const auditLogRoutes = require('./auditLogRoutes');
 const emailLogRoutes = require('./emailLogRoutes');
 const backupRoutes = require('./backupRoutes');
 const authRoutes = require('./auth');
+const surveyRoutes = require('./survey/survey');
 
 // Tạo mảng routers với group name và mô tả
 const routers = [
@@ -101,6 +102,7 @@ const routers = [
     { group: 'audit-logs', router: auditLogRoutes, description: 'Log hoạt động hệ thống' },
     { group: 'email-logs', router: emailLogRoutes, description: 'Lịch sử email' },
     { group: 'backups', router: backupRoutes, description: 'Sao lưu dữ liệu' },
+    { group: 'surveys', router: surveyRoutes, description: 'Khảo sát đánh giá giáo viên' },
 
 ];  
 

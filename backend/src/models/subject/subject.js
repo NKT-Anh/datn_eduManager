@@ -42,6 +42,13 @@ const subjectSchema = new mongoose.Schema({
     default: true
   }, // ✅ Trạng thái hoạt động của môn học (mặc định là active)
 
+  // ✅ Soft Delete - Không xóa thật vì liên quan đến điểm số và phân công
+  isDeleted: {
+    type: Boolean,
+    default: false,
+    description: 'Đánh dấu xóa mềm - giữ lịch sử điểm số và phân công giảng dạy'
+  },
+
   // Tổ bộ môn
   departmentId: {
     type: mongoose.Schema.Types.ObjectId,

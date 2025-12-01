@@ -11,7 +11,8 @@ const studentYearRecordSchema = new mongoose.Schema({
   conduct: { type: String, enum: ["Tốt", "Khá", "Trung bình", "Yếu"], default: "Tốt" },
   conductSuggested: { type: String, enum: ["Tốt", "Khá", "Trung bình", "Yếu"], default: null }, // Đề xuất tự động từ hệ thống
   academicLevel: { type: String, enum: ["Giỏi", "Khá", "Trung bình", "Yếu"], default: null }, // Học lực
-  rank: { type: Number, default: 0 },
+  rank: { type: Number, default: 0 }, // Xếp hạng trong lớp
+  rankGrade: { type: Number, default: 0 }, // Xếp hạng trong khối
 
   totalAbsent: { type: Number, default: 0 }, // số buổi nghỉ
   totalLate: { type: Number, default: 0 },

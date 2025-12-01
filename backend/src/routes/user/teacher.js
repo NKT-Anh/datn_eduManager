@@ -79,17 +79,43 @@ router.put('/:id',
   teacherController.updateTeacher
 );
 
-// ✅ Xóa giáo viên - Chỉ Admin
-router.delete('/:id', 
-  authMiddleware, 
+// ✅ Xóa mềm giáo viên - Chỉ Admin (không xóa thật)
+router.delete('/:id',
+  authMiddleware,
   checkPermission(PERMISSIONS.TEACHER_DELETE),
   auditLog({
     action: 'DELETE',
     resource: 'TEACHER',
     getResourceId: (req) => req.params.id,
-    getDescription: (req) => `Xóa giáo viên: ${req.params.id}`,
+    getDescription: (req) => `Xóa mềm giáo viên: ${req.params.id}`,
   }),
-  teacherController.deleteTeacher
+  teacherController.softDeleteTeacher
+);
+
+// ✅ Khôi phục giáo viên đã xóa mềm - Chỉ Admin
+router.patch('/:id/restore',
+  authMiddleware,
+  checkPermission(PERMISSIONS.TEACHER_DELETE),
+  auditLog({
+    action: 'UPDATE',
+    resource: 'TEACHER',
+    getResourceId: (req) => req.params.id,
+    getDescription: (req) => `Khôi phục giáo viên: ${req.params.id}`,
+  }),
+  teacherController.restoreTeacher
+);
+
+// ✅ Xóa vĩnh viễn giáo viên - Chỉ Admin (có thể force delete)
+router.delete('/:id/force',
+  authMiddleware,
+  checkPermission(PERMISSIONS.TEACHER_DELETE),
+  auditLog({
+    action: 'DELETE',
+    resource: 'TEACHER',
+    getResourceId: (req) => req.params.id,
+    getDescription: (req) => `Xóa vĩnh viễn giáo viên: ${req.params.id}`,
+  }),
+  teacherController.forceDeleteTeacher
 );
 
 // ✅ Cập nhật số lớp tối đa - Chỉ Admin

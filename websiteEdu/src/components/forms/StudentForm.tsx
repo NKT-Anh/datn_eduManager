@@ -51,7 +51,7 @@ const studentSchema = z.object({
   // 🆕 Thông tin mở rộng
   ethnic: z.string().optional(),
   religion: z.string().optional(),
-  idNumber: z.string().optional(),
+  idNumber: z.string().max(12, "Số CCCD/CMND không được vượt quá 12 ký tự").optional(),
   birthPlace: z.string().optional(),
   hometown: z.string().optional(),
   avatarUrl: z.string().optional(),
@@ -87,6 +87,7 @@ export const StudentForm = ({ open, onOpenChange, studentData, onSubmit }: Stude
   const [isLoading, setIsLoading] = useState(false);
   const [classList, setClassList] = useState<{ _id: string; className: string; grade: string }[]>([]);
   const [filteredClasses, setFilteredClasses] = useState<typeof classList>([]);
+  const [currentYear, setCurrentYear] = useState<number>(new Date().getFullYear());
 
   /* =========================================================
      ⚙️ Form setup
@@ -103,7 +104,7 @@ export const StudentForm = ({ open, onOpenChange, studentData, onSubmit }: Stude
       address: studentData?.address || "",
       admissionYear: studentData?.admissionYear || new Date().getFullYear(),
       grade: studentData?.grade || "10",
-      status: studentData?.status || "active",
+      status: "active", // Luôn mặc định "Đang học"
       ethnic: studentData?.ethnic || "",
       religion: studentData?.religion || "",
       idNumber: studentData?.idNumber || "",
@@ -128,12 +129,16 @@ useEffect(() => {
     try {
       // 🔹 1️⃣ Lấy năm học hiện tại từ Setting API
       const settings = await settingApi.getSettings();
-      const currentYear =
+      const currentSchoolYear =
         settings?.currentSchoolYear ||
         `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`;
 
+      // Trích xuất năm đầu tiên làm năm nhập học mặc định
+      const admissionYearDefault = parseInt(currentSchoolYear.split('-')[0]) || new Date().getFullYear();
+      setCurrentYear(admissionYearDefault);
+
       // 🔹 2️⃣ Lọc lớp theo năm học hiện tại
-      const res = await classApiNoToken.getAll({ year: currentYear });
+      const res = await classApiNoToken.getAll({ year: currentSchoolYear });
       const data = Array.isArray(res) ? res : (res as any).data;
 
       setClassList(data || []);
@@ -171,8 +176,11 @@ useEffect(() => {
         ...studentData,
         dob: studentData.dob ? studentData.dob.split("T")[0] : "",
       });
+    } else {
+      // Set mặc định năm nhập học khi tạo mới
+      form.setValue('admissionYear', currentYear);
     }
-  }, [studentData, form]);
+  }, [studentData, form, currentYear]);
 
   /* =========================================================
      💾 Submit
@@ -358,7 +366,7 @@ useEffect(() => {
     <FormField control={form.control} name="idNumber" render={({ field }) => (
       <FormItem>
         <FormLabel>Số CCCD / CMND</FormLabel>
-        <FormControl><Input placeholder="VD: 123456789012" {...field} /></FormControl>
+        <FormControl><Input placeholder="VD: 123456789012" maxLength={12} {...field} /></FormControl>
       </FormItem>
     )}/>
 
@@ -391,13 +399,6 @@ useEffect(() => {
       <FormItem>
         <FormLabel>Quê quán</FormLabel>
         <FormControl><Input placeholder="VD: Nam Định" {...field} /></FormControl>
-      </FormItem>
-    )}/>
-
-    <FormField control={form.control} name="avatarUrl" render={({ field }) => (
-      <FormItem>
-        <FormLabel>Ảnh đại diện (URL)</FormLabel>
-        <FormControl><Input placeholder="https://..." {...field} /></FormControl>
       </FormItem>
     )}/>
   </div>

@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSchoolYears } from '@/hooks';
+import { useCurrentAcademicYear } from '@/hooks/useCurrentAcademicYear';
 import { Link } from 'react-router-dom';
 import api from '@/services/axiosInstance';
 import { 
@@ -65,7 +66,9 @@ interface GradeStats {
 
 export default function HomeroomDashboard() {
   const { backendUser } = useAuth();
-  const { currentYear, currentYearData } = useSchoolYears();
+  const { schoolYears: allSchoolYears } = useSchoolYears();
+  const { currentYearCode, currentYearData } = useCurrentAcademicYear();
+  const currentYear = currentYearCode;
   const [loading, setLoading] = useState(true);
   const [homeroomClass, setHomeroomClass] = useState<HomeroomClass | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
@@ -97,10 +100,21 @@ export default function HomeroomDashboard() {
             const stats = calculateGradeStats(studentsData);
             setGradeStats(stats);
             
-            // Lấy học sinh cần chú ý
+            // Lấy học sinh cần chú ý (chỉ lấy những học sinh có dữ liệu thực tế)
             const needAttention = studentsData.filter((s: Student) => {
               const avg = s.grades?.yearAverage || s.grades?.hk2Average || s.grades?.hk1Average;
-              return !avg || avg < 5.0 || s.conduct === 'Yếu' || s.conduct === 'Kém';
+              const hasConduct = s.conduct && s.conduct !== 'N/A';
+              const hasAcademicLevel = s.academicLevel && s.academicLevel !== 'N/A';
+              
+              // ✅ Chỉ lấy học sinh có ít nhất 1 trong 3: điểm TB, hạnh kiểm, hoặc học lực
+              const hasData = avg !== null && avg !== undefined || hasConduct || hasAcademicLevel;
+              
+              // ✅ Và thỏa điều kiện cần chú ý: điểm TB < 5.0 hoặc hạnh kiểm Yếu/Kém
+              const needsAttention = (avg !== null && avg !== undefined && avg < 5.0) || 
+                                     s.conduct === 'Yếu' || 
+                                     s.conduct === 'Kém';
+              
+              return hasData && needsAttention;
             }).slice(0, 5);
             setStudentsNeedAttention(needAttention);
             
@@ -437,67 +451,83 @@ export default function HomeroomDashboard() {
       {/* Students Need Attention */}
       {studentsNeedAttention.length > 0 && (
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <AlertCircle className="h-5 w-5 mr-2 text-orange-500" />
-              Học sinh cần chú ý
-            </CardTitle>
-            <CardDescription>Những học sinh cần quan tâm đặc biệt</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>STT</TableHead>
-                  <TableHead>Họ tên</TableHead>
-                  <TableHead>Mã HS</TableHead>
-                  <TableHead>Điểm TB</TableHead>
-                  <TableHead>Hạnh kiểm</TableHead>
-                  <TableHead>Học lực</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {studentsNeedAttention.map((student, index) => {
-                  const avg = student.grades?.yearAverage || student.grades?.hk2Average || student.grades?.hk1Average;
-                  return (
-                    <TableRow key={student._id}>
-                      <TableCell>{index + 1}</TableCell>
-                      <TableCell className="font-medium">{student.name}</TableCell>
-                      <TableCell>{student.studentCode}</TableCell>
-                      <TableCell>
-                        <Badge variant={avg && avg >= 5.0 ? "default" : "destructive"}>
-                          {avg ? avg.toFixed(1) : 'N/A'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={
-                          student.conduct === 'Tốt' ? "default" :
-                          student.conduct === 'Khá' ? "secondary" :
-                          student.conduct === 'Trung bình' ? "outline" : "destructive"
-                        }>
-                          {student.conduct || 'N/A'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={
-                          student.academicLevel === 'Giỏi' ? "default" :
-                          student.academicLevel === 'Khá' ? "secondary" :
-                          student.academicLevel === 'Trung bình' ? "outline" : "destructive"
-                        }>
-                          {student.academicLevel || 'N/A'}
-                        </Badge>
-                      </TableCell>
+          {studentsNeedAttention.length > 0 ? (
+            <>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <AlertCircle className="h-5 w-5 mr-2 text-orange-500" />
+                  Học sinh cần chú ý
+                </CardTitle>
+                <CardDescription>Những học sinh cần quan tâm đặc biệt</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>STT</TableHead>
+                      <TableHead>Họ tên</TableHead>
+                      <TableHead>Mã HS</TableHead>
+                      <TableHead>Điểm TB</TableHead>
+                      <TableHead>Hạnh kiểm</TableHead>
+                      <TableHead>Học lực</TableHead>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-            <div className="mt-4">
-              <Link to="/gvcn/homeroom-class" className="text-sm text-primary hover:underline">
-                Xem tất cả học sinh →
-              </Link>
-            </div>
-          </CardContent>
+                  </TableHeader>
+                  <TableBody>
+                    {studentsNeedAttention.map((student, index) => {
+                      const avg = student.grades?.yearAverage || student.grades?.hk2Average || student.grades?.hk1Average;
+                      return (
+                        <TableRow key={student._id}>
+                          <TableCell>{index + 1}</TableCell>
+                          <TableCell className="font-medium">{student.name}</TableCell>
+                          <TableCell>{student.studentCode}</TableCell>
+                          <TableCell>
+                            {avg !== null && avg !== undefined ? (
+                              <Badge variant={avg >= 5.0 ? "default" : "destructive"}>
+                                {avg.toFixed(1)}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {student.conduct ? (
+                              <Badge variant={
+                                student.conduct === 'Tốt' ? "default" :
+                                student.conduct === 'Khá' ? "secondary" :
+                                student.conduct === 'Trung bình' ? "outline" : "destructive"
+                              }>
+                                {student.conduct}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {student.academicLevel ? (
+                              <Badge variant={
+                                student.academicLevel === 'Giỏi' ? "default" :
+                                student.academicLevel === 'Khá' ? "secondary" :
+                                student.academicLevel === 'Trung bình' ? "outline" : "destructive"
+                              }>
+                                {student.academicLevel}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+                <div className="mt-4">
+                  <Link to="/gvcn/homeroom-class" className="text-sm text-primary hover:underline">
+                    Xem tất cả học sinh →
+                  </Link>
+                </div>
+              </CardContent>
+            </>
+          ) : null}
         </Card>
       )}
 

@@ -6,6 +6,7 @@ import { useSubjects } from "@/hooks/subjects/useSubjects";
 import { useClasses } from "@/hooks/classes/useClasses";
 import { useDepartments } from "@/hooks/departments/useDepartments";
 import { useSchoolYears } from "@/hooks/schoolYear/useSchoolYears";
+import { useCurrentAcademicYear } from "@/hooks/useCurrentAcademicYear";
 import { useAssignments } from "@/hooks/assignments/useAssignments";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -36,8 +37,10 @@ export default function DepartmentTeachersViewPage() {
   const { teachers, isLoading: loading } = useTeachers();
   const { subjects } = useSubjects();
   const { classes } = useClasses();
-  const { departments } = useDepartments();
-  const { schoolYears, currentYear, isLoading: isLoadingYears } = useSchoolYears();
+  const { schoolYears, isLoading: isLoadingYears } = useSchoolYears();
+  const { currentYearCode } = useCurrentAcademicYear();
+  // ✅ Lấy tổ bộ môn theo năm học đã chọn
+  const { departments } = useDepartments(selectedYear || currentYearCode || undefined);
   const { assignments } = useAssignments();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedYear, setSelectedYear] = useState<string>("");
@@ -47,12 +50,12 @@ export default function DepartmentTeachersViewPage() {
   const [viewingTeacher, setViewingTeacher] = useState<Teacher | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
 
-  // Lấy năm học hiện tại từ API
+  // ✅ Set năm học hiện tại khi có dữ liệu
   useEffect(() => {
-    if (currentYear && !selectedYear) {
-      setSelectedYear(currentYear);
+    if (currentYearCode && !selectedYear) {
+      setSelectedYear(currentYearCode);
     }
-  }, [currentYear, selectedYear]);
+  }, [currentYearCode, selectedYear]);
 
   // Lọc giáo viên trong cùng tổ với GVBM
   const filteredTeachers = useMemo(() => {
@@ -62,7 +65,7 @@ export default function DepartmentTeachersViewPage() {
     const myDepartmentId = backendUser?.department;
     if (myDepartmentId) {
       filtered = teachers.filter((t) => {
-        const deptId = getTeacherDepartmentId(t, selectedYear || currentYear);
+        const deptId = getTeacherDepartmentId(t, selectedYear || currentYearCode);
         return deptId === myDepartmentId;
       });
     } else {
@@ -71,10 +74,10 @@ export default function DepartmentTeachersViewPage() {
         (t) => t._id === (backendUser?.teacherId || backendUser?._id)
       );
       if (myTeacher) {
-        const myDeptId = getTeacherDepartmentId(myTeacher, selectedYear || currentYear);
+        const myDeptId = getTeacherDepartmentId(myTeacher, selectedYear || currentYearCode);
         if (myDeptId) {
           filtered = teachers.filter((t) => {
-            const deptId = getTeacherDepartmentId(t, selectedYear || currentYear);
+            const deptId = getTeacherDepartmentId(t, selectedYear || currentYearCode);
             return deptId === myDeptId;
           });
         }
@@ -136,7 +139,7 @@ export default function DepartmentTeachersViewPage() {
   };
 
   const getDepartmentName = (teacher: Teacher): string => {
-    return getTeacherDepartmentName(teacher, departments, selectedYear || currentYear);
+    return getTeacherDepartmentName(teacher, departments, selectedYear || currentYearCode);
   };
 
   if (!backendUser || backendUser.role !== "teacher") {
@@ -355,7 +358,7 @@ export default function DepartmentTeachersViewPage() {
           assignments={assignments}
           subjects={subjects}
           classes={classes}
-          currentYear={selectedYear || currentYear || undefined}
+          currentYear={selectedYear || currentYearCode || undefined}
           semester={selectedSemester}
         />
       )}

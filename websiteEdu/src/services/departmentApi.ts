@@ -7,8 +7,10 @@ const BASE = "/departments";
 
 export const departmentApi = {
   // Lấy tất cả tổ bộ môn
-  getAll: async (): Promise<Department[]> => {
-    const res = await api.get<Department[]>(BASE);
+  getAll: async (params?: any): Promise<Department[]> => {
+    const res = await api.get<Department[]>(BASE, {
+      params: { isDeleted: 'false', ...params }
+    });
     return res.data;
   },
 

@@ -5,6 +5,7 @@ import { ClassType } from "@/types/class";
 // ✅ Sử dụng hooks thay vì API trực tiếp
 import { useTeachers, useSubjects, useClasses, useDepartments, useAssignments } from "@/hooks";
 import useCurrentAcademicYear from '@/hooks/useCurrentAcademicYear';
+import { usePermissions } from "@/hooks/usePermissions";
 // settingApi no longer needed; use `useSchoolYears`
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,11 +56,23 @@ import {
 const TeachersList = () => {
   const navigate = useNavigate();
   
+  // ✅ Kiểm tra quyền BGH
+  const { isBGH, hasPermission, PERMISSIONS } = usePermissions();
+  const canCreate = hasPermission(PERMISSIONS.TEACHER_CREATE);
+  const canUpdate = hasPermission(PERMISSIONS.TEACHER_UPDATE);
+  const canDelete = hasPermission(PERMISSIONS.TEACHER_DELETE);
+  
+  // ✅ Lấy năm học hiện tại (mã) — ưu tiên schoolYears, fallback settings
+  const { currentYearCode, currentYearData, loading: loadingCurrentYear } = useCurrentAcademicYear();
+  const activeYearCode = currentYearCode;
+  const activeYearName = currentYearData?.name || currentYearCode;
+
   // ✅ Sử dụng hooks
   const { teachers, isLoading: loading, create: createTeacher, update: updateTeacher, remove: removeTeacher, refetch: refetchTeachers } = useTeachers();
   const { subjects } = useSubjects();
   const { classes } = useClasses();
-  const { departments } = useDepartments();
+  // ✅ Lấy tổ bộ môn theo năm học hiện tại
+  const { departments } = useDepartments(activeYearCode);
   const { assignments } = useAssignments();
   const [filterSubject, setFilterSubject] = useState<string>("all");
   const [batchUpdateSubject, setBatchUpdateSubject] = useState<string>("all");
@@ -75,10 +88,6 @@ const TeachersList = () => {
   const [deletingTeacher, setDeletingTeacher] = useState<Teacher | null>(null);
   const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  // ✅ Lấy năm học hiện tại (mã) — ưu tiên schoolYears, fallback settings
-  const { currentYearCode, currentYearData, loading: loadingCurrentYear } = useCurrentAcademicYear();
-  const activeYearCode = currentYearCode;
-  const activeYearName = currentYearData?.name || currentYearCode;
 
   // Helper: return the year-scoped role entry for the active year (if any)
   const getRoleForActiveYear = (t: any) => {
@@ -244,8 +253,8 @@ const TeachersList = () => {
         (isDepartmentHeadFlag && 'tbm trưởng bộ môn'.includes(lowerSearch)) ||
         (isLeaderFlag && 'bgh ban giám hiệu'.includes(lowerSearch));
 
-      // 🎯 Lọc theo tổ bộ môn
-      const teacherDeptId = getTeacherDepartmentId(t, activeYearName);
+      // 🎯 Lọc theo tổ bộ môn (sử dụng activeYearCode vì yearRoles.schoolYear là mã năm học)
+      const teacherDeptId = getTeacherDepartmentId(t, activeYearCode);
       const matchesDepartment = filterDepartment === 'all' || 
         (filterDepartment === 'none' && !teacherDeptId) ||
         (filterDepartment !== 'all' && filterDepartment !== 'none' && teacherDeptId === filterDepartment);
@@ -797,15 +806,18 @@ const TeachersList = () => {
             )}
           </Button>
 
-        {/* Nút Import Excel */}
-        <ImportTeachersDialog
-          subjects={subjects}
-          classes={classes}
-          onImported={refetchTeachers}
-        />
+        {/* Nút Import Excel - Chỉ Admin */}
+        {canCreate && (
+          <ImportTeachersDialog
+            subjects={subjects}
+            classes={classes}
+            onImported={refetchTeachers}
+          />
+        )}
 
-          {/* Nút Cập nhật nhanh */}
-          <Dialog open={batchUpdateOpen} onOpenChange={setBatchUpdateOpen}>
+          {/* Nút Cập nhật nhanh - Chỉ Admin */}
+          {canUpdate && (
+            <Dialog open={batchUpdateOpen} onOpenChange={setBatchUpdateOpen}>
             <DialogTrigger asChild>
               <Button variant="outline">
                 <Settings className="mr-2 h-4 w-4" /> Cập nhật nhanh
@@ -908,13 +920,15 @@ const TeachersList = () => {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          )}
 
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" /> Thêm giáo viên
-            </Button>
-          </DialogTrigger>
+        {canCreate && (
+          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" /> Thêm giáo viên
+              </Button>
+            </DialogTrigger>
           <TeacherForm
             onSubmit={handleAddTeacher}
             onCancel={() => setIsAddDialogOpen(false)}
@@ -922,7 +936,8 @@ const TeachersList = () => {
             classes={classes}
               departments={departments}
           />
-        </Dialog>
+          </Dialog>
+        )}
         </div>
       </div>
 
@@ -1358,37 +1373,41 @@ const TeachersList = () => {
                           <Eye className="h-4 w-4" />
                         </Button>
 
-                        <Dialog
-                          open={!!editingTeacher && editingTeacher._id === teacher._id}
-                          onOpenChange={(open) => !open && setEditingTeacher(null)}
-                        >
+                        {canUpdate && (
+                          <Dialog
+                            open={!!editingTeacher && editingTeacher._id === teacher._id}
+                            onOpenChange={(open) => !open && setEditingTeacher(null)}
+                          >
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setEditingTeacher(teacher)}
+                              title="Chỉnh sửa"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            {editingTeacher && editingTeacher._id === teacher._id && (
+                              <TeacherForm
+                                teacher={editingTeacher}
+                                onSubmit={handleEditTeacher}
+                                onCancel={() => setEditingTeacher(null)}
+                                subjects={subjects}
+                                classes={classes}
+                              />
+                            )}
+                          </Dialog>
+                        )}
+
+                        {canDelete && (
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setEditingTeacher(teacher)}
-                            title="Chỉnh sửa"
+                            onClick={() => setDeletingTeacher(teacher)}
+                            title="Xóa"
                           >
-                            <Edit className="h-4 w-4" />
+                            <Trash2 className="h-4 w-4" />
                           </Button>
-                          {editingTeacher && editingTeacher._id === teacher._id && (
-                            <TeacherForm
-                              teacher={editingTeacher}
-                              onSubmit={handleEditTeacher}
-                              onCancel={() => setEditingTeacher(null)}
-                              subjects={subjects}
-                              classes={classes}
-                            />
-                          )}
-                        </Dialog>
-
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setDeletingTeacher(teacher)}
-                          title="Xóa"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

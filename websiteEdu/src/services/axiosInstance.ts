@@ -68,6 +68,24 @@ api.interceptors.request.use(
           }
         }
       }
+
+      // ✅ Gắn năm học hiện tại từ backendUser vào header x-school-year (nếu có)
+      try {
+        const raw = localStorage.getItem('backendUser');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const currentSchoolYear = parsed?.currentSchoolYear;
+          if (
+            currentSchoolYear &&
+            !config.headers['x-school-year'] &&
+            !config.headers['x-school-year-code']
+          ) {
+            (config.headers as any)['x-school-year'] = String(currentSchoolYear);
+          }
+        }
+      } catch (err) {
+        console.warn('Không thể gắn x-school-year từ backendUser:', err);
+      }
     } catch (err) {
       console.warn('Lỗi khi gắn token:', err);
     }

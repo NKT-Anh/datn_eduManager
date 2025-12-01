@@ -119,7 +119,11 @@ exports.getScheduleByStudent = async (req, res) => {
     if (!examStudent)
       return res.status(404).json({ error: "Học sinh chưa được gán vào kỳ thi này." });
 
-    const schedules = await ExamSchedule.find({ exam: examId, grade: examStudent.grade })
+    const schedules = await ExamSchedule.find({ 
+      exam: examId, 
+      grade: examStudent.grade,
+      isDeleted: { $ne: true } // ✅ Chỉ lấy lịch thi chưa bị xóa
+    })
       .populate({
         path: "subject",
         select: "name code"

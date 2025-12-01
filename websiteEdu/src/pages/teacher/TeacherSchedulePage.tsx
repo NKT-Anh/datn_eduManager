@@ -9,6 +9,8 @@ import { Calendar, Users, Loader2, Lock, Unlock } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { ScheduleConfig } from '@/types/schedule';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { useSchoolYears } from '@/hooks';
+import { useCurrentAcademicYear } from '@/hooks/useCurrentAcademicYear';
 
 const TeacherSchedulePage = () => {
   const { backendUser } = useAuth();
@@ -18,6 +20,10 @@ const TeacherSchedulePage = () => {
   const [schoolYear, setSchoolYear] = useState<string>('');
   const [semester, setSemester] = useState<string>('1');
   const [publishState, setPublishState] = useState<'locked' | 'pending' | null>(null);
+
+  // ✅ Lấy năm học hiện tại từ hooks
+  const { schoolYears: allSchoolYears } = useSchoolYears();
+  const { currentYearCode } = useCurrentAcademicYear();
 
   useEffect(() => {
     const fetchConfig = async () => {
@@ -29,14 +35,14 @@ const TeacherSchedulePage = () => {
       }
     };
     fetchConfig();
-
-    // Tính năm học hiện tại
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
-    const currentYear = month >= 8 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
-    setSchoolYear(currentYear);
   }, []);
+
+  // ✅ Set năm học hiện tại khi có dữ liệu
+  useEffect(() => {
+    if (currentYearCode) {
+      setSchoolYear(currentYearCode);
+    }
+  }, [currentYearCode]);
 
   useEffect(() => {
     const teacherId = typeof backendUser?.teacherId === 'object' && backendUser?.teacherId !== null
@@ -147,16 +153,16 @@ const TeacherSchedulePage = () => {
               <SelectValue placeholder="Năm học" />
             </SelectTrigger>
             <SelectContent>
-              {Array.from({ length: 3 }, (_, i) => {
-                const year = new Date().getFullYear();
-                const offset = i - 1;
-                const y = year + offset;
-                return (
-                  <SelectItem key={`${y}-${y + 1}`} value={`${y}-${y + 1}`}>
-                    {y}-{y + 1}
-                  </SelectItem>
-                );
-              })}
+              {allSchoolYears
+                .filter((year) => (year.code || year.name) && (year.code || year.name).trim() !== "")
+                .map((year) => {
+                  const yearValue = year.code || year.name;
+                  return (
+                    <SelectItem key={year._id} value={yearValue}>
+                      {year.name} {year.isActive && "(Năm học hiện tại)"}
+                    </SelectItem>
+                  );
+                })}
             </SelectContent>
           </Select>
           <Select value={semester} onValueChange={setSemester}>

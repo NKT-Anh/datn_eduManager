@@ -31,11 +31,17 @@ async function createMongoBackup(outputDir, dbName) {
     let actualDbName = dbName;
     if (!actualDbName && mongoUri.includes('/')) {
       const uriParts = mongoUri.split('/');
-      actualDbName = uriParts[uriParts.length - 1].split('?')[0];
+      let parsedDbName = uriParts[uriParts.length - 1].split('?')[0];
+      // ✅ Loại bỏ dấu chấm và các ký tự không hợp lệ trong tên database
+      // MongoDB không cho phép: /, \, ., ", $, space, null character
+      parsedDbName = parsedDbName.replace(/[\/\\\.\"\$\s]/g, '_');
+      actualDbName = parsedDbName || 'eduschool';
     }
     if (!actualDbName) {
       actualDbName = 'eduschool'; // Fallback
     }
+    // ✅ Đảm bảo tên database không chứa ký tự không hợp lệ
+    actualDbName = actualDbName.replace(/[\/\\\.\"\$\s]/g, '_');
 
     // Tạo temp directory cho mongodump
     const tempDir = path.join(outputDir, `temp-${timestamp}`);
@@ -133,11 +139,17 @@ async function restoreMongoBackup(backupFilePath, dbName) {
     let actualDbName = dbName;
     if (!actualDbName && mongoUri.includes('/')) {
       const uriParts = mongoUri.split('/');
-      actualDbName = uriParts[uriParts.length - 1].split('?')[0];
+      let parsedDbName = uriParts[uriParts.length - 1].split('?')[0];
+      // ✅ Loại bỏ dấu chấm và các ký tự không hợp lệ trong tên database
+      // MongoDB không cho phép: /, \, ., ", $, space, null character
+      parsedDbName = parsedDbName.replace(/[\/\\\.\"\$\s]/g, '_');
+      actualDbName = parsedDbName || 'eduschool';
     }
     if (!actualDbName) {
       actualDbName = 'eduschool';
     }
+    // ✅ Đảm bảo tên database không chứa ký tự không hợp lệ
+    actualDbName = actualDbName.replace(/[\/\\\.\"\$\s]/g, '_');
 
     // Giải nén file backup
     const tempDir = path.join(path.dirname(backupFilePath), `restore-temp-${Date.now()}`);

@@ -11,7 +11,17 @@ exports.createExam = async (req, res) => {
     const { name, year, semester, type = "regular", startDate, endDate, grades } = req.body;
 
     // 🔒 Ràng buộc: Không được tạo kỳ thi nếu chưa có năm học active
+    const { getCurrentSchoolYear } = require('../../utils/schoolYearHelper');
     const SchoolYear = require('../../models/schoolYear');
+    const activeYearCode = await getCurrentSchoolYear();
+    
+    if (!activeYearCode) {
+      return res.status(400).json({ 
+        error: "Không thể tạo kỳ thi. Vui lòng kích hoạt một năm học trước." 
+      });
+    }
+
+    // ✅ Lấy thông tin năm học active để kiểm tra
     const activeYear = await SchoolYear.findOne({ isActive: true });
     if (!activeYear) {
       return res.status(400).json({ 
@@ -104,6 +114,7 @@ exports.createExam = async (req, res) => {
         currentYear: examYear, // ✅ Lọc theo năm học (VD: "2025-2026")
         grade: { $in: stringGrades }, // ✅ Lọc theo khối (VD: ["10", "11", "12"])
         classId: { $in: classIdsInCurrentYear }, // ✅ Chỉ lấy học sinh ở lớp của năm học hiện tại
+        isDeleted: { $ne: true } // ✅ Không lấy học sinh đã bị xóa mềm
       })
         .populate({
           path: "classId",
@@ -399,5 +410,236 @@ exports.getYearlyStats = async (req, res) => {
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+/* =========================================================
+   📊 PHÂN TÍCH ĐIỂM THI VÀ SO SÁNH VỚI NĂM TRƯỚC
+   - Phân tích chi tiết điểm thi của kỳ thi hiện tại
+   - So sánh với cùng loại kỳ thi năm trước
+   - Xu hướng tăng/giảm điểm
+========================================================= */
+exports.getExamGradeAnalysis = async (req, res) => {
+  try {
+    const { id } = req.params; // Exam ID
+    const { compareWithPreviousYear = true } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'ID kỳ thi không hợp lệ.' });
+    }
+
+    // ✅ Lấy thông tin kỳ thi hiện tại
+    const currentExam = await Exam.findById(id)
+      .populate('grades', 'name')
+      .lean();
+
+    if (!currentExam) {
+      return res.status(404).json({ error: 'Không tìm thấy kỳ thi.' });
+    }
+
+    const ExamGrade = require('../../models/exam/examIndex').ExamGrade;
+    const ExamStudent = require('../../models/exam/examIndex').ExamStudent;
+    const Subject = require('../../models/subject/subject');
+
+    // ✅ Phân tích điểm thi hiện tại
+    const currentGrades = await ExamGrade.find({ exam: id })
+      .populate('subject', 'name code')
+      .populate('student', 'student')
+      .lean();
+
+    // ✅ Tính toán thống kê theo môn
+    const subjectStats = {};
+    const gradeDistribution = {
+      excellent: 0, // 9-10
+      good: 0,      // 7-8.9
+      average: 0,   // 5-6.9
+      weak: 0,      // <5
+    };
+
+    currentGrades.forEach((grade) => {
+      if (grade.gradeValue == null) return;
+
+      const subjectId = String(grade.subject?._id || grade.subject);
+      const subjectName = grade.subject?.name || 'Unknown';
+
+      if (!subjectStats[subjectId]) {
+        subjectStats[subjectId] = {
+          subjectId,
+          subjectName,
+          totalStudents: 0,
+          gradedStudents: 0,
+          sum: 0,
+          min: 10,
+          max: 0,
+          scores: [],
+        };
+      }
+
+      const stats = subjectStats[subjectId];
+      stats.totalStudents++;
+      
+      if (grade.gradeValue != null) {
+        stats.gradedStudents++;
+        stats.sum += grade.gradeValue;
+        stats.scores.push(grade.gradeValue);
+        stats.min = Math.min(stats.min, grade.gradeValue);
+        stats.max = Math.max(stats.max, grade.gradeValue);
+
+        // Phân loại điểm
+        if (grade.gradeValue >= 9) gradeDistribution.excellent++;
+        else if (grade.gradeValue >= 7) gradeDistribution.good++;
+        else if (grade.gradeValue >= 5) gradeDistribution.average++;
+        else gradeDistribution.weak++;
+      }
+    });
+
+    // ✅ Tính toán trung bình và các chỉ số thống kê
+    const subjectAnalytics = Object.values(subjectStats).map((stats) => {
+      const average = stats.gradedStudents > 0 ? stats.sum / stats.gradedStudents : 0;
+      const sortedScores = [...stats.scores].sort((a, b) => a - b);
+      const median = sortedScores.length > 0
+        ? sortedScores.length % 2 === 0
+          ? (sortedScores[sortedScores.length / 2 - 1] + sortedScores[sortedScores.length / 2]) / 2
+          : sortedScores[Math.floor(sortedScores.length / 2)]
+        : 0;
+
+      // Tính độ lệch chuẩn
+      const variance = stats.scores.length > 0
+        ? stats.scores.reduce((sum, score) => sum + Math.pow(score - average, 2), 0) / stats.scores.length
+        : 0;
+      const standardDeviation = Math.sqrt(variance);
+
+      return {
+        ...stats,
+        average: Number(average.toFixed(2)),
+        median: Number(median.toFixed(2)),
+        standardDeviation: Number(standardDeviation.toFixed(2)),
+        passRate: stats.gradedStudents > 0
+          ? Number(((stats.scores.filter(s => s >= 5).length / stats.gradedStudents) * 100).toFixed(2))
+          : 0,
+      };
+    });
+
+    // ✅ So sánh với năm trước (nếu có)
+    let previousYearComparison = null;
+    if (compareWithPreviousYear === 'true' || compareWithPreviousYear === true) {
+      // Tính năm học trước
+      const currentYearParts = currentExam.year.split('-');
+      const previousYearStart = parseInt(currentYearParts[0]) - 1;
+      const previousYearEnd = parseInt(currentYearParts[1]) - 1;
+      const previousYear = `${previousYearStart}-${previousYearEnd}`;
+
+      // Tìm kỳ thi cùng loại, cùng học kỳ, cùng khối năm trước
+      const previousExam = await Exam.findOne({
+        year: previousYear,
+        semester: currentExam.semester,
+        type: currentExam.type,
+        grades: { $in: currentExam.grades },
+        status: { $in: ['published', 'locked'] },
+      }).lean();
+
+      if (previousExam) {
+        const previousGrades = await ExamGrade.find({ exam: previousExam._id })
+          .populate('subject', 'name code')
+          .lean();
+
+        const previousSubjectStats = {};
+        previousGrades.forEach((grade) => {
+          if (grade.gradeValue == null) return;
+          const subjectId = String(grade.subject?._id || grade.subject);
+          if (!previousSubjectStats[subjectId]) {
+            previousSubjectStats[subjectId] = {
+              totalStudents: 0,
+              gradedStudents: 0,
+              sum: 0,
+              scores: [],
+            };
+          }
+          const stats = previousSubjectStats[subjectId];
+          stats.totalStudents++;
+          if (grade.gradeValue != null) {
+            stats.gradedStudents++;
+            stats.sum += grade.gradeValue;
+            stats.scores.push(grade.gradeValue);
+          }
+        });
+
+        // Tính toán so sánh
+        const comparison = subjectAnalytics.map((current) => {
+          const previous = previousSubjectStats[current.subjectId];
+          if (!previous || previous.gradedStudents === 0) {
+            return {
+              ...current,
+              previousYear: {
+                average: null,
+                totalStudents: 0,
+                gradedStudents: 0,
+                trend: null,
+                trendPercentage: null,
+              },
+            };
+          }
+
+          const previousAverage = previous.sum / previous.gradedStudents;
+          const trend = current.average - previousAverage;
+          const trendPercentage = previousAverage > 0
+            ? ((trend / previousAverage) * 100).toFixed(2)
+            : null;
+
+          return {
+            ...current,
+            previousYear: {
+              average: Number(previousAverage.toFixed(2)),
+              totalStudents: previous.totalStudents,
+              gradedStudents: previous.gradedStudents,
+              trend: Number(trend.toFixed(2)),
+              trendPercentage: trendPercentage ? Number(trendPercentage) : null,
+            },
+          };
+        });
+
+        previousYearComparison = {
+          examId: previousExam._id,
+          examName: previousExam.name,
+          year: previousYear,
+          semester: previousExam.semester,
+          comparison,
+        };
+      }
+    }
+
+    // ✅ Tổng hợp thống kê tổng thể
+    const totalGraded = currentGrades.filter(g => g.gradeValue != null).length;
+    const totalStudents = currentGrades.length;
+    const overallAverage = totalGraded > 0
+      ? currentGrades
+          .filter(g => g.gradeValue != null)
+          .reduce((sum, g) => sum + g.gradeValue, 0) / totalGraded
+      : 0;
+
+    res.json({
+      currentExam: {
+        _id: currentExam._id,
+        name: currentExam.name,
+        year: currentExam.year,
+        semester: currentExam.semester,
+        type: currentExam.type,
+        grades: currentExam.grades,
+      },
+      overall: {
+        totalStudents,
+        totalGraded,
+        overallAverage: Number(overallAverage.toFixed(2)),
+        completionRate: totalStudents > 0
+          ? Number(((totalGraded / totalStudents) * 100).toFixed(2))
+          : 0,
+        gradeDistribution,
+      },
+      bySubject: subjectAnalytics,
+      previousYearComparison,
+    });
+  } catch (error) {
+    console.error('❌ Lỗi khi phân tích điểm thi:', error);
+    res.status(500).json({ error: error.message });
   }
 };

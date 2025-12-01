@@ -56,6 +56,13 @@ const studentSchema = new mongoose.Schema(
       default: "active",
     },
 
+    // ✅ Soft Delete - Không xóa thật vì là dữ liệu pháp lý (học bạ)
+    isDeleted: {
+      type: Boolean,
+      default: false,
+      description: 'Đánh dấu xóa mềm - giữ hồ sơ học bạ và điểm số'
+    },
+
     /* =========================================================
        🪪 Thông tin cá nhân
     ========================================================== */

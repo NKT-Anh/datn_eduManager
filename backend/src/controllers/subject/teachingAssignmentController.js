@@ -136,11 +136,17 @@ exports.getAllAssignments = async (req, res) => {
     // ✅ Lọc theo năm học nếu có query parameter
     const { year, semester } = req.query;
     const query = {};
-    
+
+    // ✅ Soft Delete: Filter isDeleted != true mặc định (bao gồm false, null, không có trường)
+    const { isDeleted = 'false' } = req.query;
+    if (isDeleted !== 'true') {
+      query.isDeleted = { $ne: true };
+    }
+
     if (year) {
       query.year = year;
     }
-    
+
     if (semester) {
       query.semester = semester;
     }
@@ -515,16 +521,23 @@ exports.deleteAssignment = async (req, res) => {
       }
     }
     
-    const deletedAssignment = await TeachingAssignment.findByIdAndDelete(id);
-
-    if (!deletedAssignment) {
+    // ✅ Soft Delete - Đánh dấu isDeleted = true (không xóa vĩnh viễn)
+    const assignmentToDelete = await TeachingAssignment.findById(id);
+    
+    if (!assignmentToDelete) {
       return res.status(404).json({ message: "Không tìm thấy phân công" });
     }
+
+    assignmentToDelete.isDeleted = true;
+    await assignmentToDelete.save();
 
     // ✅ Không cần cập nhật teacher.classIds nữa vì đã loại bỏ field này
     // Thông tin phân công lớp được quản lý qua TeachingAssignment
 
-    res.status(200).json({ message: "Xóa phân công thành công" });
+    res.status(200).json({ 
+      message: "Đã xóa phân công thành công (soft delete)",
+      assignment: assignmentToDelete
+    });
   } catch (err) {
     res
       .status(400)

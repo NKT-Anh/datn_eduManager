@@ -63,6 +63,8 @@ const auditLogSchema = new mongoose.Schema(
         'PERMISSION',
         'NOTIFICATION',
         'SYSTEM',
+        'CONDUCT',
+        'STUDENT_YEAR_NOTE',
       ],
     },
     resourceId: {

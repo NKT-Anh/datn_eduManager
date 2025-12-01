@@ -2,6 +2,7 @@ const Notification = require('../../models/notification');
 const Teacher = require('../../models/user/teacher');
 const Student = require('../../models/user/student');
 const Class = require('../../models/class/class');
+const { getCurrentSchoolYear } = require('../../utils/schoolYearHelper');
 
 /**
  * 📋 LẤY DANH SÁCH THÔNG BÁO
@@ -53,11 +54,10 @@ exports.getNotifications = async (req, res) => {
              !req.user.teacherFlags?.isLeader && !req.user.teacherFlags?.isDepartmentHead) {
       // ✅ Lấy danh sách lớp đang dạy từ TeachingAssignment
       const TeachingAssignment = require('../../models/subject/teachingAssignment');
-      const Setting = require('../../models/settings');
-      const currentYear = await Setting.findOne().select('currentSchoolYear').lean();
+      const currentYear = await getCurrentSchoolYear();
       const assignments = await TeachingAssignment.find({
         teacherId: req.user.accountId,
-        year: currentYear?.currentSchoolYear || new Date().getFullYear()
+        year: currentYear || new Date().getFullYear()
       }).select('classId').lean();
       
       if (!assignments || assignments.length === 0) {
@@ -306,12 +306,11 @@ exports.createNotification = async (req, res) => {
         // GVBM: Chỉ được gửi cho lớp đang dạy
         // ✅ Lấy danh sách lớp đang dạy từ TeachingAssignment
         const TeachingAssignment = require('../../models/subject/teachingAssignment');
-        const Setting = require('../../models/settings');
-        const currentYear = await Setting.findOne().select('currentSchoolYear').lean();
+        const currentYear = await getCurrentSchoolYear();
         const assignments = await TeachingAssignment.find({
           teacherId: req.user.accountId,
           classId: finalClassId,
-          year: currentYear?.currentSchoolYear || new Date().getFullYear()
+          year: currentYear || new Date().getFullYear()
         }).lean();
         
         if (!assignments || assignments.length === 0) {
@@ -495,11 +494,10 @@ exports.getUnreadCount = async (req, res) => {
                !req.user.teacherFlags?.isLeader && !req.user.teacherFlags?.isDepartmentHead) {
       // ✅ Lấy danh sách lớp đang dạy từ TeachingAssignment
       const TeachingAssignment = require('../../models/subject/teachingAssignment');
-      const Setting = require('../../models/settings');
-      const currentYear = await Setting.findOne().select('currentSchoolYear').lean();
+      const currentYear = await getCurrentSchoolYear();
       const assignments = await TeachingAssignment.find({
         teacherId: accountId,
-        year: currentYear?.currentSchoolYear || new Date().getFullYear()
+        year: currentYear || new Date().getFullYear()
       }).select('classId').lean();
       
       if (!assignments || assignments.length === 0) {
@@ -690,11 +688,10 @@ exports.markAllAsRead = async (req, res) => {
                !req.user.teacherFlags?.isLeader && !req.user.teacherFlags?.isDepartmentHead) {
       // ✅ Lấy danh sách lớp đang dạy từ TeachingAssignment
       const TeachingAssignment = require('../../models/subject/teachingAssignment');
-      const Setting = require('../../models/settings');
-      const currentYear = await Setting.findOne().select('currentSchoolYear').lean();
+      const currentYear = await getCurrentSchoolYear();
       const assignments = await TeachingAssignment.find({
         teacherId: accountId,
-        year: currentYear?.currentSchoolYear || new Date().getFullYear()
+        year: currentYear || new Date().getFullYear()
       }).select('classId').lean();
       
       if (!assignments || assignments.length === 0) {

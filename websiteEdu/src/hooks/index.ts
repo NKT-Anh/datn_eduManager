@@ -24,6 +24,7 @@ export * from "./teachers/useTeachers";
 
 // School Years
 export * from "./schoolYear/useSchoolYears";
+export { useCurrentAcademicYear } from "./useCurrentAcademicYear";
 
 // Students
 export * from "./auth/useStudents";
@@ -43,4 +44,7 @@ export * from "./schedule/useScheduleConfig";
 
 // Activities
 export * from "./activities/useActivities";
+
+// Surveys
+export * from "./survey/useSurveys";
 

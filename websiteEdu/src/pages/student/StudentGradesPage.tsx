@@ -11,6 +11,8 @@ import {
   BarChart3,
   BookOpen,
   TrendingUp,
+  TrendingDown,
+  Minus,
   Award,
   Download,
   Loader2,
@@ -68,6 +70,16 @@ interface ConductRecord {
   conduct: string;
   academicLevel: string | null;
   gpa: number;
+  conductStatus?: 'draft' | 'pending' | 'approved' | 'locked';
+}
+
+interface TrendComparison {
+  subjectId: string;
+  subjectName: string;
+  currentAverage: number | null;
+  previousAverage: number | null;
+  trend: number | null;
+  trendPercentage: number | null;
 }
 
 const StudentGradesPage = () => {
@@ -78,6 +90,8 @@ const StudentGradesPage = () => {
   const [currentClass, setCurrentClass] = useState<{ className: string; grade: string; classCode?: string } | null>(null);
   const [conductRecords, setConductRecords] = useState<ConductRecord[]>([]);
   const [activeTab, setActiveTab] = useState<string>('HK2'); // Mặc định là HK2
+  const [previousSemesterComparison, setPreviousSemesterComparison] = useState<{ semester: string; schoolYear: string; comparison: TrendComparison[] } | null>(null);
+  const [previousYearComparison, setPreviousYearComparison] = useState<{ schoolYear: string; semester: string; comparison: TrendComparison[] } | null>(null);
 
   // Lấy danh sách năm học từ điểm (unique schoolYear) - chỉ khi đã có dữ liệu
   const schoolYears = grades.length > 0 
@@ -153,10 +167,10 @@ const StudentGradesPage = () => {
   const fetchGrades = async () => {
     try {
       setLoading(true);
-      // Lấy điểm của cả 2 học kỳ
+      // Lấy điểm của cả 2 học kỳ với xu hướng
       const [hk1Res, hk2Res] = await Promise.all([
-        gradesApi.getStudentGrades({ semester: '1' }),
-        gradesApi.getStudentGrades({ semester: '2' }),
+        gradesApi.getStudentGradesWithTrend({ semester: '1', schoolYear: selectedYear || undefined }),
+        gradesApi.getStudentGradesWithTrend({ semester: '2', schoolYear: selectedYear || undefined }),
       ]);
 
       const allGrades: GradeSummary[] = [];
@@ -165,6 +179,14 @@ const StudentGradesPage = () => {
       }
       if (hk2Res.success && hk2Res.data) {
         allGrades.push(...hk2Res.data);
+        // Lưu so sánh HK2 với HK1
+        if (hk2Res.previousSemesterComparison) {
+          setPreviousSemesterComparison(hk2Res.previousSemesterComparison);
+        }
+        // Lưu so sánh với năm trước
+        if (hk2Res.previousYearComparison) {
+          setPreviousYearComparison(hk2Res.previousYearComparison);
+        }
       }
 
       setGrades(allGrades);
@@ -189,17 +211,30 @@ const StudentGradesPage = () => {
       }
       const res = await conductApi.getConducts(params);
       if (res.success && res.data) {
-        setConductRecords(res.data.map((r: any) => ({
-          _id: r._id,
-          year: r.year,
-          semester: r.semester, // "HK1", "HK2", "CN"
-          conduct: r.conduct,
-          academicLevel: r.academicLevel,
-          gpa: r.gpa,
-        })));
+        // ✅ Backend đã filter: học sinh chỉ nhận được hạnh kiểm đã được phê duyệt (approved/locked)
+        // ✅ Thêm filter ở frontend như một lớp bảo vệ bổ sung (defense in depth)
+        const filteredData = res.data
+          .filter((r: any) => r.conductStatus === 'approved' || r.conductStatus === 'locked')
+          .map((r: any) => ({
+            _id: r._id,
+            year: r.year,
+            semester: r.semester, // "HK1", "HK2", "CN"
+            conduct: r.conduct,
+            academicLevel: r.academicLevel,
+            gpa: r.gpa,
+            conductStatus: r.conductStatus, // Lưu trạng thái để hiển thị
+          }));
+        setConductRecords(filteredData);
+      } else {
+        // Nếu không có dữ liệu, có thể do chưa được phê duyệt
+        setConductRecords([]);
       }
     } catch (error: any) {
       console.error('Error fetching conducts:', error);
+      // Nếu lỗi 403, có thể do hạnh kiểm chưa được phê duyệt
+      if (error.response?.status === 403) {
+        setConductRecords([]);
+      }
     }
   };
 
@@ -407,16 +442,20 @@ const StudentGradesPage = () => {
   };
 
   // Lấy học lực và hạnh kiểm theo học kỳ/năm
+  // ✅ Chỉ lấy hạnh kiểm đã được phê duyệt (approved/locked)
   const getConductInfo = (semester: 'HK1' | 'HK2' | 'CN') => {
     const record = conductRecords.find(r => 
       (!selectedYear || r.year === selectedYear) &&
       (semester === 'HK1' ? r.semester === 'HK1' : 
        semester === 'HK2' ? r.semester === 'HK2' : 
-       r.semester === 'CN')
+       r.semester === 'CN') &&
+      // ✅ Đảm bảo chỉ lấy hạnh kiểm đã được phê duyệt
+      (r.conductStatus === 'approved' || r.conductStatus === 'locked')
     );
     return {
       conduct: record?.conduct || null,
       academicLevel: record?.academicLevel || null,
+      conductStatus: record?.conductStatus || null,
     };
   };
 
@@ -494,9 +533,19 @@ const StudentGradesPage = () => {
               ) : (
                 <div className="text-right">
                   <p className="text-xs text-muted-foreground mb-1">Hạnh kiểm</p>
-                  <Badge variant="outline" className="font-semibold text-muted-foreground">
-                    Chưa có
-                  </Badge>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge variant="outline" className="font-semibold text-amber-700 bg-amber-50 dark:bg-amber-950 border-amber-300 cursor-help">
+                          Chờ phê duyệt
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="text-sm font-medium">Hạnh kiểm đang chờ phê duyệt từ Ban Giám Hiệu</p>
+                        <p className="text-xs text-muted-foreground mt-1">Sau khi được phê duyệt, hạnh kiểm sẽ hiển thị tại đây</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
               )}
               {/* Thông báo xét giấy khen cho bảng cả năm */}
@@ -623,12 +672,34 @@ const StudentGradesPage = () => {
                           </td>
                           <td className="p-3 text-center">
                             {grade.subject.includeInAverage !== false ? (
-                              <Badge 
-                                variant="outline" 
-                                className={`${getGradeColor(grade.average)} border-current font-semibold`}
-                              >
-                                {grade.average !== null ? grade.average.toFixed(1) : '-'}
-                              </Badge>
+                              <div className="flex flex-col items-center gap-1">
+                                <Badge 
+                                  variant="outline" 
+                                  className={`${getGradeColor(grade.average)} border-current font-semibold`}
+                                >
+                                  {grade.average !== null ? grade.average.toFixed(1) : '-'}
+                                </Badge>
+                                {/* Hiển thị xu hướng */}
+                                {(() => {
+                                  const trend = getSubjectTrend(grade.subject._id, semester as 'HK1' | 'HK2');
+                                  if (trend && trend.trend !== null && trend.trend !== undefined) {
+                                    return (
+                                      <div className="flex items-center gap-1 text-xs">
+                                        {getTrendIcon(trend.trend)}
+                                        <span className={getTrendColor(trend.trend)}>
+                                          {trend.trend > 0 ? '+' : ''}{trend.trend.toFixed(1)}
+                                        </span>
+                                        {trend.trendPercentage !== null && (
+                                          <span className={`text-xs ${getTrendColor(trend.trend)}`}>
+                                            ({trend.trendPercentage > 0 ? '+' : ''}{trend.trendPercentage.toFixed(1)}%)
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                              </div>
                             ) : (
                               <div className="flex flex-col items-center gap-1">
                                 <Badge 
@@ -732,12 +803,34 @@ const StudentGradesPage = () => {
                           {/* Cột ĐTB môn (tính theo hệ số) */}
                           <td className="p-3 text-center">
                             {grade.subject.includeInAverage !== false ? (
-                              <Badge 
-                                variant="outline" 
-                                className={`${getGradeColor(grade.average)} border-current font-semibold`}
-                              >
-                                {grade.average !== null ? grade.average.toFixed(1) : '-'}
-                              </Badge>
+                              <div className="flex flex-col items-center gap-1">
+                                <Badge 
+                                  variant="outline" 
+                                  className={`${getGradeColor(grade.average)} border-current font-semibold`}
+                                >
+                                  {grade.average !== null ? grade.average.toFixed(1) : '-'}
+                                </Badge>
+                                {/* Hiển thị xu hướng */}
+                                {(() => {
+                                  const trend = getSubjectTrend(grade.subject._id, semester as 'HK1' | 'HK2');
+                                  if (trend && trend.trend !== null && trend.trend !== undefined) {
+                                    return (
+                                      <div className="flex items-center gap-1 text-xs">
+                                        {getTrendIcon(trend.trend)}
+                                        <span className={getTrendColor(trend.trend)}>
+                                          {trend.trend > 0 ? '+' : ''}{trend.trend.toFixed(1)}
+                                        </span>
+                                        {trend.trendPercentage !== null && (
+                                          <span className={`text-xs ${getTrendColor(trend.trend)}`}>
+                                            ({trend.trendPercentage > 0 ? '+' : ''}{trend.trendPercentage.toFixed(1)}%)
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                              </div>
                             ) : (
                               <span className="text-muted-foreground">-</span>
                             )}

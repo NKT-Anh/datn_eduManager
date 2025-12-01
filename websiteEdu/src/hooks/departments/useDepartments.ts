@@ -10,19 +10,20 @@ import { Subject } from "@/types/class";
  * - Lấy chi tiết tổ bộ môn
  * - Tạo, cập nhật, xóa tổ bộ môn
  * - Quản lý giáo viên và môn học trong tổ
+ * @param year - Năm học (optional, nếu có sẽ filter theo năm học)
  */
-export function useDepartments() {
+export function useDepartments(year?: string) {
   const queryClient = useQueryClient();
 
-  // 📘 Lấy danh sách tất cả tổ bộ môn
+  // 📘 Lấy danh sách tổ bộ môn (theo năm học nếu có)
   const {
     data: departments = [],
     isLoading,
     error,
     refetch,
   } = useQuery({
-    queryKey: ["departments"],
-    queryFn: () => departmentApi.getAll(),
+    queryKey: ["departments", year],
+    queryFn: () => departmentApi.getAll(year ? { year } : undefined),
     staleTime: 5 * 60 * 1000, // 5 phút
   });
 
@@ -89,8 +90,10 @@ export function useDepartment(id: string | undefined) {
 
 /**
  * Hook để lấy danh sách giáo viên trong tổ bộ môn
+ * @param departmentId - ID của tổ bộ môn
+ * @param year - Năm học (optional, nếu có sẽ lấy giáo viên theo yearRoles)
  */
-export function useDepartmentTeachers(departmentId: string | undefined) {
+export function useDepartmentTeachers(departmentId: string | undefined, year?: string) {
   const queryClient = useQueryClient();
   
   const {
@@ -99,8 +102,8 @@ export function useDepartmentTeachers(departmentId: string | undefined) {
     error,
     refetch,
   } = useQuery({
-    queryKey: ["department", departmentId, "teachers"],
-    queryFn: () => departmentApi.getTeachers(departmentId!),
+    queryKey: ["department", departmentId, "teachers", year],
+    queryFn: () => departmentApi.getTeachers(departmentId!, year ? { year } : undefined),
     enabled: !!departmentId,
     staleTime: 2 * 60 * 1000, // 2 phút
   });

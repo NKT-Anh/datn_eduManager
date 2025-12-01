@@ -156,6 +156,16 @@ const gradesApi: GradesApi = {
     return res.data;
   },
 
+  // ✅ Lấy điểm học sinh với so sánh xu hướng
+  getStudentGradesWithTrend: async (params?: {
+    studentId?: string;
+    schoolYear?: string;
+    semester?: string;
+  }) => {
+    const res = await axiosClient.get('/grades/student/trend', { params });
+    return res.data;
+  },
+
   // ✅ Admin/BGH xem tất cả điểm của tất cả học sinh
   getAllStudentsGrades: async (params?: {
     schoolYear?: string;
@@ -166,6 +176,19 @@ const gradesApi: GradesApi = {
     keyword?: string;
   }) => {
     const res = await axiosClient.get('/grades/admin/all', { params });
+    return res.data;
+  },
+
+  // ✅ Admin/BGH xem tất cả điểm với xu hướng
+  getAllStudentsGradesWithTrend: async (params?: {
+    schoolYear?: string;
+    semester?: string;
+    classId?: string;
+    subjectId?: string;
+    grade?: string;
+    keyword?: string;
+  }) => {
+    const res = await axiosClient.get('/grades/admin/all/trend', { params });
     return res.data;
   },
 
@@ -212,6 +235,16 @@ const gradesApi: GradesApi = {
     semester: string;
   }) => {
     const res = await axiosClient.get('/grades/homeroom/all', { params });
+    return res.data;
+  },
+
+  // ✅ GVCN xem tất cả điểm của lớp chủ nhiệm với xu hướng
+  getHomeroomClassAllGradesWithTrend: async (params: {
+    classId: string;
+    schoolYear: string;
+    semester: string;
+  }) => {
+    const res = await axiosClient.get('/grades/homeroom/all/trend', { params });
     return res.data;
   },
 

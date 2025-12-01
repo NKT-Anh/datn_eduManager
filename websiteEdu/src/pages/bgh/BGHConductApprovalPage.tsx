@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useSchoolYears } from '@/hooks';
+import { useCurrentAcademicYear } from '@/hooks/useCurrentAcademicYear';
 import conductApi from '@/services/conductApi';
 import { toast } from 'sonner';
 import { 
@@ -27,6 +28,7 @@ import {
   Filter
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface ConductRecord {
   _id: string;
@@ -58,25 +60,26 @@ interface ConductRecord {
 
 export default function BGHConductApprovalPage() {
   const { backendUser } = useAuth();
-  const { currentYearData, currentYear, schoolYears: allSchoolYears } = useSchoolYears();
+  const { schoolYears: allSchoolYears } = useSchoolYears();
+  const { currentYearCode, currentYearData } = useCurrentAcademicYear();
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [selectedYear, setSelectedYear] = useState<string>('');
-  const [selectedSemester, setSelectedSemester] = useState<string>('');
+  const [selectedSemester, setSelectedSemester] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('pending'); // 'pending' | 'approved' | 'all'
   const [conducts, setConducts] = useState<ConductRecord[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<ConductRecord | null>(null);
   const [approvalAction, setApprovalAction] = useState<'approve' | 'reject' | 'lock'>('approve');
   const [approvalComment, setApprovalComment] = useState('');
 
-  // ✅ Set năm học mặc định
+  // ✅ Set năm học hiện tại khi có dữ liệu
   useEffect(() => {
-    const defaultYear = currentYearData?.code || currentYear || (allSchoolYears.length > 0 ? allSchoolYears[allSchoolYears.length - 1].code : '');
-    if (defaultYear && !selectedYear) {
-      setSelectedYear(defaultYear);
+    if (currentYearCode && !selectedYear) {
+      setSelectedYear(currentYearCode);
     }
-  }, [currentYearData, currentYear, allSchoolYears, selectedYear]);
+  }, [currentYearCode, selectedYear]);
 
   // ✅ Lấy danh sách hạnh kiểm
   useEffect(() => {
@@ -96,14 +99,14 @@ export default function BGHConductApprovalPage() {
         // Lấy danh sách chờ phê duyệt
         const res = await conductApi.getPendingConducts({
           year: selectedYear,
-          semester: selectedSemester || undefined
+          semester: selectedSemester === 'ALL' ? undefined : selectedSemester,
         });
         data = res.data || [];
       } else {
         // Lấy tất cả (có thể filter theo status sau)
         const res = await conductApi.getConducts({
           year: selectedYear,
-          semester: selectedSemester || undefined
+          semester: selectedSemester === 'ALL' ? undefined : selectedSemester,
         });
         data = res.data || [];
         
@@ -116,6 +119,7 @@ export default function BGHConductApprovalPage() {
       }
       
       setConducts(data);
+      setSelectedIds([]);
     } catch (error: any) {
       console.error('Error fetching conducts:', error);
       toast.error(error.response?.data?.error || 'Không thể tải danh sách hạnh kiểm');
@@ -150,6 +154,68 @@ export default function BGHConductApprovalPage() {
     } finally {
       setProcessing(false);
     }
+  };
+
+  const handleApproveAll = async () => {
+    if (!selectedYear || conducts.length === 0 || statusFilter !== 'pending') return;
+
+    try {
+      setProcessing(true);
+      await conductApi.bulkApproveConducts({
+        action: 'approve',
+        year: selectedYear,
+        semester: selectedSemester === 'ALL' ? undefined : selectedSemester,
+      });
+
+      toast.success('Đã phê duyệt tất cả hạnh kiểm đang chờ phê duyệt');
+      fetchConducts();
+    } catch (error: any) {
+      console.error('Error bulk approving conducts:', error);
+      toast.error(error.response?.data?.error || 'Không thể phê duyệt tất cả hạnh kiểm');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleApproveSelected = async () => {
+    if (!selectedYear || selectedIds.length === 0 || statusFilter !== 'pending') return;
+    try {
+      setProcessing(true);
+      await conductApi.bulkApproveConducts({
+        action: 'approve',
+        year: selectedYear,
+        semester: selectedSemester === 'ALL' ? undefined : selectedSemester,
+        ids: selectedIds,
+      });
+
+      toast.success(`Đã phê duyệt ${selectedIds.length} bản ghi đã chọn`);
+      setSelectedIds([]);
+      fetchConducts();
+    } catch (error: any) {
+      console.error('Error bulk approving selected conducts:', error);
+      toast.error(error.response?.data?.error || 'Không thể phê duyệt các bản ghi đã chọn');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const allSelectableIds = conducts.map((c) => c._id);
+  const allSelected =
+    allSelectableIds.length > 0 &&
+    allSelectableIds.every((id) => selectedIds.includes(id));
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(allSelectableIds);
+    }
+  };
+
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
   };
 
   const openApprovalDialog = (record: ConductRecord, action: 'approve' | 'reject' | 'lock') => {
@@ -239,7 +305,7 @@ export default function BGHConductApprovalPage() {
                   <SelectValue placeholder="Tất cả" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Tất cả</SelectItem>
+                  <SelectItem value="ALL">Tất cả</SelectItem>
                   <SelectItem value="HK1">Học kỳ 1</SelectItem>
                   <SelectItem value="HK2">Học kỳ 2</SelectItem>
                 </SelectContent>
@@ -270,11 +336,31 @@ export default function BGHConductApprovalPage() {
 
       {/* ✅ Bảng danh sách */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
             Danh sách hạnh kiểm ({conducts.length})
           </CardTitle>
+          {statusFilter === 'pending' && conducts.length > 0 && (
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={handleApproveAll}
+                disabled={processing || !selectedYear}
+              >
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                Phê duyệt tất cả
+              </Button>
+              <Button
+                variant="default"
+                onClick={handleApproveSelected}
+                disabled={processing || selectedIds.length === 0}
+              >
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                Phê duyệt đã chọn
+              </Button>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -288,6 +374,15 @@ export default function BGHConductApprovalPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-10">
+                      {statusFilter === 'pending' && conducts.length > 0 && (
+                        <Checkbox
+                          checked={allSelected}
+                          onCheckedChange={toggleSelectAll}
+                          aria-label="Chọn tất cả"
+                        />
+                      )}
+                    </TableHead>
                     <TableHead>STT</TableHead>
                     <TableHead>Mã HS</TableHead>
                     <TableHead>Họ và tên</TableHead>
@@ -303,6 +398,15 @@ export default function BGHConductApprovalPage() {
                 <TableBody>
                   {conducts.map((record, index) => (
                     <TableRow key={record._id}>
+                      <TableCell>
+                        {statusFilter === 'pending' && (
+                          <Checkbox
+                            checked={selectedIds.includes(record._id)}
+                            onCheckedChange={() => toggleSelectOne(record._id)}
+                            aria-label="Chọn bản ghi"
+                          />
+                        )}
+                      </TableCell>
                       <TableCell>{index + 1}</TableCell>
                       <TableCell>{record.studentId.studentCode}</TableCell>
                       <TableCell className="font-medium">{record.studentId.name}</TableCell>

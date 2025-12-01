@@ -33,10 +33,7 @@ import {
 } from "@/components/ui/select";
 
 const DepartmentsList = () => {
-  // ✅ Sử dụng hooks
-  const { departments, isLoading: loading, create: createDepartment, update: updateDepartment, remove: removeDepartment, refetch: refetchDepartments } = useDepartments();
-  const { teachers } = useTeachers();
-  const { subjects } = useSubjects();
+  // ✅ Lấy năm học hiện tại trước
   const { schoolYears, currentYearCode, currentYearData } = useCurrentAcademicYear();
   // SelectItem values use `year.name`, so prefer `currentYearData.name` to match those values.
   const defaultYearName = currentYearData?.name || currentYearCode || null;
@@ -49,7 +46,15 @@ const DepartmentsList = () => {
     const found = schoolYears?.find((y: any) => y.name === name);
     return found?.code || name;
   };
-  const selectedViewYearCode = getYearCodeFromName(selectedViewYear) || activeYearCode;
+  // ✅ Đảm bảo selectedViewYearCode luôn có giá trị (không bao giờ undefined)
+  // Nếu không có selectedViewYear, dùng activeYearCode, nếu vẫn không có thì dùng undefined (backend sẽ trả về tất cả)
+  const selectedViewYearCode = getYearCodeFromName(selectedViewYear) || activeYearCode || undefined;
+  
+  // ✅ Sử dụng hooks - Lấy tổ bộ môn theo năm học đã chọn
+  // Nếu selectedViewYearCode là undefined, backend sẽ trả về tất cả departments (không filter theo year)
+  const { departments, isLoading: loading, create: createDepartment, update: updateDepartment, remove: removeDepartment, refetch: refetchDepartments } = useDepartments(selectedViewYearCode);
+  const { teachers } = useTeachers();
+  const { subjects } = useSubjects();
   const [departmentTeachers, setDepartmentTeachers] = useState<Teacher[]>([]);
   const [loadingDepartmentTeachers, setLoadingDepartmentTeachers] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -71,7 +76,7 @@ const DepartmentsList = () => {
   );
   
   // ✅ Hook để quản lý giáo viên trong tổ
-  const { addTeacher: addTeacherToDepartment, removeTeacher: removeTeacherFromDepartment } = useDepartmentTeachers(viewingDepartment?._id);
+  const { addTeacher: addTeacherToDepartment, removeTeacher: removeTeacherFromDepartment } = useDepartmentTeachers(viewingDepartment?._id, selectedViewYearCode);
 
   // Form state
   const [formData, setFormData] = useState<DepartmentInput>({
@@ -92,18 +97,39 @@ const DepartmentsList = () => {
   const filteredDepartments = useMemo(() => {
     return departments
       .filter((d) => {
-        // if a list year is selected (and not the ALL sentinel), filter departments by their year or schoolYear
+        // ✅ Filter theo năm học: selectedListYear là tên năm học, cần so sánh với cả year (mã hoặc tên) và schoolYear
         if (selectedListYear && selectedListYear !== "ALL") {
           const deptYear = (d as any).year || (d as any).schoolYear || "";
-          if (String(deptYear) !== String(selectedListYear)) return false;
+          const selectedYearCode = getYearCodeFromName(selectedListYear); // Mã năm học từ tên
+          
+          // ✅ Tìm tên năm học tương ứng với deptYear (nếu deptYear là mã)
+          const deptYearName = schoolYears?.find((y: any) => 
+            y.code === deptYear || y.name === deptYear
+          )?.name;
+          
+          // ✅ Tìm mã năm học tương ứng với deptYear (nếu deptYear là tên)
+          const deptYearCode = schoolYears?.find((y: any) => 
+            y.code === deptYear || y.name === deptYear
+          )?.code;
+          
+          // ✅ So sánh với cả:
+          // 1. Tên năm học trực tiếp (selectedListYear vs deptYear hoặc deptYearName)
+          // 2. Mã năm học trực tiếp (selectedYearCode vs deptYear hoặc deptYearCode)
+          const matchesName = String(selectedListYear) === String(deptYear) || 
+                             String(selectedListYear) === String(deptYearName);
+          const matchesCode = String(selectedYearCode) === String(deptYear) || 
+                             String(selectedYearCode) === String(deptYearCode);
+          
+          if (!matchesName && !matchesCode) {
+            return false;
+          }
         }
         return (
           d.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
           d.code?.toLowerCase().includes(searchTerm.toLowerCase())
         );
-      })
-      ;
-  }, [departments, searchTerm, selectedListYear]);
+      });
+  }, [departments, searchTerm, selectedListYear, schoolYears, getYearCodeFromName]);
 
   // Reset form
   const resetForm = () => {
@@ -355,14 +381,21 @@ const DepartmentsList = () => {
         // Chỉ kiểm tra yearRoles cho năm học đang xem, không fallback về legacy departmentId
         let teacherDeptIdInYear: string | null = null;
         if (viewYearCode && Array.isArray(teacher.yearRoles)) {
-          const yearRole = teacher.yearRoles.find((r: any) => String(r.schoolYear) === String(viewYearCode));
+          const yearRole = teacher.yearRoles.find(
+            (r: any) => String(r.schoolYear) === String(viewYearCode)
+          );
           if (yearRole && yearRole.departmentId) {
-            teacherDeptIdInYear = typeof yearRole.departmentId === 'object' && yearRole.departmentId !== null 
-              ? (yearRole.departmentId._id || yearRole.departmentId) 
-              : yearRole.departmentId;
+            if (
+              typeof yearRole.departmentId === "object" &&
+              yearRole.departmentId !== null
+            ) {
+              teacherDeptIdInYear = String(yearRole.departmentId._id);
+            } else {
+              teacherDeptIdInYear = String(yearRole.departmentId);
+            }
           }
         }
-        
+
         // ✅ Nếu giáo viên đã thuộc tổ nào đó trong năm học đang xem, bỏ qua
         if (teacherDeptIdInYear) return null;
 
@@ -637,28 +670,76 @@ const DepartmentsList = () => {
                 <Select
                   value="select-subject"
                   onValueChange={(value) => {
-                    if (value && value !== "select-subject" && !formData.subjectIds?.includes(value)) {
+                    if (
+                      value &&
+                      value !== "select-subject" &&
+                      !formData.subjectIds?.includes(value)
+                    ) {
+                      // 🔒 Không cho chọn nếu môn này đã thuộc tổ bộ môn khác trong CÙNG NĂM HỌC
+                      const targetYearName = formData.year || selectedViewYear || currentYearData?.name || currentYearCode;
+                      const targetYearCode = getYearCodeFromName(targetYearName);
+
+                      const hasConflictInSameYear = departments.some((d) => {
+                        // Khi sửa, bỏ qua chính tổ đang sửa
+                        if (editingDepartment && d._id === editingDepartment._id) {
+                          return false;
+                        }
+
+                        const deptYear = (d as any).year || (d as any).schoolYear || "";
+                        const deptYearInfo = schoolYears?.find(
+                          (y: any) => y.code === deptYear || y.name === deptYear
+                        );
+                        const deptYearCode = deptYearInfo?.code || String(deptYear);
+
+                        if (
+                          targetYearCode &&
+                          String(deptYearCode) !== String(targetYearCode)
+                        ) {
+                          return false;
+                        }
+
+                        const deptSubjectIds = (d as any).subjectIds?.map((s: any) =>
+                          typeof s === "object" && s !== null ? s._id : s
+                        ) || [];
+
+                        return deptSubjectIds.includes(value);
+                      });
+
+                      if (hasConflictInSameYear) {
+                        toast({
+                          title: "Không thể thêm môn",
+                          description:
+                            "Môn học này đã thuộc tổ bộ môn khác trong cùng năm học. Mỗi môn chỉ thuộc tối đa 1 tổ trong một năm học.",
+                          variant: "destructive",
+                        });
+                        return;
+                      }
+
                       const newSubjectIds = [...(formData.subjectIds || []), value];
-                      
+
                       // Kiểm tra xem trưởng bộ môn hiện tại có còn phù hợp không
                       let newHeadTeacherId = formData.headTeacherId;
                       if (formData.headTeacherId && formData.headTeacherId !== "none") {
-                        const currentTeacher = teachers.find(t => t._id === formData.headTeacherId);
+                        const currentTeacher = teachers.find(
+                          (t) => t._id === formData.headTeacherId
+                        );
                         if (currentTeacher) {
-                          const teacherTeachesSelectedSubjects = currentTeacher.subjects?.some((sub) => {
-                            const subjectId = typeof sub.subjectId === 'object' 
-                              ? sub.subjectId?._id 
-                              : sub.subjectId;
-                            return newSubjectIds.includes(subjectId);
-                          });
-                          
+                          const teacherTeachesSelectedSubjects =
+                            currentTeacher.subjects?.some((sub) => {
+                              const subjectId =
+                                typeof sub.subjectId === "object"
+                                  ? sub.subjectId?._id
+                                  : sub.subjectId;
+                              return newSubjectIds.includes(subjectId);
+                            });
+
                           // Nếu giáo viên hiện tại không dạy môn nào trong danh sách mới, reset về null
                           if (!teacherTeachesSelectedSubjects) {
                             newHeadTeacherId = null;
                           }
                         }
                       }
-                      
+
                       setFormData({
                         ...formData,
                         subjectIds: newSubjectIds,
@@ -921,7 +1002,7 @@ const DepartmentsList = () => {
                 ) : (
                   filteredDepartments.map((department) => {
                     const members = getDepartmentTeachers(department._id);
-                    const memberCount = members.length;
+                    const memberCount = getMemberCount(department._id);
                     const headTeacherId = typeof department.headTeacherId === 'object' && department.headTeacherId !== null
                       ? department.headTeacherId._id
                       : department.headTeacherId;

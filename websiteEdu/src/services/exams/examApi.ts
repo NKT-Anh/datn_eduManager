@@ -144,4 +144,14 @@ async getAll(params?: {
       return [];
     }
   },
+
+  /* =========================================================
+     📊 PHÂN TÍCH ĐIỂM THI VÀ SO SÁNH VỚI NĂM TRƯỚC
+  ========================================================= */
+  async getGradeAnalysis(id: string, compareWithPreviousYear: boolean = true) {
+    const res = await api.get(`/exams/${id}/analysis`, {
+      params: { compareWithPreviousYear },
+    });
+    return res.data;
+  },
 };

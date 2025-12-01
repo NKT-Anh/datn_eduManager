@@ -1,44 +1,8 @@
 // src/services/api.ts
-import axios from "axios";
+// ✅ Tất cả API frontend bây giờ dùng chung instance từ axiosInstance.ts
+import axiosClient from "./axiosInstance";
 
-const API_BASE_URL =
-  process.env.REACT_APP_API_BASE_URL;
-
-// Tạo instance axios
-export const api = axios.create({
-  baseURL: API_BASE_URL,
-});
-
-// Middleware: tự động gắn token vào header
-api.interceptors.request.use(
-  (config) => {
-    try {
-      const raw = localStorage.getItem("backendUser");
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        const idToken = parsed?.idToken;
-
-        if (idToken) {
-          if (config.headers) {
-            // Nếu headers là AxiosHeaders
-            (config.headers as any).set?.("Authorization", `Bearer ${idToken}`);
-          } else {
-            config.headers = { Authorization: `Bearer ${idToken}` } as any;
-          }
-        
-        } else {
-          console.warn("⚠️ Không tìm thấy idToken trong localStorage");
-        }
-      } else {
-        console.warn("⚠️ Không có backendUser trong localStorage");
-      }
-    } catch (err) {
-      console.error("Lỗi khi parse backendUser:", err);
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
+export const api = axiosClient;
 
 // Test kết nối backend
 export const checkBackendConnection = async (): Promise<boolean> => {

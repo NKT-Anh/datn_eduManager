@@ -20,14 +20,18 @@ export type TeacherAvailabilityPayload = {
 
 export const teacherApi = {
   // Lấy tất cả giáo viên
-  getAll: async (): Promise<Teacher[]> => {
-    const res = await api.get<Teacher[]>(BASE);
+  getAll: async (params?: any): Promise<Teacher[]> => {
+    const res = await api.get<Teacher[]>(BASE, {
+      params: { isDeleted: 'false', ...params }
+    });
     return res.data;
   },
 
   // Lấy giáo viên theo ID
-  getById: async (id: string): Promise<Teacher> => {
-    const res = await api.get<Teacher>(`${BASE}/${id}`);
+  getById: async (id: string, params?: any): Promise<Teacher> => {
+    const res = await api.get<Teacher>(`${BASE}/${id}`, {
+      params: { isDeleted: 'false', ...params }
+    });
     return res.data;
   },
 

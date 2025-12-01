@@ -3,8 +3,10 @@ import { SchedulePayload } from "@/types/schedule";
 import { teacherApi } from "./teacherApi";
 
 export const scheduleApi = {
-  getAllSchedules: async () => {
-    const res = await api.get("/schedules");
+  getAllSchedules: async (params?: any) => {
+    const res = await api.get("/schedules", {
+      params: { isDeleted: 'false', ...params }
+    });
     return res.data;
   },
 

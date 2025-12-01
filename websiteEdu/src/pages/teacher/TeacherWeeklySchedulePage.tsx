@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { scheduleApi } from '@/services/scheduleApi';
 import { getScheduleConfig } from '@/services/scheduleConfigApi';
 import { useSchoolYears } from '@/hooks';
+import { useCurrentAcademicYear } from '@/hooks/useCurrentAcademicYear';
 import { Calendar, ChevronLeft, ChevronRight, Loader2, Clock } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { ScheduleConfig } from '@/types/schedule';
@@ -16,7 +17,8 @@ const TeacherWeeklySchedulePage = () => {
   const [schedules, setSchedules] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [config, setConfig] = useState<ScheduleConfig | null>(null);
-  const { schoolYears: allSchoolYears, currentYear } = useSchoolYears();
+  const { schoolYears: allSchoolYears } = useSchoolYears();
+  const { currentYearCode } = useCurrentAcademicYear();
   const [schoolYear, setSchoolYear] = useState<string>('');
   const [semester, setSemester] = useState<string>('1');
   const [currentWeek, setCurrentWeek] = useState<Date>(new Date());
@@ -55,14 +57,12 @@ const TeacherWeeklySchedulePage = () => {
     setCurrentWeek(weekStart);
   }, []);
 
-  // ✅ Lấy năm học hiện tại
+  // ✅ Set năm học hiện tại khi có dữ liệu
   useEffect(() => {
-    if (currentYear) {
-      setSchoolYear(currentYear);
-    } else if (allSchoolYears.length > 0) {
-      setSchoolYear(allSchoolYears[allSchoolYears.length - 1].code || allSchoolYears[allSchoolYears.length - 1].name);
+    if (currentYearCode) {
+      setSchoolYear(currentYearCode);
     }
-  }, [currentYear, allSchoolYears]);
+  }, [currentYearCode]);
 
   useEffect(() => {
     const fetchConfig = async () => {

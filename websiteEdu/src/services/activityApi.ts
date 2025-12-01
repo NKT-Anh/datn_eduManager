@@ -7,8 +7,10 @@ const BASE_URL = `${API_BASE}/activities`;
 
 export const activityApi = {
   // 🟢 Lấy tất cả hoạt động
-  getAll: async (): Promise<Activity[]> => {
-    const res = await axios.get(BASE_URL);
+  getAll: async (params?: any): Promise<Activity[]> => {
+    const res = await axios.get(BASE_URL, {
+      params: { isDeleted: 'false', ...params }
+    });
     return res.data;
   },
 

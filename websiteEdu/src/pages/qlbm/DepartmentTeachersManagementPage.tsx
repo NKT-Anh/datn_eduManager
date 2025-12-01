@@ -39,25 +39,27 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useSchoolYears } from "@/hooks/schoolYear/useSchoolYears";
+import { useCurrentAcademicYear } from "@/hooks/useCurrentAcademicYear";
 
 export default function DepartmentTeachersManagementPage() {
   const { backendUser } = useAuth();
   const { toast } = useToast();
   const { teachers, loading, fetchTeachers, addTeacher, removeTeacher } = useDepartmentManagement();
   const { teachers: allTeachers = [], isLoading: isLoadingTeachers } = useTeachers();
-  const { schoolYears, currentYear } = useSchoolYears();
+  const { schoolYears } = useSchoolYears();
+  const { currentYearCode } = useCurrentAcademicYear();
   const [selectedYear, setSelectedYear] = useState<string>("");
   const [selectedSemester, setSelectedSemester] = useState<"1" | "2">("1");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>("");
   const [removingTeacherId, setRemovingTeacherId] = useState<string | null>(null);
 
-  // Lấy năm học hiện tại từ SchoolYear có isActive: true
+  // ✅ Set năm học hiện tại khi có dữ liệu
   useEffect(() => {
-    if (currentYear && !selectedYear) {
-      setSelectedYear(currentYear);
+    if (currentYearCode && !selectedYear) {
+      setSelectedYear(currentYearCode);
     }
-  }, [currentYear, selectedYear]);
+  }, [currentYearCode, selectedYear]);
 
   useEffect(() => {
     if (selectedYear) {

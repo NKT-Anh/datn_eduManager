@@ -12,6 +12,13 @@ const classSchema = new mongoose.Schema({
 
     roomId: { type: mongoose.Schema.Types.ObjectId, ref: 'Room', default: null },
 
+  // ✅ Soft Delete - Không xóa thật vì liên quan đến lịch sử cả năm học
+  isDeleted: {
+    type: Boolean,
+    default: false,
+    description: 'Đánh dấu xóa mềm - giữ lịch sử lớp học và phân công'
+  },
+
 });
 classSchema.pre("save", function (next) {
   if (this.students) {

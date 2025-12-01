@@ -96,10 +96,14 @@ exports.PERMISSIONS = {
   // 12. Hạnh kiểm
   CONDUCT_VIEW: 'conduct:view',
   CONDUCT_ENTER: 'conduct:enter',                  // Nhập hạnh kiểm lớp CN
+  CONDUCT_UPDATE: 'conduct:update',                // Sửa hạnh kiểm (Admin/BGH)
 
   // 13.1. Admin - Xem log hoạt động
   ADMIN_VIEW: 'admin:view',
   ADMIN_DELETE: 'admin:delete',
+
+  // 13.2. Cài đặt hệ thống
+  SETTINGS_UPDATE: 'settings:update',
 
   // 13. Quản lý kỳ thi
   EXAM_CREATE: 'exam:create',
@@ -166,6 +170,12 @@ exports.PERMISSIONS = {
   ATTENDANCE_UPDATE: 'attendance:update',              // Cập nhật điểm danh (GVCN, Admin)
   ATTENDANCE_DELETE: 'attendance:delete',              // Xóa điểm danh (Admin)
   ATTENDANCE_STATS: 'attendance:stats',                // Xem thống kê điểm danh
+
+  // 24. Khảo sát đánh giá giáo viên
+  SURVEY_MANAGE: 'survey:manage',                      // Admin tạo, sửa, xóa, công bố khảo sát
+  SURVEY_RESPOND: 'survey:respond',                    // Học sinh làm khảo sát
+  SURVEY_VIEW_RESULTS: 'survey:view_results',          // Giáo viên xem kết quả của mình
+  SURVEY_VIEW_RESULTS_ALL: 'survey:view_results_all', // BGH/Admin xem kết quả tất cả giáo viên
 };
 
 // ✅ Mapping roles với permissions
@@ -182,8 +192,8 @@ const ROLE_PERMISSIONS = {
   ],
 
   // ✅ BGH (Ban Giám Hiệu) - Teacher với isLeader = true
-  // Quyền BGH sẽ được kiểm tra trong checkPermission middleware dựa trên isLeader flag
-  // Không cần định nghĩa riêng vì sẽ được xử lý động
+  // Quyền xem mạnh, ít chỉnh sửa - được xử lý động trong middleware
+  // Bao gồm: xem tất cả học sinh, điểm, hạnh kiểm, lớp học, kỷ luật, điểm danh, thống kê
 
   // ✅ Teacher với các flags khác nhau sẽ có quyền tương ứng
   // Quyền cơ bản của teacher (tất cả giáo viên đều có)
@@ -204,6 +214,8 @@ const ROLE_PERMISSIONS = {
     exports.PERMISSIONS.DASHBOARD_VIEW_TEACHING,
     // Xem thông báo
     exports.PERMISSIONS.NOTIFICATION_VIEW,
+    // Khảo sát đánh giá giáo viên
+    exports.PERMISSIONS.SURVEY_VIEW_RESULTS,          // Giáo viên xem kết quả khảo sát của mình
   ],
 
   [exports.ROLES.STUDENT]: [
@@ -219,6 +231,8 @@ const ROLE_PERMISSIONS = {
     exports.PERMISSIONS.NOTIFICATION_VIEW,
     // Điểm danh
     exports.PERMISSIONS.ATTENDANCE_VIEW_SELF,
+    // Khảo sát đánh giá giáo viên
+    exports.PERMISSIONS.SURVEY_RESPOND,                // Học sinh làm khảo sát
   ],
 };
 

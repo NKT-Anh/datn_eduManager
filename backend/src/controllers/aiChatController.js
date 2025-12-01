@@ -8,6 +8,7 @@ const RoomAssignment = require('../models/exam/roomAssignment');
 const TeachingAssignment = require('../models/subject/teachingAssignment');
 const Schedule = require('../models/subject/schedule');
 const { chatWithAI, isAvailable: isOpenAIAvailable } = require('../services/openaiService');
+const { getCurrentSchoolYear } = require('../utils/schoolYearHelper');
 
 /* =========================================================
    🤖 AI CHAT CONTROLLER
@@ -72,9 +73,8 @@ exports.chat = async (req, res) => {
             if (teacher) {
               context.userName = teacher.name;
               
-              // Lấy các môn giáo viên đang dạy
-              const settings = await Setting.findOne();
-              const currentYear = settings?.currentSchoolYear || '2025-2026';
+              // ✅ Lấy các môn giáo viên đang dạy
+              const currentYear = await getCurrentSchoolYear() || '2025-2026';
               const now = new Date();
               const month = now.getMonth() + 1;
               const semester = (month >= 8 || month <= 1) ? '1' : '2';
@@ -528,9 +528,8 @@ async function findTeacherClasses(user) {
       };
     }
 
-    // Lấy năm học hiện tại
-    const settings = await Setting.findOne();
-    const currentYear = settings?.currentSchoolYear || '2025-2026';
+    // ✅ Lấy năm học hiện tại
+    const currentYear = await getCurrentSchoolYear() || '2025-2026';
     // Lấy học kỳ hiện tại từ ngày tháng
     const now = new Date();
     const month = now.getMonth() + 1; // 1-12

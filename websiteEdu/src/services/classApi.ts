@@ -12,7 +12,9 @@ export const classApi = {
      📋 LẤY DANH SÁCH LỚP
   ========================================================= */
   async getAll(params?: any): Promise<ClassType[]> {
-    const res = await api.get("/class", { params });
+    const res = await api.get("/class", {
+      params: { isDeleted: 'false', ...params }
+    });
     return res.data;
   },
 

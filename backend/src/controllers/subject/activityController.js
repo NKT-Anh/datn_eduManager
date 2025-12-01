@@ -4,14 +4,18 @@ const ScheduleConfig = require('../../models/subject/scheduleConfig');
 // 📌 Lấy danh sách tất cả hoạt động
 exports.getActivities = async (req, res) => {
   try {
-    const activities = await Activity.find().sort({ createdAt: -1 });
+    // ✅ Soft Delete: Filter isDeleted != true mặc định (bao gồm false, null, không có trường)
+    const { isDeleted = 'false' } = req.query;
+    const query = isDeleted === 'true' ? { isDeleted: true } : { isDeleted: { $ne: true } };
+
+    const activities = await Activity.find(query).sort({ createdAt: -1 });
     res.status(200).json(activities);
   } catch (err) {
     console.error('❌ [getActivities] Lỗi khi lấy danh sách hoạt động:', err);
     console.error('Error name:', err.name);
     console.error('Error message:', err.message);
     console.error('Error stack:', err.stack);
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Lỗi máy chủ khi lấy danh sách hoạt động.',
       error: err.message,
       details: process.env.NODE_ENV === 'development' ? err.stack : undefined
@@ -99,13 +103,24 @@ exports.updateActivity = async (req, res) => {
 };
 
 // 📌 Xóa hoạt động
+// ✅ Soft Delete - Xóa mềm hoạt động (chỉ đánh dấu, không xóa thật)
 exports.deleteActivity = async (req, res) => {
   try {
-    const activity = await Activity.findByIdAndDelete(req.params.id);
+    const { id } = req.params;
+    const activity = await Activity.findById(id);
+    
     if (!activity) {
       return res.status(404).json({ message: 'Không tìm thấy hoạt động.' });
     }
-    res.status(200).json({ message: 'Đã xóa hoạt động thành công.' });
+
+    // ✅ Đánh dấu isDeleted = true (soft delete)
+    activity.isDeleted = true;
+    await activity.save();
+
+    res.status(200).json({ 
+      message: 'Đã xóa hoạt động thành công (soft delete).',
+      activity: activity
+    });
   } catch (err) {
     console.error('❌ deleteActivity error:', err);
     res.status(500).json({ message: 'Lỗi máy chủ khi xóa hoạt động.' });

@@ -6,8 +6,10 @@ const BASE_URL = "/subjects"; // axiosClient đã có baseURL rồi
 
 export const subjectApi = {
   // 📘 Lấy danh sách tất cả môn học
-  getSubjects: async (): Promise<Subject[]> => {
-    const res = await axiosClient.get(BASE_URL);
+  getSubjects: async (params?: any): Promise<Subject[]> => {
+    const res = await axiosClient.get(BASE_URL, {
+      params: { isDeleted: 'false', ...params }
+    });
     return res.data;
   },
 

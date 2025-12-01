@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useSchoolYears } from '@/hooks';
+import { useCurrentAcademicYear } from '@/hooks/useCurrentAcademicYear';
 import api from '@/services/axiosInstance';
 import { toast } from 'sonner';
 import { 
@@ -26,7 +27,6 @@ import {
   Lock, 
   CheckCircle2, 
   AlertCircle,
-  Sparkles,
   Users
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -65,7 +65,9 @@ interface TimeInfo {
 
 export default function HomeroomConductPage() {
   const { backendUser } = useAuth();
-  const { currentYearData, currentYear, schoolYears: allSchoolYears } = useSchoolYears();
+  const { schoolYears: allSchoolYears } = useSchoolYears();
+  const { currentYearCode, currentYearData } = useCurrentAcademicYear();
+  const currentYear = currentYearCode;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [homeroomClass, setHomeroomClass] = useState<any>(null);
@@ -205,28 +207,6 @@ export default function HomeroomConductPage() {
     }
   };
 
-  // ✅ Tính toán đề xuất hạnh kiểm tự động
-  const calculateSuggested = async (studentId: string) => {
-    try {
-      const res = await api.get('/conducts/calculate-suggested', {
-        params: {
-          studentId,
-          year: selectedYear,
-          semester: selectedSemester
-        }
-      });
-      
-      if (res.data.success && res.data.data.suggested) {
-        toast.success(`Đề xuất: ${res.data.data.suggested}`);
-        fetchConducts(); // Refresh để hiển thị đề xuất
-      } else {
-        toast.info('Không thể tính toán tự động. Vui lòng nhập thủ công.');
-      }
-    } catch (error: any) {
-      console.error('Error calculating suggested:', error);
-      toast.error('Không thể tính toán đề xuất');
-    }
-  };
 
   // ✅ Lưu bản nháp
   const handleSaveDraft = async (recordId: string, conduct: string, note: string) => {
@@ -249,13 +229,34 @@ export default function HomeroomConductPage() {
 
   // ✅ Gửi phê duyệt
   const handleSubmit = async (recordId: string, conduct: string, note: string) => {
+    if (!conduct) {
+      toast.error('Vui lòng nhập hạnh kiểm trước khi gửi phê duyệt');
+      return;
+    }
+    
     try {
       setSaving(true);
-      await api.put(`/conducts/${recordId}`, {
+      const record = conducts.find(r => r._id === recordId);
+      
+      // ✅ Nếu record chưa có _id (null), gửi thêm studentId, year, semester để tạo mới
+      const payload: any = {
         conduct,
         conductNote: note,
         action: 'submit'
-      });
+      };
+      
+      if (!recordId || recordId === 'null' || recordId === 'undefined') {
+        if (record && record.studentId && selectedYear && selectedSemester) {
+          payload.studentId = record.studentId._id || record.studentId;
+          payload.year = selectedYear;
+          payload.semester = selectedSemester;
+        } else {
+          toast.error('Thiếu thông tin học sinh hoặc năm học/học kỳ');
+          return;
+        }
+      }
+      
+      await api.put(`/conducts/${recordId || 'new'}`, payload);
       toast.success('Đã gửi phê duyệt');
       fetchConducts();
     } catch (error: any) {
@@ -316,20 +317,33 @@ export default function HomeroomConductPage() {
       setSaving(true);
       const promises = conducts
         .filter(record => record.conductStatus !== 'locked' && record.conduct)
-        .map(record => 
-          api.put(`/conducts/${record._id}`, {
+        .map(record => {
+          const payload: any = {
             conduct: record.conduct,
             conductNote: record.conductNote || '',
             action: 'submit'
-          })
-        );
+          };
+          
+          // ✅ Nếu record chưa có _id, gửi thêm studentId, year, semester
+          if (!record._id || record._id === 'null' || record._id === 'undefined') {
+            if (record.studentId && selectedYear && selectedSemester) {
+              payload.studentId = record.studentId._id || record.studentId;
+              payload.year = selectedYear;
+              payload.semester = selectedSemester;
+            } else {
+              return Promise.reject(new Error('Thiếu thông tin học sinh'));
+            }
+          }
+          
+          return api.put(`/conducts/${record._id || 'new'}`, payload);
+        });
       
       await Promise.all(promises);
       toast.success('Đã gửi phê duyệt tất cả');
       fetchConducts();
     } catch (error: any) {
       console.error('Error submitting all:', error);
-      toast.error('Không thể gửi phê duyệt tất cả');
+      toast.error(error.response?.data?.error || 'Không thể gửi phê duyệt tất cả');
     } finally {
       setSaving(false);
     }
@@ -530,7 +544,6 @@ export default function HomeroomConductPage() {
                     <TableHead>STT</TableHead>
                     <TableHead>Mã HS</TableHead>
                     <TableHead>Họ và tên</TableHead>
-                    <TableHead>Đề xuất</TableHead>
                     <TableHead>Hạnh kiểm</TableHead>
                     <TableHead>Ghi chú</TableHead>
                     <TableHead>Trạng thái</TableHead>
@@ -543,36 +556,6 @@ export default function HomeroomConductPage() {
                       <TableCell>{index + 1}</TableCell>
                       <TableCell>{record.studentId.studentCode}</TableCell>
                       <TableCell className="font-medium">{record.studentId.name}</TableCell>
-                      <TableCell>
-                        {record.conductSuggested ? (
-                          <div className="flex items-center gap-2">
-                            {getConductBadge(record.conductSuggested)}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setEditConduct(record.conductSuggested || '');
-                                setEditNote(record.conductNote || '');
-                                setEditingRecord(record._id);
-                                setEditDialogOpen(true);
-                              }}
-                              className="h-6 px-2"
-                            >
-                              Dùng
-                            </Button>
-                          </div>
-                        ) : (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => calculateSuggested(record.studentId._id)}
-                            disabled={record.conductStatus === 'locked'}
-                          >
-                            <Sparkles className="h-3 w-3 mr-1" />
-                            Tính
-                          </Button>
-                        )}
-                      </TableCell>
                       <TableCell>
                         {record.conduct ? (
                           getConductBadge(record.conduct)

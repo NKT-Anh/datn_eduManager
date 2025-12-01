@@ -546,7 +546,8 @@ exports.initGradeTable = async (req, res) => {
       const students = await Student.find({ 
         classId, 
         status: 'active',
-        currentYear: classYear // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+        currentYear: classYear, // ✅ CHỈ lấy học sinh có currentYear trùng với năm học của lớp
+        isDeleted: { $ne: true } // ✅ Không lấy học sinh đã bị xóa mềm
       }).lean();
       if (students.length === 0) {
         continue;
@@ -641,17 +642,96 @@ exports.getStudentGrades = async (req, res) => {
     }
 
     // Kiểm tra học sinh có tồn tại không
-    const student = await Student.findById(targetStudentId).lean();
+    const student = await Student.findById(targetStudentId)
+      .populate('classId', 'homeroomTeacherId year')
+      .lean();
     if (!student) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy học sinh' });
     }
 
-    // Kiểm tra quyền truy cập (học sinh chỉ xem điểm của mình)
-    if (role === 'student' && targetStudentId !== student._id.toString()) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Bạn chỉ được xem điểm của chính mình' 
-      });
+    // Kiểm tra quyền truy cập
+    if (role === 'student') {
+      // Học sinh chỉ xem điểm của mình
+      if (targetStudentId !== student._id.toString()) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Bạn chỉ được xem điểm của chính mình' 
+        });
+      }
+    } else if (role === 'teacher') {
+      // GVCN chỉ xem điểm học sinh trong lớp chủ nhiệm
+      const Teacher = require('../../models/user/teacher');
+      const teacher = await Teacher.findOne({ accountId })
+        .select('yearRoles currentHomeroomClassId homeroomClassIds')
+        .lean();
+      
+      if (teacher) {
+        // Lấy năm học hiện tại hoặc từ query
+        // ✅ Sử dụng utility function để xác định năm học hiện tại
+        const { getEffectiveSchoolYear, getCurrentSchoolYear } = require('../../utils/schoolYearHelper');
+        let effectiveYear = schoolYear || null;
+        
+        if (!effectiveYear) {
+          // Nếu có req thì dùng getEffectiveSchoolYear, nếu không thì dùng getCurrentSchoolYear
+          if (req) {
+            effectiveYear = await getEffectiveSchoolYear(req);
+            } else {
+            effectiveYear = await getCurrentSchoolYear();
+          }
+        }
+        
+        // Kiểm tra xem giáo viên có phải GVCN của lớp học sinh không
+        const studentClassId = student.classId?._id || student.classId;
+        const studentClassYear = student.classId?.year || effectiveYear;
+        
+        // Kiểm tra từ yearRoles
+        let isHomeroom = false;
+        if (teacher.yearRoles && Array.isArray(teacher.yearRoles)) {
+          const yearRole = teacher.yearRoles.find(yr => String(yr.schoolYear) === String(studentClassYear));
+          if (yearRole && yearRole.isHomeroom && yearRole.currentHomeroomClassId) {
+            if (String(yearRole.currentHomeroomClassId) === String(studentClassId)) {
+              isHomeroom = true;
+            }
+          }
+        }
+        
+        // Kiểm tra từ homeroomClassIds (lịch sử)
+        if (!isHomeroom && teacher.homeroomClassIds && Array.isArray(teacher.homeroomClassIds)) {
+          const hasHomeroom = teacher.homeroomClassIds.some(
+            id => String(id._id || id) === String(studentClassId)
+          );
+          if (hasHomeroom) {
+            isHomeroom = true;
+          }
+        }
+        
+        // Kiểm tra trực tiếp từ lớp học sinh
+        if (!isHomeroom && student.classId && student.classId.homeroomTeacherId) {
+          const Class = require('../../models/class/class');
+          const studentClass = await Class.findById(studentClassId)
+            .select('homeroomTeacherId year')
+            .lean();
+          
+          if (studentClass && studentClass.homeroomTeacherId) {
+            const TeacherModel = require('../../models/user/teacher');
+            const homeroomTeacher = await TeacherModel.findById(studentClass.homeroomTeacherId)
+              .select('accountId')
+              .lean();
+            
+            if (homeroomTeacher && String(homeroomTeacher.accountId) === String(accountId)) {
+              isHomeroom = true;
+            }
+          }
+        }
+        
+        // Nếu không phải Admin và không phải GVCN, từ chối
+        if (!isHomeroom && role !== 'admin') {
+          return res.status(403).json({ 
+            success: false, 
+            message: 'Bạn chỉ được xem điểm của học sinh trong lớp chủ nhiệm' 
+          });
+        }
+      }
     }
 
     // Xây dựng query
@@ -726,6 +806,333 @@ exports.getStudentGrades = async (req, res) => {
   }
 };
 
+/* =========================================================
+   📊 LẤY ĐIỂM HỌC SINH VỚI SO SÁNH VỚI HỌC KỲ/NĂM TRƯỚC
+   - So sánh điểm hiện tại với cùng học kỳ năm trước
+   - So sánh HK2 với HK1 cùng năm học
+   - Hiển thị xu hướng tăng/giảm
+========================================================= */
+exports.getStudentGradesWithTrend = async (req, res) => {
+  try {
+    const { studentId, schoolYear, semester } = req.query;
+    const { role, accountId } = req.user || {};
+
+    let targetStudentId = studentId;
+
+    // Nếu là học sinh, tự động lấy studentId từ accountId của họ
+    if (role === 'student') {
+      const student = await Student.findOne({ accountId }).lean();
+      if (!student) {
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Không tìm thấy thông tin học sinh của bạn' 
+        });
+      }
+      targetStudentId = student._id.toString();
+    } else if (!targetStudentId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Thiếu studentId' 
+      });
+    }
+
+    // Kiểm tra học sinh có tồn tại không
+    const student = await Student.findById(targetStudentId).lean();
+    if (!student) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy học sinh' });
+    }
+
+    // ✅ Lấy điểm hiện tại
+    const currentQuery = { studentId: targetStudentId };
+    if (schoolYear) currentQuery.schoolYear = schoolYear;
+    if (semester) currentQuery.semester = semester;
+
+    const currentSummaries = await GradeSummary.find(currentQuery)
+      .populate('subjectId', 'name code includeInAverage')
+      .populate('classId', 'className classCode grade')
+      .sort({ 'subjectId.name': 1 })
+      .lean();
+
+    // ✅ So sánh với học kỳ trước (cùng năm học)
+    let previousSemesterComparison = null;
+    if (semester === '2' && schoolYear) {
+      // So sánh HK2 với HK1 cùng năm
+      const hk1Summaries = await GradeSummary.find({
+        studentId: targetStudentId,
+        schoolYear: schoolYear,
+        semester: '1',
+      })
+        .populate('subjectId', 'name code includeInAverage')
+        .lean();
+
+      if (hk1Summaries.length > 0) {
+        previousSemesterComparison = {
+          semester: '1',
+          schoolYear: schoolYear,
+          comparison: currentSummaries.map((current) => {
+            const previous = hk1Summaries.find(
+              (p) => String(p.subjectId._id) === String(current.subjectId._id)
+            );
+            if (!previous || current.average === null || previous.average === null) {
+              return {
+                subjectId: current.subjectId._id,
+                subjectName: current.subjectId.name,
+                currentAverage: current.average,
+                previousAverage: previous?.average || null,
+                trend: null,
+                trendPercentage: null,
+              };
+            }
+
+            const trend = current.average - previous.average;
+            const trendPercentage = previous.average > 0
+              ? ((trend / previous.average) * 100).toFixed(2)
+              : null;
+
+            return {
+              subjectId: current.subjectId._id,
+              subjectName: current.subjectId.name,
+              currentAverage: current.average,
+              previousAverage: previous.average,
+              trend: Number(trend.toFixed(2)),
+              trendPercentage: trendPercentage ? Number(trendPercentage) : null,
+            };
+          }),
+        };
+      }
+    }
+
+    // ✅ So sánh với cùng học kỳ năm trước
+    let previousYearComparison = null;
+    if (schoolYear && semester) {
+      // Tính năm học trước
+      const yearParts = schoolYear.split('-');
+      if (yearParts.length === 2) {
+        const previousYearStart = parseInt(yearParts[0]) - 1;
+        const previousYearEnd = parseInt(yearParts[1]) - 1;
+        const previousYear = `${previousYearStart}-${previousYearEnd}`;
+
+        const previousYearSummaries = await GradeSummary.find({
+          studentId: targetStudentId,
+          schoolYear: previousYear,
+          semester: semester,
+        })
+          .populate('subjectId', 'name code includeInAverage')
+          .lean();
+
+        if (previousYearSummaries.length > 0) {
+          previousYearComparison = {
+            schoolYear: previousYear,
+            semester: semester,
+            comparison: currentSummaries.map((current) => {
+              const previous = previousYearSummaries.find(
+                (p) => String(p.subjectId._id) === String(current.subjectId._id)
+              );
+              if (!previous || current.average === null || previous.average === null) {
+                return {
+                  subjectId: current.subjectId._id,
+                  subjectName: current.subjectId.name,
+                  currentAverage: current.average,
+                  previousAverage: previous?.average || null,
+                  trend: null,
+                  trendPercentage: null,
+                };
+              }
+
+              const trend = current.average - previous.average;
+              const trendPercentage = previous.average > 0
+                ? ((trend / previous.average) * 100).toFixed(2)
+                : null;
+
+              return {
+                subjectId: current.subjectId._id,
+                subjectName: current.subjectId.name,
+                currentAverage: current.average,
+                previousAverage: previous.average,
+                trend: Number(trend.toFixed(2)),
+                trendPercentage: trendPercentage ? Number(trendPercentage) : null,
+              };
+            }),
+          };
+        }
+      }
+    }
+
+    // Format dữ liệu trả về
+    const formattedGrades = currentSummaries.map(summary => ({
+      _id: summary._id,
+      subject: {
+        _id: summary.subjectId._id,
+        name: summary.subjectId.name,
+        code: summary.subjectId.code,
+        includeInAverage: summary.subjectId.includeInAverage,
+      },
+      class: summary.classId ? {
+        _id: summary.classId._id,
+        className: summary.classId.className,
+        classCode: summary.classId.classCode,
+        grade: summary.classId.grade,
+      } : null,
+      schoolYear: summary.schoolYear,
+      semester: summary.semester,
+      averages: summary.averages,
+      average: summary.average,
+      result: summary.result,
+      computedAt: summary.computedAt,
+    }));
+
+    res.json({
+      success: true,
+      count: formattedGrades.length,
+      data: formattedGrades,
+      previousSemesterComparison, // So sánh với HK1 (nếu đang xem HK2)
+      previousYearComparison, // So sánh với cùng học kỳ năm trước
+    });
+  } catch (err) {
+    console.error('[GradeController::getStudentGradesWithTrend]', err);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Không thể lấy điểm của học sinh', 
+      error: err.message 
+    });
+  }
+};
+
+/* =========================================================
+   🔧 HELPER: Tính xu hướng điểm cho một học sinh
+========================================================= */
+const calculateStudentTrend = async (studentId, schoolYear, semester) => {
+  const trends = {
+    previousSemester: null, // So sánh với HK1 (nếu đang xem HK2)
+    previousYear: null, // So sánh với cùng học kỳ năm trước
+  };
+
+  // ✅ So sánh với học kỳ trước (cùng năm học)
+  if (semester === '2' && schoolYear) {
+    const [currentSummaries, hk1Summaries] = await Promise.all([
+      GradeSummary.find({
+        studentId,
+        schoolYear,
+        semester: '2',
+      })
+        .populate('subjectId', 'name code includeInAverage')
+        .lean(),
+      GradeSummary.find({
+        studentId,
+        schoolYear,
+        semester: '1',
+      })
+        .populate('subjectId', 'name code includeInAverage')
+        .lean(),
+    ]);
+
+    if (hk1Summaries.length > 0) {
+      const comparison = currentSummaries.map((current) => {
+        const previous = hk1Summaries.find(
+          (p) => String(p.subjectId._id) === String(current.subjectId._id)
+        );
+        if (!previous || current.average === null || previous.average === null) {
+          return {
+            subjectId: String(current.subjectId._id),
+            subjectName: current.subjectId.name,
+            currentAverage: current.average,
+            previousAverage: previous?.average || null,
+            trend: null,
+            trendPercentage: null,
+          };
+        }
+
+        const trend = current.average - previous.average;
+        const trendPercentage = previous.average > 0
+          ? ((trend / previous.average) * 100).toFixed(2)
+          : null;
+
+        return {
+          subjectId: String(current.subjectId._id),
+          subjectName: current.subjectId.name,
+          currentAverage: current.average,
+          previousAverage: previous.average,
+          trend: Number(trend.toFixed(2)),
+          trendPercentage: trendPercentage ? Number(trendPercentage) : null,
+        };
+      });
+
+      trends.previousSemester = {
+        semester: '1',
+        schoolYear,
+        comparison,
+      };
+    }
+  }
+
+  // ✅ So sánh với cùng học kỳ năm trước
+  if (schoolYear && semester) {
+    const yearParts = schoolYear.split('-');
+    if (yearParts.length === 2) {
+      const previousYearStart = parseInt(yearParts[0]) - 1;
+      const previousYearEnd = parseInt(yearParts[1]) - 1;
+      const previousYear = `${previousYearStart}-${previousYearEnd}`;
+
+      const [currentSummaries, previousYearSummaries] = await Promise.all([
+        GradeSummary.find({
+          studentId,
+          schoolYear,
+          semester,
+        })
+          .populate('subjectId', 'name code includeInAverage')
+          .lean(),
+        GradeSummary.find({
+          studentId,
+          schoolYear: previousYear,
+          semester,
+        })
+          .populate('subjectId', 'name code includeInAverage')
+          .lean(),
+      ]);
+
+      if (previousYearSummaries.length > 0) {
+        const comparison = currentSummaries.map((current) => {
+          const previous = previousYearSummaries.find(
+            (p) => String(p.subjectId._id) === String(current.subjectId._id)
+          );
+          if (!previous || current.average === null || previous.average === null) {
+            return {
+              subjectId: String(current.subjectId._id),
+              subjectName: current.subjectId.name,
+              currentAverage: current.average,
+              previousAverage: previous?.average || null,
+              trend: null,
+              trendPercentage: null,
+            };
+          }
+
+          const trend = current.average - previous.average;
+          const trendPercentage = previous.average > 0
+            ? ((trend / previous.average) * 100).toFixed(2)
+            : null;
+
+          return {
+            subjectId: String(current.subjectId._id),
+            subjectName: current.subjectId.name,
+            currentAverage: current.average,
+            previousAverage: previous.average,
+            trend: Number(trend.toFixed(2)),
+            trendPercentage: trendPercentage ? Number(trendPercentage) : null,
+          };
+        });
+
+        trends.previousYear = {
+          schoolYear: previousYear,
+          semester,
+          comparison,
+        };
+      }
+    }
+  }
+
+  return trends;
+};
+
 // GET /grades/admin/all - Admin/BGH xem tất cả điểm của tất cả học sinh
 exports.getAllStudentsGrades = async (req, res) => {
   try {
@@ -733,6 +1140,13 @@ exports.getAllStudentsGrades = async (req, res) => {
     
     // Build query
     let studentQuery = {};
+
+    // ✅ Soft Delete: Filter isDeleted != true mặc định (bao gồm false, null, không có trường)
+    const { isDeleted = 'false' } = req.query;
+    if (isDeleted !== 'true') {
+      studentQuery.isDeleted = { $ne: true };
+    }
+
     if (classId) {
       studentQuery.classId = classId;
     } else if (grade) {
@@ -853,7 +1267,8 @@ exports.getAllStudentsGrades = async (req, res) => {
         student.gpa = yearRecord.gpa;
         student.conduct = yearRecord.conduct;
         student.academicLevel = yearRecord.academicLevel || null;
-        student.rank = yearRecord.rank;
+        student.rank = yearRecord.rank || null; // Rank trong lớp
+        student.rankGrade = yearRecord.rankGrade || null; // Rank trong khối
       }
     });
 
@@ -882,26 +1297,41 @@ exports.getAllStudentsGrades = async (req, res) => {
   }
 };
 
-// GET /grades/admin/statistics - Thống kê điểm theo lớp/khối/năm học
-exports.getStatistics = async (req, res) => {
+/* =========================================================
+   📊 LẤY ĐIỂM NHIỀU HỌC SINH VỚI XU HƯỚNG
+   - Tương tự getAllStudentsGrades nhưng có thêm xu hướng
+========================================================= */
+exports.getAllStudentsGradesWithTrend = async (req, res) => {
   try {
-    const { schoolYear, semester, classId, grade } = req.query;
-
-    // Build query
-    let classQuery = {};
-    if (classId) {
-      classQuery._id = classId;
-    } else if (grade) {
-      classQuery.grade = String(grade);
+    const { schoolYear, semester, classId, subjectId, grade, keyword } = req.query;
+    
+    // Build query (giống getAllStudentsGrades)
+    let studentQuery = {};
+    const { isDeleted = 'false' } = req.query;
+    if (isDeleted !== 'true') {
+      studentQuery.isDeleted = { $ne: true };
     }
 
-    const classes = await Class.find(classQuery).lean();
-    const classIds = classes.map(c => c._id);
+    if (classId) {
+      studentQuery.classId = classId;
+    } else if (grade) {
+      const classes = await Class.find({ grade: String(grade) }).select('_id').lean();
+      studentQuery.classId = { $in: classes.map(c => c._id) };
+    }
+    if (keyword) {
+      studentQuery.$or = [
+        { name: { $regex: keyword, $options: 'i' } },
+        { studentCode: { $regex: keyword, $options: 'i' } }
+      ];
+    }
 
-    // ✅ Get students in these classes - Filter by currentYear if schoolYear is provided
-    let studentQuery = { classId: { $in: classIds } };
-    if (schoolYear) {
-      // Lấy năm học của các lớp
+    if (schoolYear && studentQuery.classId) {
+      const classInfo = await Class.findById(studentQuery.classId).select('year').lean();
+      if (classInfo) {
+        studentQuery.currentYear = classInfo.year;
+      }
+    } else if (schoolYear && studentQuery.classId && studentQuery.classId.$in) {
+      const classes = await Class.find({ _id: { $in: studentQuery.classId.$in } }).select('year').lean();
       const classYears = [...new Set(classes.map(c => c.year).filter(Boolean))];
       if (classYears.length === 1) {
         studentQuery.currentYear = classYears[0];
@@ -916,6 +1346,167 @@ exports.getStatistics = async (req, res) => {
       })
       .lean();
     
+    const validStudents = students.filter(s => {
+      if (!s.classId) return false;
+      if (schoolYear && s.classId.year && String(s.classId.year) !== String(schoolYear)) {
+        return false;
+      }
+      return true;
+    });
+    const studentIds = validStudents.map(s => s._id);
+
+    let summaryQuery = { studentId: { $in: studentIds } };
+    if (schoolYear) summaryQuery.schoolYear = schoolYear;
+    if (semester) summaryQuery.semester = semester;
+    if (subjectId) summaryQuery.subjectId = subjectId;
+
+    const summaries = await GradeSummary.find(summaryQuery)
+      .populate('subjectId', 'name code includeInAverage')
+      .populate('classId', 'className classCode grade')
+      .lean();
+
+    let yearRecordQuery = { studentId: { $in: studentIds } };
+    if (schoolYear) yearRecordQuery.year = schoolYear;
+    if (semester) {
+      if (semester === '1') yearRecordQuery.semester = 'HK1';
+      else if (semester === '2') yearRecordQuery.semester = 'HK2';
+    }
+    const yearRecords = await StudentYearRecord.find(yearRecordQuery)
+      .populate('studentId', 'name studentCode')
+      .populate('classId', 'className grade')
+      .lean();
+
+    // Group by student
+    const studentMap = new Map();
+    validStudents.forEach(s => {
+      studentMap.set(String(s._id), {
+        _id: s._id,
+        name: s.name,
+        studentCode: s.studentCode,
+        class: s.classId ? {
+          _id: s.classId._id,
+          className: s.classId.className,
+          classCode: s.classId.classCode,
+          grade: s.classId.grade
+        } : null,
+        subjects: [],
+        trends: null, // Sẽ được tính sau
+      });
+    });
+
+    // Add summaries to students
+    summaries.forEach(summary => {
+      const studentId = String(summary.studentId);
+      if (!studentMap.has(studentId)) return;
+      
+      const student = studentMap.get(studentId);
+      if (!student.subjects) student.subjects = [];
+      
+      const yearRecord = yearRecords.find(yr => 
+        String(yr.studentId) === studentId &&
+        (!schoolYear || yr.year === schoolYear) &&
+        (!semester || (semester === '1' && yr.semester === 'HK1') || (semester === '2' && yr.semester === 'HK2'))
+      );
+
+      student.subjects.push({
+        _id: summary._id,
+        subject: {
+          _id: summary.subjectId._id,
+          name: summary.subjectId.name,
+          code: summary.subjectId.code
+        },
+        averages: summary.averages || {},
+        average: summary.average,
+        result: summary.result,
+        semester: summary.semester,
+        schoolYear: summary.schoolYear
+      });
+
+      if (yearRecord) {
+        student.gpa = yearRecord.gpa;
+        student.conduct = yearRecord.conduct;
+        student.academicLevel = yearRecord.academicLevel || null;
+        student.rank = yearRecord.rank || null; // Rank trong lớp
+        student.rankGrade = yearRecord.rankGrade || null; // Rank trong khối
+      }
+    });
+
+    // ✅ Tính xu hướng cho từng học sinh (song song)
+    const trendPromises = Array.from(studentMap.values()).map(async (student) => {
+      if (schoolYear && semester) {
+        const trends = await calculateStudentTrend(student._id, schoolYear, semester);
+        student.trends = trends;
+      }
+      return student;
+    });
+    await Promise.all(trendPromises);
+
+    // Calculate semester/year averages
+    const result = Array.from(studentMap.values()).map(student => {
+      if (student.subjects && student.subjects.length > 0) {
+        const validAverages = student.subjects
+          .filter(s => s.average !== null && s.average !== undefined)
+          .map(s => s.average);
+        if (validAverages.length > 0) {
+          student.semesterAverage = validAverages.reduce((a, b) => a + b, 0) / validAverages.length;
+        }
+      }
+      return student;
+    });
+
+    res.json({
+      success: true,
+      count: result.length,
+      data: result,
+      filters: { schoolYear, semester, classId, subjectId, grade, keyword }
+    });
+  } catch (err) {
+    console.error('[GradeController::getAllStudentsGradesWithTrend]', err);
+    res.status(500).json({ success: false, message: 'Không thể lấy điểm', error: err.message });
+  }
+};
+
+// GET /grades/admin/statistics - Thống kê điểm theo lớp/khối/năm học
+exports.getStatistics = async (req, res) => {
+  try {
+    const { schoolYear, semester, classId, grade } = req.query;
+    console.log('📊 [getStatistics] Request params:', { schoolYear, semester, classId, grade });
+
+    // Build query
+    let classQuery = {};
+    if (classId) {
+      classQuery._id = classId;
+    } else if (grade) {
+      classQuery.grade = String(grade);
+    }
+
+    const classes = await Class.find(classQuery).lean();
+    const classIds = classes.map(c => c._id);
+
+    // ✅ Get students in these classes - Filter by currentYear if schoolYear is provided
+    let studentQuery = { 
+      classId: { $in: classIds },
+      isDeleted: { $ne: true } // ✅ Không lấy học sinh đã bị xóa mềm
+    };
+    if (schoolYear) {
+      // Lấy năm học của các lớp
+      const classYears = [...new Set(classes.map(c => c.year).filter(Boolean))];
+      if (classYears.length === 1) {
+        studentQuery.currentYear = classYears[0];
+      }
+    }
+    
+    console.log('📊 [getStatistics] Querying students with:', studentQuery);
+
+    const students = await Student.find(studentQuery)
+      .populate({
+        path: 'classId',
+        select: 'className classCode grade year'
+      })
+      .lean();
+
+    console.log('📊 [getStatistics] Found students:', students.length);
+
     // ✅ Lọc lại để chỉ lấy học sinh có classId hợp lệ và đúng năm học (nếu có schoolYear)
     const validStudents2 = students.filter(s => {
       if (!s.classId) return false;
@@ -924,6 +1515,9 @@ exports.getStatistics = async (req, res) => {
       }
       return true;
     });
+
+    console.log('📊 [getStatistics] Valid students after filter:', validStudents2.length);
+
     const studentIds = validStudents2.map(s => s._id);
 
     // Get grade summaries
@@ -931,10 +1525,14 @@ exports.getStatistics = async (req, res) => {
     if (schoolYear) summaryQuery.schoolYear = schoolYear;
     if (semester) summaryQuery.semester = semester;
 
+    console.log('📊 [getStatistics] Querying summaries with:', summaryQuery);
+
     const summaries = await GradeSummary.find(summaryQuery)
       .populate('subjectId', 'name')
       .populate('classId', 'className grade')
       .lean();
+
+    console.log('📊 [getStatistics] Found summaries:', summaries.length);
 
     // Get year records for academic level
     let yearRecordQuery = { studentId: { $in: studentIds } };
@@ -944,7 +1542,13 @@ exports.getStatistics = async (req, res) => {
       else if (semester === '2') yearRecordQuery.semester = 'HK2';
       else if (semester === 'CN') yearRecordQuery.semester = 'CN';
     }
+
+    console.log('📊 [getStatistics] Querying yearRecords with:', yearRecordQuery);
+
     const yearRecords = await StudentYearRecord.find(yearRecordQuery).lean();
+    console.log('📊 [getStatistics] Found yearRecords:', yearRecords.length);
+
+    console.log('📊 [getStatistics] Starting calculation...');
 
     // Calculate statistics
     const stats = {
@@ -955,13 +1559,13 @@ exports.getStatistics = async (req, res) => {
         good: 0,
         average: 0,
         weak: 0,
-        total: validStudents.length
+        total: validStudents2.length
       }
     };
 
     // Group by class
     classes.forEach(cls => {
-      const clsStudents = students.filter(s => String(s.classId) === String(cls._id));
+      const clsStudents = validStudents2.filter(s => String(s.classId) === String(cls._id));
       const clsStudentIds = clsStudents.map(s => String(s._id));
       const clsYearRecords = yearRecords.filter(yr => clsStudentIds.includes(String(yr.studentId)));
 
@@ -999,25 +1603,36 @@ exports.getStatistics = async (req, res) => {
       stats.byGrade[cls.grade].weak += weak;
     });
 
-    // Calculate overall
-    const excellent = yearRecords.filter(yr => yr.academicLevel === 'Giỏi').length;
-    const good = yearRecords.filter(yr => yr.academicLevel === 'Khá').length;
-    const average = yearRecords.filter(yr => yr.academicLevel === 'Trung bình').length;
-    const weak = yearRecords.filter(yr => yr.academicLevel === 'Yếu').length;
+    try {
+      // Calculate overall
+      const excellent = yearRecords.filter(yr => yr.academicLevel === 'Giỏi').length;
+      const good = yearRecords.filter(yr => yr.academicLevel === 'Khá').length;
+      const average = yearRecords.filter(yr => yr.academicLevel === 'Trung bình').length;
+      const weak = yearRecords.filter(yr => yr.academicLevel === 'Yếu').length;
 
-    stats.overall = {
-      excellent,
-      good,
-      average,
-      weak,
-      total: students.length
-    };
+      stats.overall = {
+        excellent,
+        good,
+        average,
+        weak,
+        total: validStudents2.length
+      };
 
-    res.json({
-      success: true,
-      data: stats,
-      filters: { schoolYear, semester, classId, grade }
-    });
+      console.log('📊 [getStatistics] Final stats:', JSON.stringify(stats, null, 2));
+
+      res.json({
+        success: true,
+        data: stats,
+        filters: { schoolYear, semester, classId, grade }
+      });
+    } catch (calcError) {
+      console.error('❌ [getStatistics] Calculation error:', calcError);
+      res.status(500).json({
+        success: false,
+        message: 'Lỗi tính toán thống kê',
+        error: calcError.message
+      });
+    }
   } catch (err) {
     console.error('[GradeController::getStatistics]', err);
     res.status(500).json({ success: false, message: 'Không thể lấy thống kê', error: err.message });
@@ -1342,6 +1957,178 @@ exports.getHomeroomClassAllGrades = async (req, res) => {
   }
 };
 
+/* =========================================================
+   📊 LẤY ĐIỂM LỚP CHỦ NHIỆM VỚI XU HƯỚNG
+   - Tương tự getHomeroomClassAllGrades nhưng có thêm xu hướng
+========================================================= */
+exports.getHomeroomClassAllGradesWithTrend = async (req, res) => {
+  try {
+    const { classId, schoolYear, semester } = req.query;
+    const { role, accountId } = req.user;
+
+    if (!classId || !schoolYear || !semester) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Thiếu tham số classId/schoolYear/semester' 
+      });
+    }
+
+    const permissionContext = req.permissionContext || {};
+    const isHomeroom = permissionContext.isHomeroom || false;
+    const homeroomClassIds = permissionContext.homeroomClassIds || [];
+
+    if (role === 'teacher' && isHomeroom) {
+      if (!homeroomClassIds.includes(String(classId))) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Không phải lớp chủ nhiệm của bạn' 
+        });
+      }
+    } else if (role !== 'admin') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Không có quyền truy cập' 
+      });
+    }
+
+    const classInfo = await Class.findById(classId).select('year').lean();
+    if (!classInfo) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy lớp học' });
+    }
+    
+    const students = await Student.find({ 
+      classId, 
+      status: 'active',
+      currentYear: classInfo.year
+    })
+      .populate({
+        path: 'classId',
+        select: 'className classCode grade year',
+        match: { year: classInfo.year }
+      })
+      .lean();
+    
+    const validStudents = students.filter(s => {
+      if (!s.classId) return false;
+      return String(s.classId.year || classInfo.year) === String(classInfo.year);
+    });
+
+    if (validStudents.length === 0) {
+      return res.json({ 
+        success: true, 
+        count: 0, 
+        data: [],
+        message: 'Lớp không có học sinh nào' 
+      });
+    }
+
+    const studentIds = validStudents.map(s => s._id);
+
+    const gradeSummaries = await GradeSummary.find({
+      studentId: { $in: studentIds },
+      schoolYear,
+      semester
+    })
+      .populate('subjectId', 'name code includeInAverage')
+      .populate('classId', 'className classCode grade')
+      .lean();
+
+    const yearRecords = await StudentYearRecord.find({
+      studentId: { $in: studentIds },
+      year: schoolYear,
+      semester: semester === '1' ? 'HK1' : semester === '2' ? 'HK2' : semester
+    })
+      .populate('studentId', 'name studentCode')
+      .populate('classId', 'className grade')
+      .lean();
+
+    const studentMap = new Map();
+    validStudents.forEach(student => {
+      studentMap.set(String(student._id), {
+        _id: student._id,
+        name: student.name,
+        studentCode: student.studentCode,
+        class: student.classId ? {
+          _id: student.classId._id,
+          className: student.classId.className,
+          classCode: student.classId.classCode,
+          grade: student.classId.grade
+        } : null,
+        subjects: [],
+        conduct: null,
+        academicLevel: null,
+        gpa: null,
+        trends: null, // Sẽ được tính sau
+      });
+    });
+
+    gradeSummaries.forEach(summary => {
+      const studentId = String(summary.studentId);
+      if (!studentMap.has(studentId)) return;
+
+      const student = studentMap.get(studentId);
+      student.subjects.push({
+        _id: summary._id,
+        subject: {
+          _id: summary.subjectId._id,
+          name: summary.subjectId.name,
+          code: summary.subjectId.code,
+          includeInAverage: summary.subjectId.includeInAverage
+        },
+        averages: summary.averages || {},
+        average: summary.average,
+        result: summary.result,
+        semester: summary.semester,
+        schoolYear: summary.schoolYear
+      });
+    });
+
+    yearRecords.forEach(record => {
+      const studentId = String(record.studentId);
+      if (!studentMap.has(studentId)) return;
+
+      const student = studentMap.get(studentId);
+      student.conduct = record.conduct;
+      student.academicLevel = record.academicLevel;
+      student.gpa = record.gpa;
+    });
+
+    // ✅ Tính xu hướng cho từng học sinh (song song)
+    const trendPromises = Array.from(studentMap.values()).map(async (student) => {
+      const trends = await calculateStudentTrend(student._id, schoolYear, semester);
+      student.trends = trends;
+      return student;
+    });
+    await Promise.all(trendPromises);
+
+    const result = Array.from(studentMap.values()).map(student => {
+      if (student.subjects && student.subjects.length > 0) {
+        const validAverages = student.subjects
+          .filter(s => s.average !== null && s.average !== undefined)
+          .map(s => s.average);
+        if (validAverages.length > 0) {
+          student.semesterAverage = validAverages.reduce((a, b) => a + b, 0) / validAverages.length;
+        }
+      }
+      return student;
+    });
+
+    res.json({
+      success: true,
+      count: result.length,
+      data: result,
+      filters: { classId, schoolYear, semester }
+    });
+  } catch (err) {
+    console.error('[GradeController::getHomeroomClassAllGradesWithTrend]', err);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Không thể lấy bảng điểm lớp chủ nhiệm', 
+      error: err.message 
+    });
+  }
+};
+
 /**
  * GET /grades/homeroom/averages - GVCN xem điểm trung bình từng môn, điểm TB học kỳ/năm của học sinh
  * Query: classId, schoolYear, studentId (optional)
@@ -1378,7 +2165,11 @@ exports.getHomeroomClassAverages = async (req, res) => {
     }
 
     // Lấy học sinh trong lớp
-    let studentQuery = { classId, status: 'active' };
+    let studentQuery = { 
+      classId, 
+      status: 'active',
+      isDeleted: { $ne: true } // ✅ Không lấy học sinh đã bị xóa mềm
+    };
     if (studentId) {
       studentQuery._id = studentId;
     }
@@ -1575,7 +2366,11 @@ exports.getHomeroomClassClassification = async (req, res) => {
     }
 
     // Lấy tất cả học sinh trong lớp
-    const students = await Student.find({ classId, status: 'active' })
+    const students = await Student.find({ 
+      classId, 
+      status: 'active',
+      isDeleted: { $ne: true } // ✅ Không lấy học sinh đã bị xóa mềm
+    })
       .populate('classId', 'className classCode grade')
       .lean();
 
@@ -1679,7 +2474,8 @@ exports.getHomeroomClassClassification = async (req, res) => {
         conduct: record?.conduct || null,
         academicLevel: record?.academicLevel || null,
         gpa: gpa,
-        rank: record?.rank || null,
+        rank: record?.rank || null, // Rank trong lớp
+        rankGrade: record?.rankGrade || null, // Rank trong khối
         semester: record?.semester || semester || null,
         year: schoolYear
       };

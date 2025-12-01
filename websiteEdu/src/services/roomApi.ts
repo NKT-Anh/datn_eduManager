@@ -13,7 +13,9 @@ export interface Room {
 
 export const roomApi = {
   async getAll(params?: any): Promise<Room[]> {
-    const res = await api.get("/rooms", { params });
+    const res = await api.get("/rooms", {
+      params: { isDeleted: 'false', ...params }
+    });
     return res.data;
   },
   async create(data: Partial<Room>) {

@@ -23,6 +23,7 @@ import studentApi from '@/services/studentApi';
 import { classApi } from '@/services/classApi';
 // ✅ Sử dụng hooks thay vì API trực tiếp
 import { useSchoolYears } from '@/hooks';
+import { useCurrentAcademicYear } from '@/hooks/useCurrentAcademicYear';
 import {
   School,
   BookOpen,
@@ -54,30 +55,15 @@ const MyClassesPage = () => {
   const [loading, setLoading] = useState(true);
 
   // ✅ Lấy năm học hiện tại từ hooks (ưu tiên năm học có isActive: true)
-  const { schoolYears: allSchoolYears, currentYear, currentYearData } = useSchoolYears();
+  const { schoolYears: allSchoolYears } = useSchoolYears();
+  const { currentYearCode, currentYearData } = useCurrentAcademicYear();
+  
+  // ✅ Set năm học hiện tại khi có dữ liệu
   useEffect(() => {
-    if (currentYearData) {
-      // Ưu tiên năm học hiện tại (isActive: true) - dùng code thay vì name
-      const yearCode = currentYearData.code || currentYearData.name;
-      if (yearCode) {
-        setSchoolYear(yearCode);
-      }
-    } else if (allSchoolYears.length > 0) {
-      // Nếu không có năm học active, lấy năm học cuối cùng - ưu tiên code
-      const lastYear = allSchoolYears[allSchoolYears.length - 1];
-      const yearCode = lastYear.code || lastYear.name;
-      if (yearCode) {
-        setSchoolYear(yearCode);
-      }
-    } else {
-      // Fallback: tính toán năm học từ ngày hiện tại
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = now.getMonth() + 1;
-      const currentYear = month >= 8 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
-      setSchoolYear(currentYear);
+    if (currentYearCode) {
+      setSchoolYear(currentYearCode);
     }
-  }, [allSchoolYears, currentYearData]);
+  }, [currentYearCode]);
 
   // Lấy danh sách phân công giảng dạy
   useEffect(() => {

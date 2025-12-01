@@ -1,5 +1,6 @@
 const Teacher = require('../../models/user/teacher');
 const Class = require('../../models/class/class');
+const { getCurrentSchoolYear } = require('../../utils/schoolYearHelper');
 
 const populatedTeacher = (query) => {
   return query
@@ -14,13 +15,19 @@ const populatedTeacher = (query) => {
 // Lấy tất cả giáo viên
 exports.getAllTeachers = async (req, res) => {
   try {
-    const teachers = await populatedTeacher(Teacher.find());
+    // ✅ Filter isDeleted = false mặc định (bao gồm cả undefined/null cho dữ liệu cũ)
+    const { isDeleted = 'false' } = req.query;
+    const query = isDeleted === 'true' 
+      ? { isDeleted: true }
+      : { isDeleted: { $ne: true } }; // Lấy tất cả trừ true (false, null, undefined)
+
+    const teachers = await populatedTeacher(Teacher.find(query));
 
     res.json(teachers);
   } catch (error) {
     console.error('❌ Lỗi khi lấy danh sách giáo viên:', error);
-    res.status(500).json({ 
-      message: 'Lỗi khi lấy danh sách giáo viên', 
+    res.status(500).json({
+      message: 'Lỗi khi lấy danh sách giáo viên',
       error: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
@@ -31,15 +38,23 @@ exports.getAllTeachers = async (req, res) => {
 exports.getTeacher = async (req, res) => {
   const { id } = req.params;
   try {
-    const teacher = await populatedTeacher(Teacher.findById(id));
+    // ✅ Admin có thể xem tất cả (bao gồm đã xóa), user thường chỉ xem chưa xóa
+    const { isDeleted } = req.query;
+    const query = { _id: id };
+
+    if (isDeleted !== 'true') {
+      query.isDeleted = { $ne: true };
+    }
+
+    const teacher = await populatedTeacher(Teacher.findOne(query));
 
     if (!teacher) return res.status(404).json({ message: 'Không tìm thấy giáo viên' });
 
     res.json(teacher);
   } catch (error) {
     console.error('❌ Lỗi khi lấy giáo viên:', error);
-    res.status(500).json({ 
-      message: 'Lỗi khi xem 1 giáo viên', 
+    res.status(500).json({
+      message: 'Lỗi khi xem 1 giáo viên',
       error: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
@@ -53,12 +68,10 @@ async function initializeTeacherYearRole(teacherId, schoolYear = null) {
     const teacher = await Teacher.findById(teacherId);
     if (!teacher) return;
 
-    // Lấy năm học hiện tại nếu không được cung cấp
+    // ✅ Lấy năm học hiện tại nếu không được cung cấp
     let targetYear = schoolYear;
     if (!targetYear) {
-      const Setting = require('../../models/settings');
-      const settings = await Setting.findOne().lean();
-      targetYear = settings?.currentSchoolYear;
+      targetYear = await getCurrentSchoolYear();
     }
 
     if (!targetYear) {
@@ -92,6 +105,14 @@ async function initializeTeacherYearRole(teacherId, schoolYear = null) {
 
 exports.createTeacher = async (req, res) => {
   try {
+    // ✅ Kiểm tra quyền: BGH không được thêm giáo viên
+    const user = req.user;
+    if (user?.role === 'teacher' && user?.teacherFlags?.isLeader) {
+      return res.status(403).json({ 
+        message: 'Ban Giám Hiệu không có quyền thêm giáo viên. Vui lòng liên hệ quản trị viên.' 
+      });
+    }
+
     const code = `gv${Date.now().toString().slice(-5)}`;
     const teacher = await Teacher.create({
       ...req.body,
@@ -119,9 +140,24 @@ exports.createTeacher = async (req, res) => {
 // Cập nhật giáo viên
 exports.updateTeacher = async (req, res) => {
   try {
-    const { phone } = req.body;
+    // ✅ Kiểm tra quyền: BGH không được sửa thông tin giáo viên
+    const user = req.user;
+    if (user?.role === 'teacher' && user?.teacherFlags?.isLeader) {
+      return res.status(403).json({ 
+        message: 'Ban Giám Hiệu không có quyền sửa thông tin giáo viên. Vui lòng liên hệ quản trị viên.' 
+      });
+    }
+
+    const { phone, email } = req.body;
     
-    // ✅ Nếu có thay đổi số điện thoại, đồng bộ vào Account và Firebase
+    // ✅ Không cho phép bất kỳ ai sửa email đăng nhập (chỉ Admin có thể qua route riêng)
+    if (email) {
+      return res.status(403).json({ 
+        message: 'Không được phép thay đổi email đăng nhập. Vui lòng liên hệ quản trị viên.' 
+      });
+    }
+    
+    // ✅ Nếu có thay đổi số điện thoại, đồng bộ vào Account và Firebase (chỉ Admin)
     if (phone) {
       const teacher = await Teacher.findById(req.params.id);
       if (teacher && teacher.accountId) {
@@ -172,14 +208,31 @@ exports.updateTeacher = async (req, res) => {
 };
 
 // Xóa giáo viên
+// ✅ Soft Delete - Xóa mềm giáo viên (chỉ đánh dấu, không xóa thật)
 exports.deleteTeacher = async (req, res) => {
   try {
-    const teacher = await Teacher.findByIdAndDelete(req.params.id);
-    if (!teacher) return res.status(404).json({ message: 'Không tìm thấy giáo viên' });
+    const { id } = req.params;
+    const teacher = await Teacher.findById(id);
+    
+    if (!teacher) {
+      return res.status(404).json({ message: 'Không tìm thấy giáo viên' });
+    }
 
-    res.json({ message: 'Xóa giáo viên thành công' });
+    // ✅ Đánh dấu isDeleted = true (soft delete)
+    teacher.isDeleted = true;
+    teacher.status = 'inactive'; // Đồng thời cập nhật status
+    await teacher.save();
+
+    res.json({ 
+      message: 'Đã xóa giáo viên thành công (soft delete)',
+      teacher: teacher
+    });
   } catch (error) {
-    res.status(400).json({ message: 'Không thể xóa giáo viên', error });
+    console.error('❌ Lỗi khi xóa giáo viên:', error);
+    res.status(400).json({ 
+      message: 'Không thể xóa giáo viên', 
+      error: error.message 
+    });
   }
 };
 
@@ -471,17 +524,35 @@ exports.checkTeacherStatus = async (req, res) => {
       // Prefer teacherFlags populated by authMiddleware (year-aware)
       const teacherFlags = req.user.teacherFlags || null;
       // Still need departmentId from DB
-      const currentTeacherDoc = await Teacher.findOne({ accountId: req.user.accountId })
-        .select('departmentId isDepartmentHead')
+      const currentTeacherDoc = await Teacher.findOne({ 
+        accountId: req.user.accountId,
+        isDeleted: { $ne: true } // ✅ Chỉ lấy giáo viên chưa bị xóa
+      })
+        .select('departmentId isDepartmentHead yearRoles')
         .lean();
       const isDeptHead = teacherFlags?.isDepartmentHead ?? Boolean(currentTeacherDoc?.isDepartmentHead);
-      if (isDeptHead && currentTeacherDoc?.departmentId) {
-        departmentFilter = currentTeacherDoc.departmentId.toString();
+      
+      // ✅ Lấy departmentId từ yearRoles theo năm học hiện tại
+      if (isDeptHead && currentTeacherDoc) {
+        const roleForYear = Array.isArray(currentTeacherDoc.yearRoles) 
+          ? currentTeacherDoc.yearRoles.find(r => String(r.schoolYear) === String(currentYear))
+          : null;
+        
+        const deptId = roleForYear?.departmentId 
+          ? (roleForYear.departmentId._id?.toString() || roleForYear.departmentId.toString())
+          : (currentTeacherDoc.departmentId?._id?.toString() || currentTeacherDoc.departmentId?.toString());
+        
+        if (deptId) {
+          departmentFilter = deptId;
+        }
       }
     }
 
-    // ✅ Lấy tất cả giáo viên active
-    let teachers = await Teacher.find({ status: 'active' })
+    // ✅ Lấy tất cả giáo viên active (chưa bị xóa)
+    let teachers = await Teacher.find({ 
+      status: 'active',
+      isDeleted: { $ne: true } // ✅ Chỉ lấy giáo viên chưa bị xóa
+    })
       .select('-availableMatrix')
       .populate('subjects.subjectId', 'name code')
       .populate('mainSubject', 'name code')
@@ -499,10 +570,17 @@ exports.checkTeacherStatus = async (req, res) => {
       };
       return Object.assign({}, t, { _effectiveFlags: eff });
     });
+    // ✅ Filter theo department - lấy từ yearRoles theo năm học hiện tại
     if (departmentFilter) {
       teachers = teachers.filter(teacher => {
-        const deptId = teacher.departmentId?._id || teacher.departmentId;
-        return deptId && deptId.toString() === departmentFilter;
+        // ✅ Ưu tiên lấy departmentId từ yearRoles của năm học hiện tại
+        const roleForYear = Array.isArray(teacher.yearRoles) 
+          ? teacher.yearRoles.find(r => String(r.schoolYear) === String(currentYear))
+          : null;
+        const deptId = roleForYear?.departmentId 
+          ? roleForYear.departmentId.toString()
+          : (teacher.departmentId?._id?.toString() || teacher.departmentId?.toString());
+        return deptId && deptId === departmentFilter;
       });
     }
     
@@ -844,9 +922,111 @@ exports.checkTeacherStatus = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Lỗi khi kiểm tra tình trạng giáo viên:', error);
-    res.status(500).json({ 
-      message: 'Không thể kiểm tra tình trạng giáo viên', 
-      error: error.message 
+    res.status(500).json({
+      message: 'Không thể kiểm tra tình trạng giáo viên',
+      error: error.message
+    });
+  }
+};
+
+// ✅ Soft Delete - Xóa mềm giáo viên (chỉ đánh dấu, không xóa thật)
+exports.softDeleteTeacher = async (req, res) => {
+  try {
+    // ✅ Kiểm tra quyền: BGH không được xóa giáo viên
+    const user = req.user;
+    if (user?.role === 'teacher' && user?.teacherFlags?.isLeader) {
+      return res.status(403).json({ 
+        message: 'Ban Giám Hiệu không có quyền xóa giáo viên. Vui lòng liên hệ quản trị viên.' 
+      });
+    }
+
+    const { id } = req.params;
+
+    const teacher = await Teacher.findById(id);
+    if (!teacher) {
+      return res.status(404).json({ message: 'Không tìm thấy giáo viên' });
+    }
+
+    // ✅ Đánh dấu isDeleted = true
+    teacher.isDeleted = true;
+    teacher.status = 'inactive'; // Đồng thời cập nhật status
+    await teacher.save();
+
+    res.json({
+      message: 'Đã xóa mềm giáo viên thành công',
+      teacher: teacher
+    });
+  } catch (error) {
+    console.error('❌ Lỗi khi xóa mềm giáo viên:', error);
+    res.status(500).json({
+      message: 'Lỗi khi xóa mềm giáo viên',
+      error: error.message
+    });
+  }
+};
+
+// ✅ Restore - Khôi phục giáo viên đã xóa mềm
+exports.restoreTeacher = async (req, res) => {
+  try {
+    // ✅ Kiểm tra quyền: BGH không được khôi phục giáo viên
+    const user = req.user;
+    if (user?.role === 'teacher' && user?.teacherFlags?.isLeader) {
+      return res.status(403).json({ 
+        message: 'Ban Giám Hiệu không có quyền khôi phục giáo viên. Vui lòng liên hệ quản trị viên.' 
+      });
+    }
+
+    const { id } = req.params;
+
+    const teacher = await Teacher.findById(id);
+    if (!teacher) {
+      return res.status(404).json({ message: 'Không tìm thấy giáo viên' });
+    }
+
+    // ✅ Khôi phục isDeleted = false
+    teacher.isDeleted = false;
+    teacher.status = 'active'; // Khôi phục status
+    await teacher.save();
+
+    const restoredTeacher = await populatedTeacher(Teacher.findById(id));
+
+    res.json({
+      message: 'Đã khôi phục giáo viên thành công',
+      teacher: restoredTeacher
+    });
+  } catch (error) {
+    console.error('❌ Lỗi khi khôi phục giáo viên:', error);
+    res.status(500).json({
+      message: 'Lỗi khi khôi phục giáo viên',
+      error: error.message
+    });
+  }
+};
+
+// ✅ Force Delete - Xóa vĩnh viễn (chỉ Admin)
+exports.forceDeleteTeacher = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // ✅ Kiểm tra quyền Admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Chỉ Admin mới có quyền xóa vĩnh viễn' });
+    }
+
+    const teacher = await Teacher.findByIdAndDelete(id);
+    if (!teacher) {
+      return res.status(404).json({ message: 'Không tìm thấy giáo viên' });
+    }
+
+    res.json({
+      message: 'Đã xóa vĩnh viễn giáo viên thành công',
+      teacher: teacher
+    });
+  } catch (error) {
+    console.error('❌ Lỗi khi xóa vĩnh viễn giáo viên:', error);
+    res.status(500).json({
+      message: 'Lỗi khi xóa vĩnh viễn giáo viên',
+      error: error.message
     });
   }
 };

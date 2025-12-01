@@ -24,6 +24,13 @@ const mongoose = require('mongoose');
       result: { type: String }, // "D" (đạt), "K" (không đạt) hoặc null (chưa có điểm cho môn không tính TB)
       computedAt: { type: Date, default: Date.now },
       version: { type: String }, // optional nếu muốn tracking cấu hình tính
+
+      // ✅ Soft Delete - Không xóa thật vì là dữ liệu pháp lý (học bạ)
+      isDeleted: {
+        type: Boolean,
+        default: false,
+        description: 'Đánh dấu xóa mềm - giữ hồ sơ học bạ'
+      },
     },
     { timestamps: true }
   );
