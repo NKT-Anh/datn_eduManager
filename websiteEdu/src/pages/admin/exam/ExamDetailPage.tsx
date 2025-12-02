@@ -124,21 +124,6 @@ export default function ExamDetailPage() {
                 </Tag>
               )}
             </Space>
-            {/* Nút phân tích điểm thi - chỉ hiện khi đã có điểm */}
-            {exam.gradesPublished && (hasPermission(PERMISSIONS.EXAM_VIEW) || hasPermission(PERMISSIONS.DASHBOARD_VIEW_ALL)) && (
-              <div style={{ marginTop: 12 }}>
-                <Button
-                  type="primary"
-                  icon={<TrendingUp size={16} />}
-                  onClick={() => {
-                    const base = window.location.pathname.includes('/admin/') ? '/admin/exam' : '/bgh/exam';
-                    navigate(`${base}/${examId}/analysis`);
-                  }}
-                >
-                  📊 Phân tích điểm thi
-                </Button>
-              </div>
-            )}
           </Space>
 
           {/* 🎯 Nút thêm tất cả học sinh và phòng thi */}

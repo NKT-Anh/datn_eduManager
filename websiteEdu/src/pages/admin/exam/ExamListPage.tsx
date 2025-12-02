@@ -664,23 +664,6 @@ try {
           <Button size="small" icon={<BarChart3 size={16} />} onClick={() => setStatsExam(r)}>
             Thống kê
           </Button>
-          {(backendUser?.role === 'admin' || (backendUser?.role === 'teacher' && backendUser?.teacherFlags?.isLeader)) && (
-            <Button
-              size="small"
-              icon={<TrendingUp size={16} />}
-              onClick={() => {
-                const base =
-                  backendUser?.role === 'admin'
-                    ? '/admin/exam'
-                    : backendUser?.role === 'bgh' || (backendUser?.role === 'teacher' && backendUser?.teacherFlags?.isLeader)
-                    ? '/bgh/exam'
-                    : '/admin/exam';
-                navigate(`${base}/${r._id}/analysis`);
-              }}
-            >
-              Phân tích điểm
-            </Button>
-          )}
           <Button
             size="small"
             icon={<Eye size={16} />}

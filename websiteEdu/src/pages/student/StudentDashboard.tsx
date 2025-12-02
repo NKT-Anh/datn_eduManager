@@ -59,6 +59,7 @@ const StudentDashboard = () => {
   
   const [studentInfo, setStudentInfo] = useState<any>(null);
   const [todaySchedule, setTodaySchedule] = useState<ScheduleItem[]>([]);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
   const [recentGrades, setRecentGrades] = useState<GradeItem[]>([]);
   const [averageGrade, setAverageGrade] = useState<number>(0);
   const [attendanceRate, setAttendanceRate] = useState<number>(0);
@@ -93,36 +94,90 @@ const StudentDashboard = () => {
   // Lấy lịch học hôm nay
   useEffect(() => {
     const fetchTodaySchedule = async () => {
-      if (!studentInfo || !currentYear) return;
+      if (!studentInfo || !currentYear) {
+        setTodaySchedule([]);
+        return;
+      }
 
       try {
+        setScheduleLoading(true);
         const classId = typeof studentInfo.classId === 'object' 
           ? studentInfo.classId?._id 
           : studentInfo.classId;
 
-        if (!classId) return;
+        if (!classId) {
+          setTodaySchedule([]);
+          setScheduleLoading(false);
+          return;
+        }
 
         const schedule = await scheduleApi.getScheduleByClass(classId, currentYear, semester);
         
-        if (schedule && schedule.schedules) {
-          // Lấy thứ trong tuần (0 = Chủ nhật, 1 = Thứ 2, ...)
-          const today = new Date().getDay();
-          const dayOfWeek = today === 0 ? 7 : today; // Chuyển Chủ nhật thành 7
+        if (schedule && schedule.timetable && Array.isArray(schedule.timetable)) {
+          // ✅ Lấy thứ trong tuần theo JavaScript getDay() (0 = Chủ nhật, 1 = Thứ 2, ..., 6 = Thứ 7)
+          const jsDay = new Date().getDay();
+          
+          // ✅ Helper: Chuyển JavaScript getDay() sang tên ngày tiếng Anh
+          const jsDayToEnglishName = (day: number): string => {
+            const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            return dayNames[day] || '';
+          };
+          
+          const todayEnglishName = jsDayToEnglishName(jsDay);
+          
+          // ✅ Helper: Normalize tên ngày để so sánh (giống ViewSchedule)
+          const normalizeDayName = (dayName: string): string => {
+            if (!dayName) return '';
+            return dayName.trim().toLowerCase().slice(0, 3); // Lấy 3 ký tự đầu
+          };
+          
+          const todayNormalized = normalizeDayName(todayEnglishName);
+          
+          // ✅ Tìm ngày hôm nay trong timetable (so sánh 3 ký tự đầu, giống ViewSchedule)
+          const todayEntry = schedule.timetable.find((day: any) => {
+            const dayName = day.day || '';
+            return normalizeDayName(dayName) === todayNormalized;
+          });
 
-          // Lọc lịch theo thứ trong tuần
-          const todayItems = schedule.schedules
-            .filter((item: any) => item.dayOfWeek === dayOfWeek)
-            .sort((a: any, b: any) => a.period - b.period);
+          if (todayEntry && todayEntry.periods && Array.isArray(todayEntry.periods)) {
+            // ✅ Chuyển đổi periods thành format ScheduleItem
+            const todayItems: ScheduleItem[] = todayEntry.periods
+              .filter((period: any) => period.subject && period.subject.trim() !== '')
+              .map((period: any) => ({
+                _id: period._id || `period_${period.period}_${jsDay}`,
+                subjectId: {
+                  _id: typeof period.subject === 'object' ? period.subject._id : period.subject,
+                  name: typeof period.subject === 'object' ? period.subject.name : period.subject,
+                  subjectCode: typeof period.subject === 'object' ? period.subject.code : undefined,
+                },
+                period: period.period || 1,
+                room: period.room || undefined,
+                teacherId: period.teacher ? {
+                  _id: typeof period.teacher === 'object' ? period.teacher._id : period.teacher,
+                  name: typeof period.teacher === 'object' ? period.teacher.name : period.teacher,
+                } : undefined,
+              }))
+              .sort((a: ScheduleItem, b: ScheduleItem) => a.period - b.period);
 
-          setTodaySchedule(todayItems);
+            setTodaySchedule(todayItems);
+          } else {
+            setTodaySchedule([]);
+          }
+        } else {
+          setTodaySchedule([]);
         }
       } catch (error: any) {
         console.error('Error fetching schedule:', error);
+        setTodaySchedule([]);
+      } finally {
+        setScheduleLoading(false);
       }
     };
 
     if (studentInfo && currentYear) {
       fetchTodaySchedule();
+    } else {
+      setTodaySchedule([]);
     }
   }, [studentInfo, currentYear, semester]);
 
@@ -199,8 +254,9 @@ const StudentDashboard = () => {
   }, [studentInfo, currentYear, semester]);
 
   const getDayName = (dayOfWeek: number) => {
+    // JavaScript getDay(): 0=Chủ nhật, 1=Thứ 2, 2=Thứ 3, 3=Thứ 4, 4=Thứ 5, 5=Thứ 6, 6=Thứ 7
     const days = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
-    return days[dayOfWeek === 0 ? 0 : dayOfWeek - 1] || 'Chủ nhật';
+    return days[dayOfWeek] || 'Chủ nhật';
   };
 
   const today = new Date();
@@ -299,7 +355,7 @@ const StudentDashboard = () => {
             <CardDescription>Các tiết học trong ngày</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {loading ? (
+            {scheduleLoading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>

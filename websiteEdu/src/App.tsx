@@ -44,9 +44,9 @@ import ExamDashboard from "./pages/admin/exam/ExamDashboard.tsx";
 import SurveyManagementPage from "./pages/admin/SurveyManagementPage.tsx";
 import AwardManagementPage from "./pages/admin/AwardManagementPage.tsx";
 import ExamDetailPage from "./pages/admin/exam/ExamDetailPage.tsx";
-import ExamGradeAnalysisPage from "./pages/admin/exam/ExamGradeAnalysisPage.tsx";
 import AllExamSchedulesPage from "./pages/admin/exam/allPage/AllExamSchedulesPage.tsx";
 import ExamSchedulePage from "./pages/admin/exam/ExamSchedulePage.tsx";
+import ExamGradesSearchPage from "./pages/admin/exam/ExamGradesSearchPage.tsx";
 import ExamRoomAssignmentPage from "./pages/admin/exam/ExamRoomAssignmentPage.tsx";
 import ExamSupervisorAssignmentPage from "./pages/admin/exam/ExamSupervisorAssignmentPage.tsx";
 import ProposalHistoryPage from "./pages/admin/ProposalHistoryPage.tsx";
@@ -159,9 +159,9 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/admin/exam/exam-list", element: <ExamListPage /> },
     // { path: "/admin/exam/new", element: <ExamForm /> },
     { path: "/admin/exam/:examId", element: <ExamDetailPage /> },
-    { path: "/admin/exam/:examId/analysis", element: <ExamGradeAnalysisPage /> },
     { path: "/admin/exam/exam-dashboard", element: <ExamDashboard /> },
     { path: "/admin/exam/schedule", element: <ExamSchedulePage /> },
+    { path: "/admin/exam/grades-search", element: <ExamGradesSearchPage /> },
     { path: "/admin/exam/room-assignment", element: <ExamRoomAssignmentPage /> },
     { path: "/admin/exam/supervisor-assignment", element: <ExamSupervisorAssignmentPage /> },
     { path: "/admin/notifications", element: <NotificationsPage /> },
@@ -196,6 +196,7 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/student/profile", element: <ProfilePage /> },
     { path: "/student/exams/student-schedule", element: <StudentSchedule /> },
     { path: "/student/exams/exam-room", element: <ExamRoom /> },
+    { path: "/student/exams/grades-search", element: <ExamGradesSearchPage /> },
   ],
   // QLBM (Trưởng bộ môn) - sử dụng lại một số pages từ teacher
   qlbm: [
@@ -271,7 +272,6 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/bgh/schedule", element: <SchedulePage /> },
     { path: "/bgh/exam/exam-list", element: <ExamListPage /> },
     { path: "/bgh/exam/:examId", element: <ExamDetailPage /> },
-    { path: "/bgh/exam/:examId/analysis", element: <ExamGradeAnalysisPage /> },
     { path: "/bgh/exam/exam-dashboard", element: <ExamDashboard /> },
     { path: "/bgh/exam/schedule", element: <ExamSchedulePage /> },
     { path: "/bgh/notifications", element: <NotificationsPage /> },

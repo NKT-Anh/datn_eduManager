@@ -219,6 +219,8 @@ const ROLE_PERMISSIONS = {
   ],
 
   [exports.ROLES.STUDENT]: [
+    // Xem năm học (thông tin công khai)
+    exports.PERMISSIONS.YEAR_VIEW,
     // Xem bản thân
     exports.PERMISSIONS.STUDENT_VIEW_SELF,
     exports.PERMISSIONS.SCHEDULE_VIEW_SELF,

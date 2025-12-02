@@ -387,7 +387,7 @@ exports.getCandidatesForExam = async (req, res) => {
 exports.getStudentsByExam = async (req, res) => {
   try {
     const { examId } = req.params;
-    const { grade, page = 1, limit = 50 } = req.query;
+    const { grade, page = 1, limit } = req.query;
 
     // ✅ Kiểm tra exam tồn tại và có year
     const exam = await Exam.findById(examId).select("year");
@@ -401,7 +401,12 @@ exports.getStudentsByExam = async (req, res) => {
     const filter = { exam: examId };
     if (grade) filter.grade = String(grade);
 
-    const data = await ExamStudent.find(filter)
+    // ✅ Nếu limit = 0 hoặc không có limit, trả về tất cả (không phân trang)
+    const limitNum = limit ? parseInt(limit) : 0;
+    const pageNum = parseInt(page);
+    const shouldPaginate = limitNum > 0;
+
+    let query = ExamStudent.find(filter)
       .populate("exam", "name year semester") // ✅ Populate exam để có year
       .populate({
         path: "student",
@@ -413,15 +418,20 @@ exports.getStudentsByExam = async (req, res) => {
       })
       .populate("class", "className classCode grade year") // ✅ ExamStudent.class (nhóm lớp trong kỳ thi)
       .populate("room", "code grade") // ✅ Populate FixedExamRoom (room) để hiển thị phòng nhóm
-      .sort({ grade: 1, "student.name": 1 })
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit));
+      .sort({ grade: 1, "student.name": 1 });
 
+    // ✅ Chỉ phân trang nếu có limit > 0
+    if (shouldPaginate) {
+      query = query.skip((pageNum - 1) * limitNum).limit(limitNum);
+    }
+
+    const data = await query.lean();
     const total = await ExamStudent.countDocuments(filter);
+
     res.json({
       total,
-      totalPages: Math.ceil(total / limit),
-      page: parseInt(page),
+      totalPages: shouldPaginate ? Math.ceil(total / limitNum) : 1,
+      page: pageNum,
       data,
       examYear: exam.year, // ✅ Trả về năm học
     });

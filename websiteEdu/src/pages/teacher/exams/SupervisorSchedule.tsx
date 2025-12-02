@@ -66,8 +66,15 @@ const SupervisorSchedule: React.FC = () => {
       const publishedExams = rawExams.filter((exam: Exam) => exam.status === 'published');
       const now = new Date();
       const visibleExams = publishedExams.filter((exam) => shouldDisplayExam(exam, now));
+      
+      // ✅ Sắp xếp exams theo ngày bắt đầu (ngày gần nhất lên đầu)
+      const sortedExams = visibleExams.sort((a: Exam, b: Exam) => {
+        const dateA = a.startDate ? new Date(a.startDate).getTime() : 0;
+        const dateB = b.startDate ? new Date(b.startDate).getTime() : 0;
+        return dateB - dateA; // Ngày mới nhất lên đầu
+      });
 
-      setExams(visibleExams);
+      setExams(sortedExams);
 
       setSelectedExamId((prev) => {
         if (prev && visibleExams.some((exam) => exam._id === prev)) {
@@ -94,7 +101,22 @@ const SupervisorSchedule: React.FC = () => {
       }
 
       const res = await teacherExamApi.getSchedules(teacherId, selectedExamId || undefined);
-      setSchedules(res.data || []);
+      const schedulesData = res.data || [];
+      
+      // ✅ Sắp xếp schedules theo ngày và giờ (ngày gần nhất lên đầu)
+      const sortedSchedules = schedulesData.sort((a: TeacherExamSchedule, b: TeacherExamSchedule) => {
+        const dateA = a.date ? new Date(a.date).getTime() : 0;
+        const dateB = b.date ? new Date(b.date).getTime() : 0;
+        if (dateA !== dateB) {
+          return dateA - dateB; // Ngày sớm hơn lên đầu
+        }
+        // Nếu cùng ngày, sắp xếp theo giờ bắt đầu
+        const timeA = a.startTime || "00:00";
+        const timeB = b.startTime || "00:00";
+        return timeA.localeCompare(timeB);
+      });
+      
+      setSchedules(sortedSchedules);
     } catch (err: any) {
       console.error("Lỗi khi tải lịch coi thi:", err);
       message.error(err?.response?.data?.error || "Không thể tải lịch coi thi");

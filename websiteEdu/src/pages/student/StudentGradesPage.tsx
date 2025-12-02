@@ -441,6 +441,31 @@ const StudentGradesPage = () => {
     return score.toFixed(1);
   };
 
+  // 🎯 Lấy xu hướng điểm của môn học
+  const getSubjectTrend = (subjectId: string, semester: 'HK1' | 'HK2') => {
+    if (semester === 'HK2' && previousSemesterComparison) {
+      const trend = previousSemesterComparison.comparison.find(
+        (c) => String(c.subjectId) === String(subjectId)
+      );
+      return trend || null;
+    }
+    return null;
+  };
+
+  // 🎨 Lấy icon xu hướng
+  const getTrendIcon = (trend: number) => {
+    if (trend > 0) return <TrendingUp className="h-3 w-3 text-green-600" />;
+    if (trend < 0) return <TrendingDown className="h-3 w-3 text-red-600" />;
+    return <Minus className="h-3 w-3 text-gray-500" />;
+  };
+
+  // 🎨 Lấy màu xu hướng
+  const getTrendColor = (trend: number) => {
+    if (trend > 0) return 'text-green-600';
+    if (trend < 0) return 'text-red-600';
+    return 'text-gray-500';
+  };
+
   // Lấy học lực và hạnh kiểm theo học kỳ/năm
   // ✅ Chỉ lấy hạnh kiểm đã được phê duyệt (approved/locked)
   const getConductInfo = (semester: 'HK1' | 'HK2' | 'CN') => {

@@ -27,6 +27,8 @@ import {
   Loader2,
   CalendarDays,
   BarChart3,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
 interface AttendanceRecord {
@@ -117,7 +119,9 @@ const StudentAttendancePage = () => {
   const fetchDayAttendance = async () => {
     try {
       setLoading(true);
+      const studentId = backendUser?.studentId || backendUser?._id;
       const res = await attendanceApi.getAttendance({
+        studentId,
         date: selectedDate,
         schoolYear,
         semester,
@@ -146,15 +150,18 @@ const StudentAttendancePage = () => {
       const weekStart = new Date(selectedWeek);
       const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekEnd.getDate() + 6);
+      const studentId = backendUser?.studentId || backendUser?._id;
       
       const [res, statsRes] = await Promise.all([
         attendanceApi.getAttendance({
+          studentId,
           schoolYear,
           semester,
           startDate: weekStart.toISOString().split('T')[0],
           endDate: weekEnd.toISOString().split('T')[0],
         }).catch(() => ({ success: false, data: [] })),
         attendanceApi.getAttendanceStats({
+          studentId,
           schoolYear,
           semester,
           startDate: weekStart.toISOString().split('T')[0],
@@ -167,10 +174,13 @@ const StudentAttendancePage = () => {
       }
       if (statsRes.success && statsRes.data) {
         setStats(statsRes.data);
+      } else {
+        setStats({ total: 0, absent: 0, excused: 0, late: 0 });
       }
     } catch (err: any) {
       console.error('Error fetching week attendance:', err);
       setAttendances([]);
+      setStats({ total: 0, absent: 0, excused: 0, late: 0 });
     } finally {
       setLoading(false);
     }
@@ -180,15 +190,18 @@ const StudentAttendancePage = () => {
     try {
       setLoading(true);
       const [startDate, endDate] = getMonthRange(selectedMonth);
+      const studentId = backendUser?.studentId || backendUser?._id;
       
       const [res, statsRes] = await Promise.all([
         attendanceApi.getAttendance({
+          studentId,
           schoolYear,
           semester,
           startDate,
           endDate,
         }).catch(() => ({ success: false, data: [] })),
         attendanceApi.getAttendanceStats({
+          studentId,
           schoolYear,
           semester,
           startDate,
@@ -201,10 +214,14 @@ const StudentAttendancePage = () => {
       }
       if (statsRes.success && statsRes.data) {
         setStats(statsRes.data);
+      } else {
+        // ✅ Nếu không có stats từ API, set default
+        setStats({ total: 0, absent: 0, excused: 0, late: 0 });
       }
     } catch (err: any) {
       console.error('Error fetching month attendance:', err);
       setAttendances([]);
+      setStats({ total: 0, absent: 0, excused: 0, late: 0 });
     } finally {
       setLoading(false);
     }
@@ -214,15 +231,18 @@ const StudentAttendancePage = () => {
     try {
       setLoading(true);
       const [startDate, endDate] = getSemesterRange(schoolYear, semester);
+      const studentId = backendUser?.studentId || backendUser?._id;
       
       const [res, statsRes] = await Promise.all([
         attendanceApi.getAttendance({
+          studentId,
           schoolYear,
           semester,
           startDate,
           endDate,
         }).catch(() => ({ success: false, data: [] })),
         attendanceApi.getAttendanceStats({
+          studentId,
           schoolYear,
           semester,
           startDate,
@@ -235,10 +255,13 @@ const StudentAttendancePage = () => {
       }
       if (statsRes.success && statsRes.data) {
         setStats(statsRes.data);
+      } else {
+        setStats({ total: 0, absent: 0, excused: 0, late: 0 });
       }
     } catch (err: any) {
       console.error('Error fetching semester attendance:', err);
       setAttendances([]);
+      setStats({ total: 0, absent: 0, excused: 0, late: 0 });
     } finally {
       setLoading(false);
     }
@@ -393,21 +416,23 @@ const StudentAttendancePage = () => {
     return days;
   }, [selectedMonth, viewMode]);
 
-  // Tính thống kê
+  // Tính thống kê từ API
   const calculateStats = () => {
     if (!stats) return null;
     
-    const totalSessions = stats.totalAbsent || 0;
-    const present = stats.present || 0;
+    // ✅ Lấy từ API stats
+    const total = stats.total || stats.totalSessions || 0;
     const absent = stats.absent || 0;
     const excused = stats.excused || 0;
     const late = stats.late || 0;
-    const total = present + absent + excused + late;
-    const attendanceRate = total > 0 ? ((present / total) * 100).toFixed(1) : '0';
+    
+    // ✅ Tỷ lệ chuyên cần = (Tổng - Vắng không phép - Vắng có phép) / Tổng * 100
+    const attendanceRate = total > 0 
+      ? (((total - absent - excused) / total) * 100).toFixed(1) 
+      : '0';
     
     return {
       total,
-      present,
       absent,
       excused,
       late,
@@ -547,19 +572,12 @@ const StudentAttendancePage = () => {
 
       {/* Stats */}
       {displayStats && (viewMode === 'week' || viewMode === 'month' || viewMode === 'calendar' || viewMode === 'semester' || viewMode === 'year') && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card>
             <CardContent className="p-4 text-center">
               <ClipboardList className="h-6 w-6 text-primary mx-auto mb-2" />
               <p className="text-2xl font-bold">{displayStats.total}</p>
               <p className="text-sm text-muted-foreground">Tổng số buổi</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 text-center">
-              <Check className="h-6 w-6 text-green-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-green-600">{displayStats.present}</p>
-              <p className="text-sm text-muted-foreground">Có mặt</p>
             </CardContent>
           </Card>
           <Card>
@@ -650,13 +668,58 @@ const StudentAttendancePage = () => {
       ) : viewMode === 'calendar' ? (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 mb-2">
               <Calendar className="h-5 w-5" />
-              Lịch điểm danh tháng {new Date(selectedMonth + '-01').toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' })}
+              Lịch điểm danh
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="mb-4">
               Mỗi ô đại diện cho một ngày. Màu sắc thể hiện trạng thái điểm danh.
             </CardDescription>
+            {/* Calendar Header với nút chuyển tháng */}
+            <div className="flex items-center justify-center gap-4 mb-4">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => {
+                  const [year, month] = selectedMonth.split('-');
+                  const date = new Date(parseInt(year), parseInt(month) - 1, 1);
+                  date.setMonth(date.getMonth() - 1);
+                  setSelectedMonth(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`);
+                }}
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </Button>
+              <h3 className="text-lg font-semibold min-w-[180px] text-center">
+                {new Date(selectedMonth + '-01').toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' })}
+              </h3>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => {
+                  const [year, month] = selectedMonth.split('-');
+                  const date = new Date(parseInt(year), parseInt(month) - 1, 1);
+                  date.setMonth(date.getMonth() + 1);
+                  const now = new Date();
+                  // Chỉ cho phép chọn tháng trong tương lai nếu không quá 1 tháng
+                  if (date <= new Date(now.getFullYear(), now.getMonth() + 1, 1)) {
+                    setSelectedMonth(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`);
+                  }
+                }}
+                disabled={
+                  (() => {
+                    const [year, month] = selectedMonth.split('-');
+                    const date = new Date(parseInt(year), parseInt(month) - 1, 1);
+                    date.setMonth(date.getMonth() + 1);
+                    const now = new Date();
+                    return date > new Date(now.getFullYear(), now.getMonth() + 1, 1);
+                  })()
+                }
+              >
+                <ChevronRight className="h-5 w-5" />
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-7 gap-2">

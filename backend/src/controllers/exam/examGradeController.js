@@ -306,17 +306,33 @@ exports.getGradesByExam = async (req, res) => {
         gradeMap.set(`${esId}_${subjId}`, g);
       });
 
+      // ✅ Đảm bảo lấy tất cả môn thi từ ExamSchedule (nếu ExamStudent không có subjects)
+      // Lấy danh sách môn thi từ ExamSchedule (tất cả môn của kỳ thi)
+      const allExamSubjects = allSchedules
+        .map(s => s.subject)
+        .filter(s => s && s._id)
+        .reduce((acc, subj) => {
+          const subjId = String(subj._id);
+          if (!acc.find(s => String(s._id) === subjId)) {
+            acc.push(subj);
+          }
+          return acc;
+        }, []);
+
       // Kết hợp ExamStudent với ExamGrade
       const result = [];
       examStudents.forEach(es => {
-        // Lấy các môn thi từ ExamStudent.subjects hoặc ExamSchedule
+        // ✅ Luôn lấy tất cả môn thi từ ExamSchedule để đảm bảo hiển thị đầy đủ
+        // Nếu ExamStudent có subjects riêng, vẫn dùng, nhưng fallback về allExamSubjects
         let studentSubjects = [];
         if (es.subjects && es.subjects.length > 0) {
-          // Dùng subjects từ ExamStudent
-          studentSubjects = es.subjects.map(s => s.subject).filter(s => s);
-        } else {
-          // Fallback: lấy từ ExamSchedule (tất cả môn của kỳ thi)
-          studentSubjects = allSchedules.map(s => s.subject).filter(s => s);
+          // Dùng subjects từ ExamStudent nếu có
+          studentSubjects = es.subjects.map(s => s.subject).filter(s => s && s._id);
+        }
+        
+        // ✅ Nếu không có subjects từ ExamStudent hoặc rỗng, dùng tất cả môn từ ExamSchedule
+        if (studentSubjects.length === 0) {
+          studentSubjects = [...allExamSubjects];
         }
 
         // Lọc theo subjectId nếu có
@@ -331,7 +347,7 @@ exports.getGradesByExam = async (req, res) => {
           );
         }
 
-        // Tạo record cho mỗi môn
+        // ✅ Tạo record cho mỗi môn (đảm bảo tất cả học sinh dự thi đều có record cho tất cả môn)
         studentSubjects.forEach(subj => {
           const subjId = String(subj._id || subj);
           const grade = gradeMap.get(`${es._id}_${subjId}`);
@@ -535,8 +551,11 @@ exports.updateGrade = async (req, res) => {
     // ✅ Lấy ExamGrade hiện tại để lấy thông tin exam và student
     const currentGrade = await ExamGrade.findById(req.params.id)
       .populate({
-        path: "examStudent",
-        populate: { path: "student class" }
+        path: "student", // ✅ Field "student" trong ExamGrade là ref đến ExamStudent
+        populate: [
+          { path: "student", select: "_id classId" }, // ✅ Field "student" trong ExamStudent là ref đến Student
+          { path: "class", select: "_id" },
+        ],
       })
       .lean();
     
@@ -556,7 +575,7 @@ exports.updateGrade = async (req, res) => {
         if (examData && shouldAutoSyncExam(examData)) {
           const es = currentGrade.student; // ✅ Field "student" trong ExamGrade là ExamStudent
           const studentId = es?.student?._id || es?.student;
-          const subjectId = currentGrade.subject;
+          const subjectId = currentGrade.subject?._id || currentGrade.subject;
           const classId = es?.class?._id || es?.class || currentGrade.class || null;
           const payload = buildGradeItemPayload({
             studentId,
@@ -576,6 +595,34 @@ exports.updateGrade = async (req, res) => {
             console.log(
               `✅ Đã đồng bộ điểm ${examData.type} cho học sinh ${studentId} môn ${subjectId} (${examData.year} - HK${examData.semester}): ${req.body.gradeValue}`
             );
+            
+            // ✅ Tính lại điểm TB học kỳ cho môn học này
+            try {
+              const { recomputeSummary } = require('../../services/gradeService');
+              await recomputeSummary({
+                studentId,
+                subjectId,
+                classId,
+                schoolYear: examData.year,
+                semester: examData.semester,
+              });
+              console.log(`✅ Đã tính lại điểm TB cho học sinh ${studentId} môn ${subjectId}`);
+            } catch (recomputeError) {
+              console.error(`⚠️ Lỗi tính lại điểm TB cho học sinh ${studentId} môn ${subjectId}:`, recomputeError.message);
+            }
+            
+            // ✅ Tính lại điểm TB cả năm
+            try {
+              const { computeAndSaveYearGPA } = require('../../services/gradeService');
+              await computeAndSaveYearGPA({
+                studentId,
+                classId,
+                schoolYear: examData.year,
+              });
+              console.log(`✅ Đã tính lại điểm TB cả năm cho học sinh ${studentId}`);
+            } catch (yearGPAError) {
+              console.error(`⚠️ Lỗi tính điểm TB cả năm cho học sinh ${studentId}:`, yearGPAError.message);
+            }
           }
         }
       } catch (syncError) {

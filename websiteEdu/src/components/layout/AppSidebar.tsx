@@ -364,6 +364,7 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
                 { id: "exam-list", title: "Danh sách kỳ thi", url: `${prefix}/exam/exam-list`, icon: CalendarCheck2Icon },
                 { id: "exam-dashboard", title: "DashBoard", url: `${prefix}/exam/exam-dashboard`, icon: Users },
                 { id: "exam-schedule", title: "Lịch thi", url: `${prefix}/exam/schedule`, icon: Calendar },
+                { id: "exam-grades-search", title: "Điểm thi", url: `${prefix}/exam/grades-search`, icon: BarChart3 },
                 { id: "room-assignment", title: "Phân phòng thi", url: `${prefix}/exam/room-assignment`, icon: School },
                 { id: "supervisor-assignment", title: "Phân công giám thị", url: `${prefix}/exam/supervisor-assignment`, icon: UserCheck },
               ],
@@ -446,6 +447,7 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
               icon: CalendarCheck2Icon,
               children: [
                 { id: "student-schedule", title: "Lịch thi", url: `${prefix}/exams/student-schedule`, icon: Calendar },
+                { id: "exam-grades-search", title: "Điểm thi", url: `${prefix}/exams/grades-search`, icon: BarChart3 },
                 { id: "exam-room", title: "Phòng thi", url: `${prefix}/exams/exam-room`, icon: School },
               ],
             },

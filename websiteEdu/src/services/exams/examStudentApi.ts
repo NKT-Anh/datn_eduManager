@@ -19,7 +19,7 @@ export interface ExamStudent {
 ========================================================= */
 export const examStudentApi = {
   /** 📋 Lấy danh sách học sinh dự thi theo kỳ thi hoặc lịch thi */
-  async getByExam(examId: string, params?: { scheduleId?: string; grade?: number }) {
+  async getByExam(examId: string, params?: { scheduleId?: string; grade?: number; limit?: number; page?: number }) {
     const res = await api.get(`/exam/students/exam/${examId}`, { params });
     return res.data;
   },

@@ -35,7 +35,13 @@ const StudentSchedule: React.FC = () => {
       const data = await studentExamApi.getExams(studentId);
       // ✅ Filter chỉ lấy exam đã công bố (status = "published")
       const publishedExams = (data || []).filter((exam: any) => exam.status === "published");
-      setExams(publishedExams.map((exam: any) => ({ ...exam, schedules: [], schedulesLoading: false })));
+      // ✅ Sắp xếp theo ngày bắt đầu (ngày gần nhất lên đầu)
+      const sortedExams = publishedExams.sort((a: any, b: any) => {
+        const dateA = a.startDate ? new Date(a.startDate).getTime() : 0;
+        const dateB = b.startDate ? new Date(b.startDate).getTime() : 0;
+        return dateB - dateA; // Ngày mới nhất lên đầu
+      });
+      setExams(sortedExams.map((exam: any) => ({ ...exam, schedules: [], schedulesLoading: false })));
     } catch (err: any) {
       console.error("Lỗi khi tải danh sách kỳ thi:", err);
       message.error(err?.response?.data?.error || "Không thể tải danh sách kỳ thi");
@@ -58,10 +64,23 @@ const StudentSchedule: React.FC = () => {
 
       const data = await studentExamApi.getSchedules(examId, studentId);
       
+      // ✅ Sắp xếp schedules theo ngày và giờ (ngày gần nhất lên đầu)
+      const sortedSchedules = (data || []).sort((a: any, b: any) => {
+        const dateA = a.date ? new Date(a.date).getTime() : 0;
+        const dateB = b.date ? new Date(b.date).getTime() : 0;
+        if (dateA !== dateB) {
+          return dateA - dateB; // Ngày sớm hơn lên đầu
+        }
+        // Nếu cùng ngày, sắp xếp theo giờ bắt đầu
+        const timeA = a.startTime || "00:00";
+        const timeB = b.startTime || "00:00";
+        return timeA.localeCompare(timeB);
+      });
+      
       // ✅ Cập nhật schedules cho exam này
       setExams(prev => prev.map(exam => 
         exam._id === examId 
-          ? { ...exam, schedules: data || [], schedulesLoading: false }
+          ? { ...exam, schedules: sortedSchedules, schedulesLoading: false }
           : exam
       ));
     } catch (err: any) {
