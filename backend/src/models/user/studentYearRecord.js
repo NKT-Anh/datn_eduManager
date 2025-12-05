@@ -8,7 +8,8 @@ const studentYearRecordSchema = new mongoose.Schema({
   semester: { type: String, enum: ["HK1", "HK2", "CN"], default: "CN" }, // CN = cả năm
 
   gpa: { type: Number, default: 0 }, // điểm TB học kỳ hoặc cả năm
-  conduct: { type: String, enum: ["Tốt", "Khá", "Trung bình", "Yếu"], default: "Tốt" },
+  conduct: { type: String, enum: ["Tốt", "Khá", "Trung bình", "Yếu"], default: null },
+  conductDraft: { type: String, enum: ["Tốt", "Khá", "Trung bình", "Yếu"], default: null },
   conductSuggested: { type: String, enum: ["Tốt", "Khá", "Trung bình", "Yếu"], default: null }, // Đề xuất tự động từ hệ thống
   academicLevel: { type: String, enum: ["Giỏi", "Khá", "Trung bình", "Yếu"], default: null }, // Học lực
   rank: { type: Number, default: 0 }, // Xếp hạng trong lớp

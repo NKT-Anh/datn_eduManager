@@ -1,7 +1,7 @@
 /**
  * Upload file lên Cloudinary (hỗ trợ mọi loại file: PDF, DOCX, XLSX, images, etc.)
  */
-export const uploadFileToCloudinary = async (file: File): Promise<{ url: string; publicId: string; size: number }> => {
+export const uploadFileToCloudinary = async (file: File): Promise<{ url: string; publicId: string; size: number; format?: string }> => {
   const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
   const UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
@@ -59,6 +59,7 @@ export const uploadFileToCloudinary = async (file: File): Promise<{ url: string;
     url: data.secure_url as string,
     publicId: data.public_id as string,
     size: data.bytes as number,
+    format: data.format as string | undefined,
   };
 };
 

@@ -10,6 +10,51 @@ const dayjs = require("dayjs");
 const mongoose = require("mongoose");
 const Subject = require("../../models/subject/subject");
 const ScheduleConfig = require("../../models/subject/scheduleConfig");
+// Helper: sync ExamStudent.subjects with schedule info
+async function syncExamStudentSubjectsForSchedule(schedule) {
+  try {
+    if (!schedule || !schedule.exam || !schedule.grade || !schedule.subject) return;
+    const examId = schedule.exam;
+    const grade = String(schedule.grade);
+    const subjectId = schedule.subject?._id || schedule.subject;
+
+    // 1) Update existing subject entries to set examSchedule
+    await ExamStudent.updateMany(
+      {
+        exam: examId,
+        grade: grade,
+        "subjects.subject": subjectId,
+      },
+      {
+        $set: { "subjects.$[elem].examSchedule": schedule._id },
+      },
+      {
+        arrayFilters: [{ "elem.subject": subjectId }],
+      }
+    );
+
+    // 2) Push new subject entry if missing
+    await ExamStudent.updateMany(
+      {
+        exam: examId,
+        grade: grade,
+        subjects: { $not: { $elemMatch: { subject: subjectId } } },
+      },
+      {
+        $push: {
+          subjects: {
+            subject: subjectId,
+            examSchedule: schedule._id,
+            status: "registered",
+            score: null,
+          },
+        },
+      }
+    );
+  } catch (err) {
+    console.error("⚠️ Lỗi syncExamStudentSubjectsForSchedule:", err.message);
+  }
+}
 // === REUSABLE: Kiểm tra trùng lịch ===
 const checkScheduleConflict = async ({
   exam,
@@ -196,6 +241,13 @@ exports.createSchedule = async (req, res) => {
     // 🏫 TẠO PHÒNG THI CHO LỊCH THI NÀY (tự động tính số phòng dựa trên số học sinh)
     // ✅ Bỏ logic tự động tạo phòng thi khi tạo lịch thi
     // Phòng thi sẽ được tạo thủ công qua UI
+
+    // 🔄 Đồng bộ ExamStudent.subjects với lịch vừa tạo
+    try {
+      await syncExamStudentSubjectsForSchedule(schedule);
+    } catch (e) {
+      console.error("⚠️ Không thể đồng bộ subjects cho ExamStudent sau khi tạo lịch:", e.message);
+    }
 
     res.status(201).json({ 
       message: `Tạo lịch thi thành công.`, 
@@ -507,6 +559,12 @@ exports.updateSchedule = async (req, res) => {
     ).populate("subject", "name code");
 
     if (!updated) return res.status(404).json({ error: "Không tìm thấy lịch thi." });
+    // 🔄 Đồng bộ ExamStudent.subjects với lịch sau cập nhật
+    try {
+      await syncExamStudentSubjectsForSchedule(updated);
+    } catch (e) {
+      console.error("⚠️ Không thể đồng bộ subjects cho ExamStudent sau khi cập nhật lịch:", e.message);
+    }
 
     res.json({ message: "Cập nhật thành công.", data: updated });
   } catch (err) {
@@ -529,6 +587,18 @@ exports.deleteSchedule = async (req, res) => {
       ExamRoom.deleteMany({ schedule: scheduleId }),
       RoomAssignment.deleteMany({ schedule: scheduleId }),
     ]);
+
+    // 🔄 Gỡ liên kết examSchedule khỏi ExamStudent.subjects (không xóa entry)
+    try {
+      const subjectId = deleted.subject?._id || deleted.subject;
+      await ExamStudent.updateMany(
+        { exam: deleted.exam, grade: String(deleted.grade), "subjects.subject": subjectId },
+        { $set: { "subjects.$[elem].examSchedule": null } },
+        { arrayFilters: [{ "elem.subject": subjectId }] }
+      );
+    } catch (e) {
+      console.error("⚠️ Không thể gỡ liên kết examSchedule khỏi ExamStudent.subjects:", e.message);
+    }
 
     res.json({ message: "Đã xóa lịch thi và các dữ liệu liên quan." });
   } catch (err) {

@@ -82,5 +82,10 @@ export const auditLogApi = {
     const res = await api.delete(API_URL, { params: { days } });
     return res.data;
   },
+
+  create: async (logData: Partial<AuditLog>): Promise<{ success: boolean; data: AuditLog }> => {
+    const res = await api.post(API_URL, logData);
+    return res.data;
+  },
 };
 

@@ -3,15 +3,11 @@
  */
 
 import React, {useState} from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  ActivityIndicator,
-} from 'react-native';
+import {View, TextInput, StyleSheet, Alert, ActivityIndicator} from 'react-native';
+import Text from '../../components/ui/Text';
+import Button from '../../components/ui/Button';
+import Card from '../../components/ui/Card';
+import {colors, spacing} from '../../theme';
 import {useNavigation} from '@react-navigation/native';
 import {useAuth} from '../../context/AuthContext';
 
@@ -66,53 +62,55 @@ const LoginScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>EduManager</Text>
-      <Text style={styles.subtitle}>Đăng nhập vào hệ thống</Text>
+      <Text variant="h1" style={styles.appTitle}>EduManager</Text>
+      <Card style={styles.card}>
+        <Text variant="title" muted style={{marginBottom: spacing.lg}}>
+          Đăng nhập vào hệ thống
+        </Text>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Số điện thoại hoặc Email"
-        value={phoneOrEmail}
-        onChangeText={setPhoneOrEmail}
-        autoCapitalize="none"
-        keyboardType="email-address"
-      />
+        <TextInput
+          style={styles.input}
+          placeholder="Số điện thoại hoặc Email"
+          value={phoneOrEmail}
+          onChangeText={setPhoneOrEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+          placeholderTextColor={colors.textSecondary}
+        />
 
-      <TextInput
-        style={styles.input}
-        placeholder="Mật khẩu"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
+        <TextInput
+          style={styles.input}
+          placeholder="Mật khẩu"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          placeholderTextColor={colors.textSecondary}
+        />
 
-      <TouchableOpacity
-        style={[styles.button, loading && styles.buttonDisabled]}
-        onPress={handleLogin}
-        disabled={loading}>
-        {loading ? (
-          <ActivityIndicator color="#FFFFFF" />
-        ) : (
-          <Text style={styles.buttonText}>Đăng nhập với mật khẩu</Text>
-        )}
-      </TouchableOpacity>
+        <Button
+          title="Đăng nhập với mật khẩu"
+          onPress={handleLogin}
+          loading={loading}
+          style={{marginTop: spacing.sm}}
+        />
 
-      <TouchableOpacity
-        style={[styles.buttonOTP, (sendingOTP || !phoneOrEmail.trim()) && styles.buttonDisabled]}
-        onPress={handleSendOTP}
-        disabled={sendingOTP || !phoneOrEmail.trim()}>
-        {sendingOTP ? (
-          <ActivityIndicator color="#007AFF" />
-        ) : (
-          <Text style={styles.buttonOTPText}>Đăng nhập với mã OTP</Text>
-        )}
-      </TouchableOpacity>
+        <Button
+          title="Đăng nhập với mã OTP"
+          variant="outline"
+          onPress={handleSendOTP}
+          disabled={sendingOTP || !phoneOrEmail.trim()}
+          style={{marginTop: spacing.md}}
+        />
 
-      <TouchableOpacity
-        style={styles.forgotButton}
-        onPress={() => navigation.navigate('ForgotPassword' as never)}>
-        <Text style={styles.forgotText}>Quên mật khẩu?</Text>
-      </TouchableOpacity>
+        <Text
+          variant="caption"
+          muted
+          onPress={() => navigation.navigate('ForgotPassword' as never)}
+          style={styles.forgotText}
+        >
+          Quên mật khẩu?
+        </Text>
+      </Card>
     </View>
   );
 };
@@ -121,69 +119,30 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
-    padding: 24,
-    backgroundColor: '#FFFFFF',
+    padding: spacing.xl,
+    backgroundColor: colors.background,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
+  appTitle: {
     textAlign: 'center',
-    marginBottom: 8,
-    color: '#000000',
+    marginBottom: spacing.lg,
   },
-  subtitle: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 32,
-    color: '#666666',
+  card: {
+    padding: spacing.xl,
   },
   input: {
     height: 50,
     borderWidth: 1,
-    borderColor: '#DDDDDD',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    marginBottom: 16,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
     fontSize: 16,
-  },
-  button: {
-    height: 50,
-    backgroundColor: '#007AFF',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  buttonOTP: {
-    height: 50,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#007AFF',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  buttonOTPText: {
-    color: '#007AFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  forgotButton: {
-    marginTop: 16,
-    alignItems: 'center',
   },
   forgotText: {
-    color: '#007AFF',
-    fontSize: 14,
+    color: colors.primary,
+    textAlign: 'center',
+    marginTop: spacing.lg,
   },
 });
 

@@ -8,7 +8,11 @@ const { PERMISSIONS } = require("../../config/permissions");
 // ✅ Lấy danh sách phòng thi giáo viên được phân công - Giáo viên xem của mình
 router.get("/teacher/:teacherId/rooms", 
   auth, 
-  checkPermission([PERMISSIONS.EXAM_ROOM_VIEW, PERMISSIONS.EXAM_ROOM_VIEW_MANAGE], { checkContext: false }), 
+  checkPermission([
+    PERMISSIONS.EXAM_ROOM_VIEW,
+    PERMISSIONS.EXAM_ROOM_VIEW_MANAGE,
+    PERMISSIONS.EXAM_ROOM_VIEW_SELF,
+  ], { checkContext: false }), 
   ctrl.getRoomsByTeacher
 );
 

@@ -84,6 +84,11 @@ const settingApi = {
     email: string;
     website: string;
     facebook: string;
+    schoolLogo: {
+      url: string;
+      publicId: string;
+      format: string;
+    } | null;
   }> => {
     const res = await axiosClient.get('/settings/public');
     return res.data;

@@ -108,12 +108,11 @@ const SupervisorSchedule: React.FC = () => {
         const dateA = a.date ? new Date(a.date).getTime() : 0;
         const dateB = b.date ? new Date(b.date).getTime() : 0;
         if (dateA !== dateB) {
-          return dateA - dateB; // Ngày sớm hơn lên đầu
+          return dateB - dateA; // Ngày gần nhất (mới nhất) lên đầu
         }
-        // Nếu cùng ngày, sắp xếp theo giờ bắt đầu
         const timeA = a.startTime || "00:00";
         const timeB = b.startTime || "00:00";
-        return timeA.localeCompare(timeB);
+        return timeB.localeCompare(timeA); // Cùng ngày thì giờ muộn hơn trước
       });
       
       setSchedules(sortedSchedules);

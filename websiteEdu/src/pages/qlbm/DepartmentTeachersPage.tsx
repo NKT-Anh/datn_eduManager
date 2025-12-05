@@ -21,16 +21,17 @@ const DepartmentTeachersPage = () => {
   const { currentYearCode } = useCurrentAcademicYear();
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isTeacher = backendUser?.role === "teacher";
+  const isDeptHead = backendUser?.teacherFlags?.isDepartmentHead;
+  const departmentId = backendUser?.teacherFlags?.departmentId;
 
   useEffect(() => {
     const fetchDepartmentTeachers = async () => {
-      // ✅ Lấy departmentId từ teacherFlags (đã được lấy từ yearRoles)
-      const departmentId = backendUser?.teacherFlags?.departmentId;
-      
-      if (backendUser?.role === "teacher" && 
-          backendUser?.teacherFlags?.isDepartmentHead && 
-          departmentId && 
-          currentYearCode) {
+      setError(null);
+      // ✅ Chỉ tải khi đủ điều kiện: giáo viên là tổ trưởng, có tổ và có năm học hiện tại
+      if (isTeacher && isDeptHead && departmentId && currentYearCode) {
         setLoading(true);
         try {
           // ✅ Lấy giáo viên trong tổ theo năm học hiện tại
@@ -38,14 +39,18 @@ const DepartmentTeachersPage = () => {
           setTeachers(deptTeachers);
         } catch (error) {
           console.error("Failed to fetch department teachers", error);
+          setError("Không thể tải danh sách giáo viên. Vui lòng thử lại.");
         } finally {
           setLoading(false);
         }
+      } else {
+        // Không đủ điều kiện, đảm bảo danh sách rỗng
+        setTeachers([]);
       }
     };
 
     fetchDepartmentTeachers();
-  }, [backendUser, currentYearCode]);
+  }, [isTeacher, isDeptHead, departmentId, currentYearCode]);
 
   if (loading) {
     return (
@@ -75,6 +80,21 @@ const DepartmentTeachersPage = () => {
         </Badge>
       </div>
 
+      {/* Thông báo điều kiện truy cập/thiếu thông tin */}
+      {!isTeacher || !isDeptHead ? (
+        <div className="rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">
+          Bạn không có quyền xem danh sách tổ bộ môn. Chỉ tổ trưởng mới có quyền truy cập.
+        </div>
+      ) : !departmentId ? (
+        <div className="rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">
+          Tài khoản chưa được gán vào tổ bộ môn. Vui lòng liên hệ quản trị để cập nhật.
+        </div>
+      ) : !currentYearCode ? (
+        <div className="rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">
+          Chưa xác định năm học hiện tại. Vui lòng chọn năm học.
+        </div>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle>Thông tin giáo viên</CardTitle>
@@ -83,6 +103,11 @@ const DepartmentTeachersPage = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {error && (
+            <div className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
           {teachers.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
@@ -142,11 +167,7 @@ const DepartmentTeachersPage = () => {
                           {teacher.subjects && teacher.subjects.length > 0 ? (
                             <div className="flex flex-wrap gap-1">
                               {teacher.subjects.slice(0, 3).map((sub, idx) => {
-                                const subjectName = typeof sub.subjectId === 'object' 
-                                  ? sub.subjectId?.name 
-                                  : typeof sub === 'object' 
-                                    ? sub.name 
-                                    : null;
+                                const subjectName = (sub as any)?.subjectId?.name ?? (sub as any)?.name ?? null;
                                 return (
                                   <Badge key={idx} variant="outline" className="text-xs">
                                     <BookOpen className="h-3 w-3 mr-1" />

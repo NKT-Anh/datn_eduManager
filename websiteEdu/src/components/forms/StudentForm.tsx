@@ -44,7 +44,7 @@ const studentSchema = z.object({
   phone: z.string().optional(),
   address: z.string().optional(),
   classId: z.string().optional(),
-  admissionYear: z.number().min(2000, "Năm nhập học không hợp lệ").max(new Date().getFullYear()),
+  admissionYear: z.number().min(2000, "Năm nhập học không hợp lệ").max(new Date().getFullYear() + 1),
   grade: z.enum(["10", "11", "12"]),
   status: z.enum(["active", "inactive", "graduated", "suspended", "transferred"]).default("active"),
 
@@ -352,7 +352,7 @@ useEffect(() => {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Năm nhập học</FormLabel>
-                    <FormControl><Input type="number" {...field} /></FormControl>
+                    <FormControl><Input type="number" {...field}onChange={(e) => field.onChange(Number(e.target.value))} /></FormControl>
                   </FormItem>
                 )}
               />

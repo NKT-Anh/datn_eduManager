@@ -23,6 +23,7 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import { examGradeApi } from "@/services/exams/examGradeApi";
+import { auditLogApi } from "@/services/auditLogApi";
 import { examApi } from "@/services/exams/examApi";
 import { examStudentApi } from "@/services/exams/examStudentApi";
 import { useAuth } from "@/contexts/AuthContext";
@@ -264,8 +265,8 @@ export default function TeacherExamGradePage() {
         
         // Lọc điểm theo lớp gốc ở frontend
         const existingGrades = allExistingGrades.filter((g: any) => {
-          // ✅ Backend trả về field "student" (ExamStudent), không phải "examStudent"
-          const examStudent = g.student || g.examStudent; // Fallback cho tương thích
+          // ✅ Ưu tiên dùng examStudent nếu có; fallback sang student
+          const examStudent = g.examStudent || g.student;
           const student = examStudent?.student || g.student?.student;
           // ✅ Lấy từ Student.classId (lớp gốc), không phải ExamStudent.class (nhóm lớp)
           const studentClassId = student?.classId?._id || 
@@ -276,8 +277,8 @@ export default function TeacherExamGradePage() {
         // Tạo map điểm theo examStudent
         const gradeMap = new Map();
         existingGrades.forEach((g: any) => {
-          // ✅ Backend trả về field "student" (ExamStudent)
-          const examStudent = g.student || g.examStudent; // Fallback cho tương thích
+          // ✅ Ưu tiên dùng examStudent nếu có; fallback sang student
+          const examStudent = g.examStudent || g.student;
           const examStudentId = examStudent?._id || examStudent;
           if (examStudentId) {
             gradeMap.set(String(examStudentId), g);
@@ -321,6 +322,39 @@ export default function TeacherExamGradePage() {
   }, [selectedExamId, selectedSubjectId, selectedClassId]);
 
   const handleSave = async (record: any, value: number | null) => {
+          // Lưu score vào examStudent.subjects trên backend
+          try {
+            // Tìm examStudent hiện tại
+            let examStudentObj = record.examStudent || record.student;
+            if (typeof examStudentObj === 'string') {
+              // Nếu chỉ có id, cần lấy lại từ grades hoặc examStudents
+              examStudentObj = grades.find((g: any) => {
+                const es = g.examStudent || g.student;
+                return String(es?._id || es) === String(examStudentObj);
+              })?.examStudent;
+            }
+            if (examStudentObj && Array.isArray(examStudentObj.subjects)) {
+              // Tìm subject cần cập nhật
+              const updatedSubjects = examStudentObj.subjects.map((s: any) => {
+                const sId = String(s.subject?._id || s.subject || s);
+                if (sId === String(selectedSubjectId)) {
+                  return {
+                    ...s,
+                    score: Number(value),
+                    teacher: typeof backendUser?.teacherId === 'object' && backendUser?.teacherId !== null
+                      ? (backendUser.teacherId as any)._id
+                      : backendUser?.teacherId,
+                  };
+                }
+                return s;
+              });
+              // Gọi API update
+              await examStudentApi.update(examStudentObj._id, { subjects: updatedSubjects });
+            }
+          } catch (err) {
+            // Không cần báo lỗi, chỉ log
+            console.error('Lỗi lưu score vào examStudent:', err);
+          }
     if (value === null || value === undefined) return;
     if (value < 0 || value > 10) {
       message.error("Điểm phải từ 0 đến 10");
@@ -356,6 +390,7 @@ export default function TeacherExamGradePage() {
         // Không cần làm gì thêm
       }
 
+      // Lưu điểm vào examGrade (backend)
       const savedGradeRes = await examGradeApi.addOrUpdate({
         exam: selectedExamId,
         examStudent: examStudentId,
@@ -366,22 +401,75 @@ export default function TeacherExamGradePage() {
           : backendUser?.teacherId,
       });
 
+          // Ghi log vào audit-logs
+          try {
+            await auditLogApi.create({
+              userId: backendUser?._id,
+              userRole: 'teacher',
+              userName: backendUser?.name,
+              action: 'UPDATE',
+              resource: 'GRADE',
+              resourceId: savedGradeRes?._id,
+              resourceName: savedGradeRes.student?.name || '',
+              description: `Nhập điểm thi cho học sinh ${savedGradeRes.student?.name || ''} (${savedGradeRes.student?.studentCode || ''}), môn ${savedGradeRes.subject?.name || ''}, giá trị: ${savedGradeRes.gradeValue}`,
+              status: 'SUCCESS',
+              metadata: {
+                exam: selectedExamId,
+                subject: selectedSubjectId,
+                examStudent: savedGradeRes.examStudent,
+                score: savedGradeRes.gradeValue,
+              },
+            });
+          } catch (err) {
+            console.error('Lỗi ghi log audit:', err);
+          }
+      // Cập nhật score + teacher vào examStudent.subjects trên frontend (hiển thị tạm thời)
+      setGrades((prevGrades: any[]) => {
+        return prevGrades.map((g: any) => {
+          const examStudent = g.examStudent || g.student;
+          const esId = examStudent?._id || examStudent;
+          if (String(esId) === String(examStudentId)) {
+            // Nếu có subjects (danh sách môn của học sinh), cập nhật score
+            if (Array.isArray(examStudent.subjects)) {
+              examStudent.subjects = examStudent.subjects.map((s: any) => {
+                const sId = String(s.subject?._id || s.subject || s);
+                if (sId === String(selectedSubjectId)) {
+                  return {
+                    ...s,
+                    score: Number(value),
+                    teacher: typeof backendUser?.teacherId === 'object' && backendUser?.teacherId !== null
+                      ? (backendUser.teacherId as any)._id
+                      : backendUser?.teacherId,
+                  };
+                }
+                return s;
+              });
+            }
+            return {
+              ...g,
+              examStudent,
+            };
+          }
+          return g;
+        });
+      });
+
       message.success("✅ Đã lưu điểm thành công", 2);
       
       // ✅ Cập nhật state ngay lập tức từ response
-      const savedGrade = savedGradeRes?.grade || savedGradeRes;
+        const savedGrade = savedGradeRes?.grade || savedGradeRes;
       if (savedGrade) {
         setGrades((prevGrades: any[]) => {
           // ✅ Tìm và cập nhật grade đã có (có thể là temp hoặc đã có _id thật)
           const updatedGrades = prevGrades.map((g: any) => {
-            const examStudent = g.student || g.examStudent;
+            const examStudent = g.examStudent || g.student;
             const esId = examStudent?._id || examStudent;
             if (String(esId) === String(examStudentId)) {
               // ✅ Cập nhật grade này với dữ liệu từ backend
               return {
                 ...savedGrade,
-                examStudent: savedGrade.student || g.examStudent, // ✅ Giữ lại examStudent cho frontend
-                student: savedGrade.student, // ✅ Backend trả về field "student" (ExamStudent)
+                  examStudent: savedGrade.examStudent || savedGrade.student || g.examStudent,
+                  student: savedGrade.student, // ✅ Thông tin Student đã flatten
               };
             }
             return g;
@@ -397,7 +485,7 @@ export default function TeacherExamGradePage() {
           if (!found) {
             updatedGrades.push({
               ...savedGrade,
-              examStudent: savedGrade.student, // ✅ Backend trả về field "student" (ExamStudent)
+              examStudent: savedGrade.examStudent || savedGrade.student, // ✅ giữ examStudent
             });
           }
           
@@ -421,8 +509,8 @@ export default function TeacherExamGradePage() {
         
         // ✅ Lọc điểm theo lớp gốc ở frontend
         const existingGrades = allExistingGrades.filter((g: any) => {
-          // ✅ Backend trả về field "student" (ExamStudent)
-          const examStudent = g.student || g.examStudent; // Fallback cho tương thích
+          // ✅ Ưu tiên examStudent nếu có
+          const examStudent = g.examStudent || g.student;
           const student = examStudent?.student || g.student?.student;
           const studentClassId = student?.classId?._id || 
                                  student?.classId;
@@ -431,8 +519,8 @@ export default function TeacherExamGradePage() {
         
         const gradeMap = new Map();
         existingGrades.forEach((g: any) => {
-          // ✅ Backend trả về field "student" (ExamStudent)
-          const examStudent = g.student || g.examStudent; // Fallback cho tương thích
+          // ✅ Ưu tiên examStudent nếu có
+          const examStudent = g.examStudent || g.student;
           const examStudentId = examStudent?._id || examStudent;
           if (examStudentId) {
             gradeMap.set(String(examStudentId), g);
@@ -475,7 +563,8 @@ export default function TeacherExamGradePage() {
 
     const keyword = filters.keyword.toLowerCase();
     return grades.filter((g: any) => {
-      const student = g.examStudent?.student || g.student || g.examStudent;
+      const examStudent = g.examStudent || g.student;
+      const student = examStudent?.student || g.student;
       const name = student?.name || student?.fullName || "";
       const code = student?.studentCode || student?.code || "";
       const className = student?.className || student?.classId?.className || student?.class?.name || "";
@@ -498,8 +587,8 @@ export default function TeacherExamGradePage() {
     {
       title: "Họ tên",
       render: (record: any) => {
-        // ✅ Backend trả về field "student" (ExamStudent), không phải "examStudent"
-        const examStudent = record.student || record.examStudent; // Fallback cho tương thích
+        // ✅ Ưu tiên examStudent nếu có
+        const examStudent = record.examStudent || record.student;
         const student = examStudent?.student || record.student?.student || record.examStudent?.student;
         const name = student?.name || student?.fullName || "N/A";
         return <Tag color="blue">{name}</Tag>;
@@ -508,7 +597,7 @@ export default function TeacherExamGradePage() {
     {
       title: "Mã HS",
       render: (record: any) => {
-        const examStudent = record.student || record.examStudent;
+        const examStudent = record.examStudent || record.student;
         const student = examStudent?.student || record.student?.student || record.examStudent?.student;
         return student?.studentCode || student?.code || "N/A";
       },
@@ -518,7 +607,7 @@ export default function TeacherExamGradePage() {
     {
       title: "Lớp",
       render: (record: any) => {
-        const examStudent = record.student || record.examStudent;
+        const examStudent = record.examStudent || record.student;
         const student = examStudent?.student || record.student?.student || record.examStudent?.student;
         // ✅ Lấy lớp gốc từ Student.classId
         const classInfo = student?.classId;
@@ -689,15 +778,22 @@ export default function TeacherExamGradePage() {
             <Table
               dataSource={filteredGrades}
               columns={columns}
-              rowKey={(r, index) => {
-                // ✅ Đảm bảo key unique: dùng _id nếu có, nếu không dùng examStudentId + subjectId + index
-                if (r._id) {
-                  return String(r._id);
+              rowKey={(record) => {
+                // ✅ Đảm bảo key unique: ưu tiên _id, fallback sang bộ đôi examStudent + subject
+                if (record._id) {
+                  return String(record._id);
                 }
-                const examStudent = r.student || r.examStudent;
-                const esId = examStudent?._id || examStudent || '';
-                const subjectId = r.subject?._id || r.subject || '';
-                return `grade_${esId}_${subjectId}_${index}`;
+                const examStudent = record.examStudent || record.student;
+                const esId =
+                  examStudent?._id ||
+                  examStudent?.studentId ||
+                  examStudent?.student?.id ||
+                  record.studentId ||
+                  record.studentCode ||
+                  record.studentName ||
+                  "unknown";
+                const subjectId = record.subject?._id || record.subjectId || record.subjectCode || "subject";
+                return `grade_${esId}_${subjectId}`;
               }}
               pagination={{
                 pageSize: 20,

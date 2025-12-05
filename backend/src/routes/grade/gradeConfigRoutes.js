@@ -16,4 +16,16 @@ router.post('/',
   gradeConfigController.upsertGradeConfig
 );
 
+// ✅ Reset tất cả minScore về ngưỡng mặc định
+router.post('/reset-required-min',
+  authMiddleware,
+  auditLog({
+    action: 'UPDATE',
+    resource: 'GRADE_CONFIG',
+    getDescription: (req) => `BGH reset minScore requiredSubjects về mặc định cho Năm học ${req.body?.schoolYear || 'N/A'}, Học kỳ ${req.body?.semester || 'N/A'}`,
+    metadataSelector: (req) => ({ schoolYear: req.body?.schoolYear, semester: req.body?.semester })
+  }),
+  gradeConfigController.resetRequiredSubjectsMinScore
+);
+
 module.exports = router;

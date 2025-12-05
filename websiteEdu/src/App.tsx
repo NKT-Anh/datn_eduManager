@@ -76,7 +76,6 @@ import DepartmentManagementDashboard from "./pages/qlbm/DepartmentManagementDash
 // 🏛️ BGH Pages
 import BGHDashboard from "./pages/bgh/BGHDashboard.tsx";
 import BGHStudentsList from "./pages/bgh/BGHStudentsList.tsx";
-import BGHIncidentsPage from "./pages/bgh/BGHIncidentsPage.tsx";
 import BGHGradesPage from "./pages/bgh/BGHGradesPage.tsx";
 import BGHAttendancePage from "./pages/bgh/BGHAttendancePage.tsx";
 import BGHConductApprovalPage from "./pages/bgh/BGHConductApprovalPage.tsx";
@@ -104,14 +103,17 @@ import SupervisorRooms from "./pages/teacher/exams/SupervisorRooms";
 import TeacherExamGradePage from "./pages/teacher/exams/TeacherExamGradePage";
 
 // 👩‍🎓 Student Exam Pages
-import StudentSchedule from "./pages/student/exams/StudentSchedule";
-import ExamRoom from "./pages/student/exams/ExamRoom";
+import StudentExamSchedulePage from "./pages/student/StudentExamSchedulePage";
+import StudentExamGradesSearchPage from "./pages/student/StudentExamGradesSearchPage";
 
 // 🧭 Common Pages
 import NotFound from "./pages/NotFound.tsx";
 import NotificationsPage from "./pages/common/NotificationsPage.tsx";
+import StudentNotificationsPage from "./pages/student/StudentNotificationsPage";
 import NotificationDetailPage from "./pages/common/NotificationDetailPage.tsx";
-import StudentIncidentsPage from "./pages/student/StudentIncidentsPage.tsx";
+import StudentNotificationDetailPage from "./pages/student/StudentNotificationDetailPage";
+// Incidents pages removed per request
+import AdminConductPage from "./pages/admin/AdminConductPage";
 
 /* =========================================================
    ⚙️ Query Client
@@ -153,7 +155,7 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/admin/audit-logs", element: <AuditLogPage /> },
     { path: "/admin/init-grades", element: <InitGradeTablePage /> },
     { path: "/admin/backup", element: <BackupManagementPage /> },
-    { path: "/admin/surveys", element: <SurveyManagementPage /> },
+    { path: "/admin/surveyss", element: <SurveyManagementPage /> },
     { path: "/admin/surveys/dashboard", element: <BGHSurveyDashboardPage /> },
     { path: "/admin/awards", element: <AwardManagementPage /> },
     { path: "/admin/exam/exam-list", element: <ExamListPage /> },
@@ -166,7 +168,7 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/admin/exam/supervisor-assignment", element: <ExamSupervisorAssignmentPage /> },
     { path: "/admin/notifications", element: <NotificationsPage /> },
     { path: "/admin/notifications/:id", element: <NotificationDetailPage /> },
-    { path: "/admin/conduct", element: <ConductPage /> },
+    { path: "/admin/conduct", element: <AdminConductPage /> },
     { path: "/admin/trash", element: <TrashPage /> },
     // { path: "/admin/exam/room-assignments", element: <RoomAssignments /> },
     // { path: "/admin/exam/schedule", element: <AllExamSchedulesPage /> },
@@ -190,13 +192,11 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/student/attendance", element: <StudentAttendancePage /> },
     { path: "/student/surveys", element: <StudentSurveyPage /> },
     { path: "/student/conduct", element: <StudentConductPage /> },
-    { path: "/student/notifications", element: <NotificationsPage /> },
-    { path: "/student/notifications/:id", element: <NotificationDetailPage /> },
-    { path: "/student/incidents", element: <StudentIncidentsPage /> },
+    { path: "/student/notifications", element: <StudentNotificationsPage /> },
+    { path: "/student/notifications/:id", element: <StudentNotificationDetailPage /> },
     { path: "/student/profile", element: <ProfilePage /> },
-    { path: "/student/exams/student-schedule", element: <StudentSchedule /> },
-    { path: "/student/exams/exam-room", element: <ExamRoom /> },
-    { path: "/student/exams/grades-search", element: <ExamGradesSearchPage /> },
+    { path: "/student/exams/student-schedule", element: <StudentExamSchedulePage /> },
+    { path: "/student/exams/grades-search", element: <StudentExamGradesSearchPage /> },
   ],
   // QLBM (Trưởng bộ môn) - sử dụng lại một số pages từ teacher
   qlbm: [
@@ -234,7 +234,8 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/gvcn/exams/supervisor-schedule", element: <SupervisorSchedule /> },
     { path: "/gvcn/exams/supervisor-rooms", element: <SupervisorRooms /> },
     { path: "/gvcn/exams/enter-grades", element: <TeacherExamGradePage /> },
-    { path: "/gvcn/incidents", element: <BGHIncidentsPage /> },
+    { path: "/gvcn/notifications", element: <NotificationsPage /> },
+    { path: "/gvcn/notifications/:id", element: <NotificationDetailPage /> },
     { path: "/gvcn/profile", element: <ProfilePage /> },
   ],
   // GVBM (Giáo viên bộ môn) - sử dụng lại pages từ teacher
@@ -251,6 +252,8 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/gvbm/exams/supervisor-schedule", element: <SupervisorSchedule /> },
     { path: "/gvbm/exams/supervisor-rooms", element: <SupervisorRooms /> },
     { path: "/gvbm/exams/enter-grades", element: <TeacherExamGradePage /> },
+    { path: "/gvbm/notifications", element: <NotificationsPage /> },
+    { path: "/gvbm/notifications/:id", element: <NotificationDetailPage /> },
     { path: "/gvbm/profile", element: <ProfilePage /> },
   ],
   // BGH (Ban giám hiệu)
@@ -261,7 +264,6 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/bgh/teachers", element: <TeacherList /> },
     { path: "/bgh/grades", element: <BGHGradesPage /> },
     { path: "/bgh/attendance", element: <BGHAttendancePage /> },
-    { path: "/bgh/incidents", element: <BGHIncidentsPage /> },
     { path: "/bgh/conduct", element: <BGHConductApprovalPage /> },
     { path: "/bgh/school-years", element: <SchoolYearPage /> },
     { path: "/bgh/classes", element: <GradeClassPage /> },
@@ -289,6 +291,12 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
 ========================================================= */
 const AppContent = () => {
   const { backendUser, loading } = useAuth();
+
+  // ✅ Expose token to window for easy API testing
+  const token = backendUser?.idToken || null;
+  if (typeof window !== 'undefined') {
+    (window as any).__backendToken = token;
+  }
 
   if (loading) return <div className="text-center p-8">⏳ Đang tải dữ liệu...</div>;
 
@@ -348,6 +356,22 @@ const AppContent = () => {
 
         {/* Redirect root → /role/home */}
         <Route path="/" element={<Navigate to={homeRoute} replace />} />
+
+        {/* Dev helper route: show current token */}
+        <Route
+          path="/dev/token"
+          element={
+            <div className="p-6">
+              <h2 className="text-lg font-semibold mb-2">Current Token</h2>
+              <pre className="bg-muted p-3 rounded break-all">
+                {backendUser?.idToken || 'No token'}
+              </pre>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Also available at <code>window.__backendToken</code>
+              </p>
+            </div>
+          }
+        />
 
         {/* Not Found */}
         <Route path="*" element={<NotFound />} />

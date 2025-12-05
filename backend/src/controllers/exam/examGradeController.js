@@ -117,13 +117,25 @@ exports.addOrUpdateGrade = async (req, res) => {
       ? new mongoose.Types.ObjectId(subject)
       : subject;
 
+    // ✅ Xác định teacher mặc định theo tài khoản nếu không truyền vào
+    let teacherIdToUse = teacher || null;
+    try {
+      if (!teacherIdToUse && req.user?.role === "teacher" && req.user?.accountId) {
+        const Teacher = require("../../models/user/teacher");
+        const t = await Teacher.findOne({ accountId: req.user.accountId }).select("_id").lean();
+        if (t) teacherIdToUse = t._id;
+      }
+    } catch (e) {
+      // Không chặn luồng lưu điểm nếu không tìm được giáo viên
+    }
+
     // ✅ Model ExamGrade dùng field "student" (ref ExamStudent), không phải "examStudent"
     const grade = await ExamGrade.findOneAndUpdate(
       { exam, student: examStudentId, subject: subjectId },
       {
         examSchedule,
         gradeValue,
-        teacher,
+        teacher: teacherIdToUse,
         note,
         class: es.class?._id || es.class || null,
         grade: es.grade || null,
@@ -145,6 +157,41 @@ exports.addOrUpdateGrade = async (req, res) => {
       })
       .populate("subject", "name subjectCode")
       .populate("teacher", "name teacherCode");
+
+    // 🔄 Đồng bộ vào ExamStudent.subjects (score & status, tạo entry nếu thiếu)
+    try {
+      const setPayload = {};
+      if (gradeValue != null) {
+        setPayload["subjects.$[elem].score"] = gradeValue;
+        setPayload["subjects.$[elem].status"] = "completed";
+      } else {
+        setPayload["subjects.$[elem].score"] = null;
+        setPayload["subjects.$[elem].status"] = "registered";
+      }
+
+      await ExamStudent.updateOne(
+        { _id: examStudentId, "subjects.subject": subjectId },
+        { $set: setPayload },
+        { arrayFilters: [{ "elem.subject": subjectId }] }
+      );
+
+      // Nếu chưa có entry cho môn này thì thêm mới
+      await ExamStudent.updateOne(
+        { _id: examStudentId, subjects: { $not: { $elemMatch: { subject: subjectId } } } },
+        {
+          $push: {
+            subjects: {
+              subject: subjectId,
+              examSchedule: examSchedule || null,
+              status: gradeValue != null ? "completed" : "registered",
+              score: gradeValue != null ? gradeValue : null,
+            },
+          },
+        }
+      );
+    } catch (syncErr) {
+      console.error("⚠️ Lỗi đồng bộ ExamStudent.subjects khi lưu điểm:", syncErr.message);
+    }
 
     // ✅ KHÔNG đồng bộ điểm vào GradeItem khi lưu điểm
     // Điểm chỉ được đồng bộ khi BGH/QLBM công bố qua publishExamGrades
@@ -427,13 +474,16 @@ exports.getGradesByExam = async (req, res) => {
       .limit(parseInt(limit))
       .lean();
 
-    // ✅ Flatten cấu trúc để nhất quán với Admin/BGH
+    // ✅ Flatten cấu trúc nhưng GIỮ examStudent để frontend đồng bộ theo ExamStudentId
     const data = gradesData.map(g => {
-      const studentInfo = g.student?.student || {};
+      const examStudent = g.student || null; // Đây là ExamStudent (đã populate)
+      const studentInfo = examStudent?.student || {};
       const classInfo = studentInfo.classId || g.class || {};
-      
+
       return {
-        ...g,
+        _id: g._id,
+        exam: g.exam?._id || g.exam,
+        examStudent, // ✅ GIỮ LẠI ExamStudent để FE dùng làm khóa đồng bộ
         student: {
           _id: studentInfo._id,
           name: studentInfo.name || "",
@@ -447,7 +497,13 @@ exports.getGradesByExam = async (req, res) => {
           _id: g.subject?._id || g.subject,
           name: g.subject?.name || "",
           subjectCode: g.subject?.subjectCode || ""
-        }
+        },
+        gradeValue: g.gradeValue ?? null,
+        teacher: g.teacher || null,
+        examSchedule: g.examSchedule || null,
+        class: classInfo,
+        isLocked: g.isLocked || false,
+        note: g.note || "",
       };
     });
 
@@ -563,8 +619,44 @@ exports.updateGrade = async (req, res) => {
       return res.status(404).json({ error: "Không tìm thấy bản ghi điểm để cập nhật." });
     }
 
+    // ✅ Nếu giáo viên cập nhật điểm mà không truyền teacher, gán mặc định giáo viên hiện tại
+    if (req.body && req.body.gradeValue != null && req.body.teacher == null && req.user?.role === "teacher" && req.user?.accountId) {
+      try {
+        const Teacher = require("../../models/user/teacher");
+        const t = await Teacher.findOne({ accountId: req.user.accountId }).select("_id").lean();
+        if (t) {
+          req.body.teacher = t._id;
+        }
+      } catch (e) { /* bỏ qua */ }
+    }
+
     const updated = await ExamGrade.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!updated) return res.status(404).json({ error: "Không tìm thấy bản ghi điểm để cập nhật." });
+
+    // 🔄 Đồng bộ vào ExamStudent.subjects
+    try {
+      const current = await ExamGrade.findById(req.params.id).lean();
+      if (current) {
+        const examStudentId = current.student?._id || current.student;
+        const subjectId = current.subject?._id || current.subject;
+        const gradeValue = req.body.gradeValue;
+
+        if (examStudentId && subjectId) {
+          const setPayload = {};
+          if (gradeValue != null) {
+            setPayload["subjects.$[elem].score"] = gradeValue;
+            setPayload["subjects.$[elem].status"] = "completed";
+          }
+          await ExamStudent.updateOne(
+            { _id: examStudentId, "subjects.subject": subjectId },
+            { $set: setPayload },
+            { arrayFilters: [{ "elem.subject": subjectId }] }
+          );
+        }
+      }
+    } catch (syncErr) {
+      console.error("⚠️ Lỗi đồng bộ ExamStudent.subjects khi cập nhật điểm:", syncErr.message);
+    }
 
     // ✅ Đồng bộ điểm vào GradeItem nếu kỳ thi cho phép và đã công bố
     if (req.body.gradeValue != null) {
@@ -672,6 +764,7 @@ exports.importGradesFromExcel = async (req, res) => {
     if (!sheet.length) return res.status(400).json({ error: "File Excel trống." });
 
     const operations = [];
+    const examStudentSubjectOps = [];
     const gradeItemsToSync = []; // Để đồng bộ vào GradeItem sau
 
     for (const row of sheet) {
@@ -687,6 +780,30 @@ exports.importGradesFromExcel = async (req, res) => {
           filter: { exam: examId, student: examStudent._id, subject: subjectId }, // ✅ Field "student" trong ExamGrade là ref đến ExamStudent
           update: { gradeValue, teacher: teacherId },
           upsert: true,
+        },
+      });
+
+      // 🔄 Đồng bộ vào ExamStudent.subjects (batch)
+      examStudentSubjectOps.push({
+        updateOne: {
+          filter: { _id: examStudent._id, "subjects.subject": subjectId },
+          update: { $set: { "subjects.$[elem].score": gradeValue, "subjects.$[elem].status": "completed" } },
+          arrayFilters: [{ "elem.subject": subjectId }],
+        },
+      });
+      examStudentSubjectOps.push({
+        updateOne: {
+          filter: { _id: examStudent._id, subjects: { $not: { $elemMatch: { subject: subjectId } } } },
+          update: {
+            $push: {
+              subjects: {
+                subject: subjectId,
+                examSchedule: null,
+                status: "completed",
+                score: gradeValue,
+              },
+            },
+          },
         },
       });
 
@@ -711,6 +828,9 @@ exports.importGradesFromExcel = async (req, res) => {
 
     if (operations.length) {
       await ExamGrade.bulkWrite(operations);
+      if (examStudentSubjectOps.length) {
+        await ExamStudent.bulkWrite(examStudentSubjectOps, { ordered: false });
+      }
       
       // ✅ Đồng bộ điểm vào GradeItem
       if (shouldSyncGrades && gradeItemsToSync.length > 0) {

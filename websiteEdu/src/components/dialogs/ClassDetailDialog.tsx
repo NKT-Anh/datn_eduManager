@@ -216,24 +216,37 @@ export const ClassDetailDialog = ({
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-3xl font-bold text-primary">
-                      {classDetail.currentSize || 0}
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      / {classDetail.capacity} học sinh
-                    </p>
-                    <div className="mt-2">
-                      <div className="w-full bg-muted rounded-full h-2">
-                        <div
-                          className="bg-primary h-2 rounded-full transition-all"
-                          style={{
-                            width: `${
-                              ((classDetail.currentSize || 0) / classDetail.capacity) * 100
-                            }%`,
-                          }}
-                        />
-                      </div>
-                    </div>
+                    {/* Đếm sĩ số đúng từ Student collection */}
+                    {(() => {
+                      const trueCount = classStudents.filter(
+                        (s) =>
+                          s.status === 'active' &&
+                          !(s as any).isDeleted &&
+                          s.classId &&
+                          (typeof s.classId === 'string'
+                            ? s.classId === classDetail._id
+                            : s.classId._id === classDetail._id)
+                      ).length;
+                      return (
+                        <>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-3xl font-bold text-primary">{trueCount}</span>
+                            <span className="text-base text-muted-foreground">học sinh</span>
+                            <span className="text-sm text-muted-foreground">/ sĩ số tối đa: {classDetail.capacity}</span>
+                          </div>
+                          <div className="mt-2">
+                            <div className="w-full bg-muted rounded-full h-2">
+                              <div
+                                className="bg-primary h-2 rounded-full transition-all"
+                                style={{
+                                  width: `${(trueCount / classDetail.capacity) * 100}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </CardContent>
                 </Card>
 

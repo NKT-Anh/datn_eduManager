@@ -240,14 +240,6 @@ export const PERMISSIONS = {
   ROOM_DELETE: 'room:delete',
   ROOM_VIEW: 'room:view',
   
-  // Quản lý sự cố
-  INCIDENT_CREATE: 'incident:create',
-  INCIDENT_UPDATE: 'incident:update',
-  INCIDENT_VIEW: 'incident:view',
-  INCIDENT_HANDLE: 'incident:handle',
-  INCIDENT_VIEW_HOMEROOM: 'incident:view_homeroom',
-  INCIDENT_REPORT: 'incident:report',
-  
   // Quản lý thông báo
   NOTIFICATION_CREATE: 'notification:create',
   NOTIFICATION_UPDATE: 'notification:update',
@@ -332,7 +324,6 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.EXAM_VIEW_SELF,
     PERMISSIONS.EXAM_ROOM_VIEW_SELF,
     PERMISSIONS.EXAM_PRINT_TICKET_SELF,
-    PERMISSIONS.INCIDENT_REPORT,
     PERMISSIONS.NOTIFICATION_VIEW,
   ],
 };
@@ -387,7 +378,6 @@ export const getEffectivePermissions = (user: BackendUser | null): string[] => {
         PERMISSIONS.DASHBOARD_VIEW_HOMEROOM,
         PERMISSIONS.CONDUCT_ENTER,
         PERMISSIONS.NOTIFICATION_SEND_HOMEROOM,
-        PERMISSIONS.INCIDENT_VIEW_HOMEROOM,
         PERMISSIONS.ATTENDANCE_CREATE,
         PERMISSIONS.ATTENDANCE_VIEW_CLASS,
         PERMISSIONS.ATTENDANCE_UPDATE,

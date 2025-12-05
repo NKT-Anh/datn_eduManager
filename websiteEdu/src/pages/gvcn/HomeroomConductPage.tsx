@@ -6,8 +6,7 @@
  * - Kiểm tra thời gian cho phép nhập
  */
 
-import React, { useEffect, useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -20,17 +19,17 @@ import { useSchoolYears } from '@/hooks';
 import { useCurrentAcademicYear } from '@/hooks/useCurrentAcademicYear';
 import api from '@/services/axiosInstance';
 import { toast } from 'sonner';
-import { 
-  Save, 
-  Send, 
-  Clock, 
-  Lock, 
-  CheckCircle2, 
+import {
+  Save,
+  Send,
+  Clock,
+  Lock,
   AlertCircle,
-  Users
+  Users,
+  MessageSquare
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 
 interface ConductRecord {
   _id: string;
@@ -46,11 +45,14 @@ interface ConductRecord {
   };
   year: string;
   semester: string;
-  conduct: string;
+  conduct: string | null;
+  conductDraft?: string | null;
+  academicLevel?: string | null;
   conductSuggested: string | null;
   conductNote: string;
   conductStatus: 'draft' | 'pending' | 'approved' | 'locked';
   conductComment?: string;
+  note?: string | null;
   homeroomTeacherId?: {
     name: string;
   };
@@ -63,8 +65,9 @@ interface TimeInfo {
   message: string;
 }
 
+const NEW_CONDUCT_PLACEHOLDER_ID = 'undefined';
+
 export default function HomeroomConductPage() {
-  const { backendUser } = useAuth();
   const { schoolYears: allSchoolYears } = useSchoolYears();
   const { currentYearCode, currentYearData } = useCurrentAcademicYear();
   const currentYear = currentYearCode;
@@ -72,13 +75,36 @@ export default function HomeroomConductPage() {
   const [saving, setSaving] = useState(false);
   const [homeroomClass, setHomeroomClass] = useState<any>(null);
   const [selectedYear, setSelectedYear] = useState<string>('');
-  const [selectedSemester, setSelectedSemester] = useState<string>('HK1');
+  const [selectedSemester, setSelectedSemester] = useState<'HK1' | 'HK2' | 'CN'>('HK1');
   const [conducts, setConducts] = useState<ConductRecord[]>([]);
   const [timeInfo, setTimeInfo] = useState<TimeInfo | null>(null);
-  const [editingRecord, setEditingRecord] = useState<string | null>(null);
-  const [editConduct, setEditConduct] = useState<string>('');
-  const [editNote, setEditNote] = useState<string>('');
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [savingConductId, setSavingConductId] = useState<string | null>(null);
+  const [noteDialogOpen, setNoteDialogOpen] = useState(false);
+  const [noteRecord, setNoteRecord] = useState<ConductRecord | null>(null);
+  const [noteContent, setNoteContent] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [conductNoteDialogOpen, setConductNoteDialogOpen] = useState(false);
+  const [conductNoteRecord, setConductNoteRecord] = useState<ConductRecord | null>(null);
+  const [conductNoteValue, setConductNoteValue] = useState('');
+  const [conductNoteSaving, setConductNoteSaving] = useState(false);
+
+  const allHaveAcademicLevel = useMemo(() => {
+    if (conducts.length === 0) return false;
+    return conducts.every(record => {
+      const level = record.academicLevel;
+      return typeof level === 'string' && level.trim().length > 0;
+    });
+  }, [conducts]);
+
+  const submitReadyCount = useMemo(() => {
+    return conducts.filter(record => {
+      const hasConduct = (record.conductDraft ?? record.conduct ?? '').trim().length > 0;
+      return hasConduct;
+    }).length;
+  }, [conducts]);
+
+  // Nút gửi phê duyệt tất cả chỉ disable khi đang saving hoặc không có học sinh nào nhập hạnh kiểm
+  const disableSubmitAll = saving || submitReadyCount === 0;
 
   // ✅ Lấy lớp chủ nhiệm
   useEffect(() => {
@@ -127,13 +153,14 @@ export default function HomeroomConductPage() {
       const settings = settingsRes.data;
       
       let startDate, endDate;
-      if (selectedSemester === 'HK1') {
-        startDate = settings.conductEntryStartHK1;
-        endDate = settings.conductEntryEndHK1;
-      } else if (selectedSemester === 'HK2') {
-        startDate = settings.conductEntryStartHK2;
-        endDate = settings.conductEntryEndHK2;
-      }
+        if (selectedSemester === 'HK1') {
+          startDate = settings.conductEntryStartHK1;
+          endDate = settings.conductEntryEndHK1;
+        } else if (selectedSemester === 'HK2' || selectedSemester === 'CN') {
+          // Nếu là HK2 hoặc Cuối năm (CN) thì đều lấy thời gian của HK2
+          startDate = settings.conductEntryStartHK2;
+          endDate = settings.conductEntryEndHK2;
+        }
 
       if (!startDate || !endDate) {
         setTimeInfo({
@@ -207,76 +234,6 @@ export default function HomeroomConductPage() {
     }
   };
 
-
-  // ✅ Lưu bản nháp
-  const handleSaveDraft = async (recordId: string, conduct: string, note: string) => {
-    try {
-      setSaving(true);
-      await api.put(`/conducts/${recordId}`, {
-        conduct,
-        conductNote: note,
-        action: 'save'
-      });
-      toast.success('Đã lưu bản nháp');
-      fetchConducts();
-    } catch (error: any) {
-      console.error('Error saving draft:', error);
-      toast.error(error.response?.data?.error || 'Không thể lưu bản nháp');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // ✅ Gửi phê duyệt
-  const handleSubmit = async (recordId: string, conduct: string, note: string) => {
-    if (!conduct) {
-      toast.error('Vui lòng nhập hạnh kiểm trước khi gửi phê duyệt');
-      return;
-    }
-    
-    try {
-      setSaving(true);
-      const record = conducts.find(r => r._id === recordId);
-      
-      // ✅ Nếu record chưa có _id (null), gửi thêm studentId, year, semester để tạo mới
-      const payload: any = {
-        conduct,
-        conductNote: note,
-        action: 'submit'
-      };
-      
-      if (!recordId || recordId === 'null' || recordId === 'undefined') {
-        if (record && record.studentId && selectedYear && selectedSemester) {
-          payload.studentId = record.studentId._id || record.studentId;
-          payload.year = selectedYear;
-          payload.semester = selectedSemester;
-        } else {
-          toast.error('Thiếu thông tin học sinh hoặc năm học/học kỳ');
-          return;
-        }
-      }
-      
-      await api.put(`/conducts/${recordId || 'new'}`, payload);
-      toast.success('Đã gửi phê duyệt');
-      fetchConducts();
-    } catch (error: any) {
-      console.error('Error submitting:', error);
-      const errorMsg = error.response?.data?.error || 'Không thể gửi phê duyệt';
-      toast.error(errorMsg);
-      
-      // Hiển thị thông tin thời gian nếu lỗi do hết thời gian
-      if (error.response?.data?.timeInfo) {
-        setTimeInfo({
-          allowed: false,
-          ...error.response.data.timeInfo,
-          message: errorMsg
-        });
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
   // ✅ Lưu tất cả (batch save)
   const handleSaveAll = async () => {
     if (!timeInfo?.allowed) {
@@ -288,11 +245,30 @@ export default function HomeroomConductPage() {
       setSaving(true);
       const promises = conducts.map(record => {
         if (record.conductStatus === 'locked') return Promise.resolve();
-        return api.put(`/conducts/${record._id}`, {
-          conduct: record.conduct,
+
+        const draftValue = record.conductDraft ?? record.conduct;
+
+        const payload: any = {
           conductNote: record.conductNote || '',
           action: 'save'
-        });
+        };
+
+        if (draftValue) {
+          payload.conduct = draftValue;
+        }
+
+        if (!record._id || record._id === 'null' || record._id === 'undefined') {
+          if (record.studentId && selectedYear && selectedSemester) {
+            payload.studentId = record.studentId._id || record.studentId;
+            payload.year = selectedYear;
+            payload.semester = selectedSemester;
+          } else {
+            return Promise.reject(new Error('Thiếu thông tin học sinh'));
+          }
+        }
+
+        const requestId = getRequestId(record);
+        return api.put(`/conducts/${requestId}`, payload);
       });
       
       await Promise.all(promises);
@@ -316,13 +292,17 @@ export default function HomeroomConductPage() {
     try {
       setSaving(true);
       const promises = conducts
-        .filter(record => record.conductStatus !== 'locked' && record.conduct)
-        .map(record => {
-          const payload: any = {
-            conduct: record.conduct,
-            conductNote: record.conductNote || '',
-            action: 'submit'
-          };
+          .map(record => {
+            if (record.conductStatus === 'locked') return null;
+
+            const draftValue = record.conductDraft ?? record.conduct;
+            if (!draftValue) return null;
+
+            const payload: any = {
+              conduct: draftValue,
+              conductNote: record.conductNote || '',
+              action: 'submit'
+            };
           
           // ✅ Nếu record chưa có _id, gửi thêm studentId, year, semester
           if (!record._id || record._id === 'null' || record._id === 'undefined') {
@@ -335,10 +315,13 @@ export default function HomeroomConductPage() {
             }
           }
           
-          return api.put(`/conducts/${record._id || 'new'}`, payload);
+          const requestId = getRequestId(record);
+          return api.put(`/conducts/${requestId}`, payload);
         });
       
-      await Promise.all(promises);
+        const validPromises = promises.filter(Boolean) as Promise<any>[];
+      
+        await Promise.all(validPromises);
       toast.success('Đã gửi phê duyệt tất cả');
       fetchConducts();
     } catch (error: any) {
@@ -381,41 +364,178 @@ export default function HomeroomConductPage() {
     return <Badge className={info.className}>{info.label}</Badge>;
   };
 
-  const openEditDialog = (record: ConductRecord) => {
-    setEditingRecord(record._id);
-    setEditConduct(record.conduct || '');
-    setEditNote(record.conductNote || '');
-    setEditDialogOpen(true);
+  const getRecordKey = (record: ConductRecord) => {
+    if (record._id) return String(record._id);
+    const studentId = record.studentId?._id || record.studentId;
+    return `${studentId}-${record.year}-${record.semester}`;
   };
 
-  const handleEditSave = async () => {
-    if (!editingRecord) return;
-    const record = conducts.find(r => r._id === editingRecord);
-    if (!record) return;
-
-    if (record.conductStatus === 'locked') {
-      toast.error('Hạnh kiểm đã được chốt, không thể sửa');
-      return;
+  const isSameRecord = (a: ConductRecord, b: ConductRecord) => {
+    if (a._id && b._id) {
+      return String(a._id) === String(b._id);
     }
-
-    await handleSaveDraft(editingRecord, editConduct, editNote);
-    setEditDialogOpen(false);
-    setEditingRecord(null);
+    const aStudent = a.studentId?._id || a.studentId;
+    const bStudent = b.studentId?._id || b.studentId;
+    return (
+      String(aStudent) === String(bStudent) &&
+      String(a.year) === String(b.year) &&
+      String(a.semester) === String(b.semester)
+    );
   };
 
-  const handleEditSubmit = async () => {
-    if (!editingRecord) return;
-    const record = conducts.find(r => r._id === editingRecord);
-    if (!record) return;
+  const getRequestId = (record: ConductRecord) => {
+    if (record._id && record._id !== 'null' && record._id !== 'undefined') {
+      return String(record._id);
+    }
+    return NEW_CONDUCT_PLACEHOLDER_ID;
+  };
 
-    if (record.conductStatus === 'locked') {
-      toast.error('Hạnh kiểm đã được chốt, không thể sửa');
-      return;
+  const handleConductSelect = async (record: ConductRecord, value: string) => {
+    if (!value) return;
+
+    const newConduct = value;
+    const recordKey = getRecordKey(record);
+    const previous = {
+      conduct: record.conduct || null,
+      conductDraft: record.conductDraft || null,
+      conductStatus: record.conductStatus
+    };
+
+    setConducts(prev => prev.map(r => (
+      isSameRecord(r, record)
+        ? {
+            ...r,
+            conductDraft: newConduct,
+            conductStatus: 'draft'
+          }
+        : r
+    )));
+
+    const payload: any = {
+      action: 'save',
+      conductNote: record.conductNote || ''
+    };
+
+    if (newConduct) {
+      payload.conduct = newConduct;
     }
 
-    await handleSubmit(editingRecord, editConduct, editNote);
-    setEditDialogOpen(false);
-    setEditingRecord(null);
+    if (!record._id || record._id === 'null' || record._id === 'undefined') {
+      payload.studentId = record.studentId._id || record.studentId;
+      payload.year = selectedYear;
+      payload.semester = selectedSemester;
+    }
+
+    setSavingConductId(recordKey);
+
+    try {
+      const requestId = getRequestId(record);
+      const res = await api.put(`/conducts/${requestId}`, payload);
+      const updated = res.data?.data as ConductRecord | undefined;
+      if (updated) {
+        setConducts(prev => prev.map(r => (
+          isSameRecord(r, record)
+            ? {
+                ...r,
+                ...updated,
+                studentId: updated.studentId || r.studentId,
+                classId: updated.classId || r.classId
+              }
+            : r
+        )));
+      }
+      toast.success('Đã lưu hạnh kiểm (bản nháp)');
+    } catch (error: any) {
+      console.error('Error updating conduct:', error);
+      toast.error(error.response?.data?.error || 'Không thể lưu hạnh kiểm');
+      setConducts(prev => prev.map(r => (
+        isSameRecord(r, record)
+          ? {
+              ...r,
+              conduct: previous.conduct,
+              conductDraft: previous.conductDraft,
+              conductStatus: previous.conductStatus
+            }
+          : r
+      )));
+    } finally {
+      setSavingConductId(null);
+    }
+  };
+
+  const openNoteDialog = (record: ConductRecord) => {
+    setNoteRecord(record);
+    setNoteContent(record.note || '');
+    setNoteDialogOpen(true);
+  };
+
+  const openConductNoteDialog = (record: ConductRecord) => {
+    setConductNoteRecord(record);
+    setConductNoteValue(record.conductNote || '');
+    setConductNoteDialogOpen(true);
+  };
+
+  const handleNoteSave = async () => {
+    if (!noteRecord || !selectedYear) return;
+
+    const semesterForNote: 'HK1' | 'HK2' = selectedSemester === 'HK2' ? 'HK2' : 'HK1';
+
+    try {
+      setNoteSaving(true);
+      await api.put('/conducts/year-note/update', {
+        studentId: noteRecord.studentId._id,
+        year: selectedYear,
+        semester: semesterForNote,
+        note: noteContent
+      });
+      toast.success(`Đã lưu nhận xét ${semesterForNote === 'HK1' ? 'học kỳ 1' : 'học kỳ 2'} thành công`);
+      setNoteDialogOpen(false);
+      setNoteRecord(null);
+      setNoteContent('');
+      fetchConducts();
+    } catch (error: any) {
+      console.error('Error saving year note:', error);
+      toast.error(error.response?.data?.error || 'Không thể lưu nhận xét');
+    } finally {
+      setNoteSaving(false);
+    }
+  };
+
+  const handleConductNoteSave = async () => {
+    if (!conductNoteRecord) return;
+
+    const draftValue = conductNoteRecord.conductDraft ?? conductNoteRecord.conduct ?? undefined;
+
+    const payload: any = {
+      conductNote: conductNoteValue,
+      action: 'save'
+    };
+
+    if (draftValue) {
+      payload.conduct = draftValue;
+    }
+
+    if (!conductNoteRecord._id || conductNoteRecord._id === 'null' || conductNoteRecord._id === 'undefined') {
+      payload.studentId = conductNoteRecord.studentId._id;
+      payload.year = selectedYear;
+      payload.semester = selectedSemester;
+    }
+
+    try {
+      setConductNoteSaving(true);
+      const requestId = getRequestId(conductNoteRecord);
+      await api.put(`/conducts/${requestId}`, payload);
+      toast.success('Đã lưu ghi chú (bản nháp)');
+      setConductNoteDialogOpen(false);
+      setConductNoteRecord(null);
+      setConductNoteValue('');
+      fetchConducts();
+    } catch (error: any) {
+      console.error('Error saving conduct note:', error);
+      toast.error(error.response?.data?.error || 'Không thể lưu ghi chú');
+    } finally {
+      setConductNoteSaving(false);
+    }
   };
 
   if (loading && !homeroomClass) {
@@ -486,13 +606,14 @@ export default function HomeroomConductPage() {
             </div>
             <div>
               <Label>Học kỳ</Label>
-              <Select value={selectedSemester} onValueChange={setSelectedSemester}>
+              <Select value={selectedSemester} onValueChange={(value) => setSelectedSemester(value as 'HK1' | 'HK2' | 'CN')}>
                 <SelectTrigger>
                   <SelectValue placeholder="Chọn học kỳ" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="HK1">Học kỳ 1</SelectItem>
                   <SelectItem value="HK2">Học kỳ 2</SelectItem>
+                  <SelectItem value="CN">Cuối năm</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -502,7 +623,7 @@ export default function HomeroomConductPage() {
 
       {/* ✅ Nút hành động tổng */}
       {timeInfo?.allowed && conducts.length > 0 && (
-        <div className="flex gap-2">
+        <div className="flex items-center gap-3 flex-wrap">
           <Button 
             onClick={handleSaveAll} 
             disabled={saving}
@@ -513,10 +634,12 @@ export default function HomeroomConductPage() {
           </Button>
           <Button 
             onClick={handleSubmitAll} 
-            disabled={saving}
+            disabled={disableSubmitAll}
+            variant="default"
+            className={disableSubmitAll ? 'opacity-70 pointer-events-none' : undefined}
           >
             <Send className="h-4 w-4 mr-2" />
-            Gửi phê duyệt tất cả
+            Gửi phê duyệt tất cả ({submitReadyCount})
           </Button>
         </div>
       )}
@@ -546,57 +669,94 @@ export default function HomeroomConductPage() {
                     <TableHead>Họ và tên</TableHead>
                     <TableHead>Hạnh kiểm</TableHead>
                     <TableHead>Ghi chú</TableHead>
+                    <TableHead>Nhận xét GVCN</TableHead>
                     <TableHead>Trạng thái</TableHead>
                     <TableHead>Thao tác</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {conducts.map((record, index) => (
-                    <TableRow key={record._id}>
-                      <TableCell>{index + 1}</TableCell>
-                      <TableCell>{record.studentId.studentCode}</TableCell>
-                      <TableCell className="font-medium">{record.studentId.name}</TableCell>
-                      <TableCell>
-                        {record.conduct ? (
-                          getConductBadge(record.conduct)
-                        ) : (
-                          <span className="text-muted-foreground">Chưa nhập</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="max-w-xs">
-                        {record.conductNote ? (
-                          <p className="text-sm truncate" title={record.conductNote}>
-                            {record.conductNote}
-                          </p>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">-</span>
-                        )}
-                        {record.conductComment && (
-                          <p className="text-xs text-muted-foreground mt-1" title={record.conductComment}>
-                            BGH: {record.conductComment}
-                          </p>
-                        )}
-                      </TableCell>
-                      <TableCell>{getStatusBadge(record.conductStatus)}</TableCell>
-                      <TableCell>
-                        {record.conductStatus === 'locked' ? (
-                          <Badge variant="outline" className="text-xs">
-                            <Lock className="h-3 w-3 mr-1" />
-                            Đã chốt
-                          </Badge>
-                        ) : (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openEditDialog(record)}
-                            disabled={!timeInfo?.allowed && record.conductStatus !== 'pending'}
-                          >
-                            {record.conduct ? 'Sửa' : 'Nhập'}
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {conducts.map((record, index) => {
+                    const rowKey = getRecordKey(record);
+                    const isLocked = record.conductStatus === 'locked';
+                    const canEditConduct = !isLocked && (timeInfo?.allowed || record.conductStatus === 'pending');
+                    const isSavingThis = savingConductId === rowKey;
+                    const currentConductValue = record.conductDraft ?? record.conduct ?? '';
+
+                    return (
+                      <TableRow key={rowKey}>
+                        <TableCell>{index + 1}</TableCell>
+                        <TableCell>{record.studentId.studentCode}</TableCell>
+                        <TableCell className="font-medium">{record.studentId.name}</TableCell>
+                        <TableCell>
+                          {isLocked ? (
+                            record.conduct
+                              ? getConductBadge(record.conduct)
+                              : <Badge variant="outline">Chưa có</Badge>
+                          ) : (
+                            <Select
+                              value={currentConductValue}
+                              onValueChange={(value) => handleConductSelect(record, value)}
+                              disabled={!canEditConduct || isSavingThis}
+                            >
+                              <SelectTrigger className="w-[150px]">
+                                <SelectValue placeholder="Chưa xếp loại" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Tốt">Tốt</SelectItem>
+                                <SelectItem value="Khá">Khá</SelectItem>
+                                <SelectItem value="Trung bình">Trung bình</SelectItem>
+                                <SelectItem value="Yếu">Yếu</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </TableCell>
+                        <TableCell className="max-w-xs">
+                          {record.conductNote ? (
+                            <p className="text-sm truncate" title={record.conductNote}>
+                              {record.conductNote}
+                            </p>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">-</span>
+                          )}
+                          {record.conductComment && (
+                            <p className="text-xs text-muted-foreground mt-1" title={record.conductComment}>
+                              BGH: {record.conductComment}
+                            </p>
+                          )}
+                        </TableCell>
+                        <TableCell className="max-w-xs">
+                          {record.note ? (
+                            <p className="text-sm truncate" title={record.note || undefined}>
+                              {record.note}
+                            </p>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">Chưa có</span>
+                          )}
+                        </TableCell>
+                        <TableCell>{getStatusBadge(record.conductStatus)}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openNoteDialog(record)}
+                            >
+                              <MessageSquare className="h-3.5 w-3.5 mr-1" />
+                              Nhận xét HK
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openConductNoteDialog(record)}
+                              disabled={isLocked}
+                            >
+                              {record.conductNote ? 'Ghi chú' : 'Thêm ghi chú'}
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -604,60 +764,94 @@ export default function HomeroomConductPage() {
         </CardContent>
       </Card>
 
-      {/* ✅ Dialog chỉnh sửa */}
-      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="max-w-2xl">
+      {/* ✅ Dialog nhập nhận xét GVCN */}
+      <Dialog
+        open={noteDialogOpen}
+        onOpenChange={(open) => {
+          setNoteDialogOpen(open);
+          if (!open) {
+            setNoteRecord(null);
+            setNoteContent('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>Nhập hạnh kiểm</DialogTitle>
+            <DialogTitle>Nhận xét học sinh</DialogTitle>
             <DialogDescription>
-              {editingRecord && conducts.find(r => r._id === editingRecord)?.studentId.name}
+              {noteRecord?.studentId.name} ({noteRecord?.studentId.studentCode}) · Học kỳ {selectedSemester === 'HK1' ? '1' : '2'} · Năm học {selectedYear}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Hạnh kiểm</Label>
-              <Select value={editConduct} onValueChange={setEditConduct}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Chọn hạnh kiểm" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Tốt">Tốt</SelectItem>
-                  <SelectItem value="Khá">Khá</SelectItem>
-                  <SelectItem value="Trung bình">Trung bình</SelectItem>
-                  <SelectItem value="Yếu">Yếu</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Ghi chú</Label>
+              <Label>Nhận xét</Label>
               <Textarea
-                value={editNote}
-                onChange={(e) => setEditNote(e.target.value)}
-                placeholder="Nhập ghi chú về hạnh kiểm..."
-                rows={4}
+                value={noteContent}
+                onChange={(e) => setNoteContent(e.target.value)}
+                rows={5}
+                placeholder="Nhập nhận xét về học tập, rèn luyện của học sinh..."
               />
             </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
-                Hủy
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleEditSave}
-                disabled={saving || !editConduct}
-              >
-                <Save className="h-4 w-4 mr-2" />
-                Lưu bản nháp
-              </Button>
-              <Button
-                onClick={handleEditSubmit}
-                disabled={saving || !editConduct || !timeInfo?.allowed}
-              >
-                <Send className="h-4 w-4 mr-2" />
-                Gửi phê duyệt
-              </Button>
-            </div>
           </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setNoteDialogOpen(false);
+                setNoteRecord(null);
+                setNoteContent('');
+              }}
+            >
+              Hủy
+            </Button>
+            <Button onClick={handleNoteSave} disabled={noteSaving || !noteRecord}>
+              {noteSaving ? 'Đang lưu...' : 'Lưu nhận xét'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ✅ Dialog ghi chú hạnh kiểm (lưu nháp) */}
+      <Dialog
+        open={conductNoteDialogOpen}
+        onOpenChange={(open) => {
+          setConductNoteDialogOpen(open);
+          if (!open) {
+            setConductNoteRecord(null);
+            setConductNoteValue('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Ghi chú hạnh kiểm</DialogTitle>
+            <DialogDescription>
+              {conductNoteRecord?.studentId.name} ({conductNoteRecord?.studentId.studentCode}) · Học kỳ {selectedSemester === 'HK1' ? '1' : '2'} · Năm học {selectedYear}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Textarea
+              value={conductNoteValue}
+              onChange={(e) => setConductNoteValue(e.target.value)}
+              rows={4}
+              placeholder="Nhập ghi chú về hạnh kiểm..."
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setConductNoteDialogOpen(false);
+                setConductNoteRecord(null);
+                setConductNoteValue('');
+              }}
+            >
+              Hủy
+            </Button>
+            <Button onClick={handleConductNoteSave} disabled={conductNoteSaving || !conductNoteRecord}>
+              {conductNoteSaving ? 'Đang lưu...' : 'Lưu bản nháp'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

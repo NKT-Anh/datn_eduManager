@@ -34,6 +34,7 @@ exports.getPublicSchoolInfo = async (req, res) => {
       email: setting.email || '',
       website: setting.website || '',
       facebook: setting.facebook || '',
+      schoolLogo: setting.schoolLogo || null,
     });
   } catch (err) {
     console.error(err);

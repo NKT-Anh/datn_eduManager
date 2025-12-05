@@ -92,7 +92,7 @@ const conductApi = {
   updateYearNote: async (payload: {
     studentId: string;
     year: string;
-    semester: 'HK1' | 'HK2' | 'CN' | '1' | '2' | 'cuoi-nam';
+    semester: 'HK1' | 'HK2' | 'CN' | '1' | '2' | 'cuoi-nam'| 'CN';
     note: string;
   }) => {
     const res = await axiosClient.put('/conducts/year-note/update', payload);
@@ -131,18 +131,57 @@ export const conductConfigApi = {
     const res = await axiosClient.delete(`/conduct-config/${id}`);
     return res.data;
   },
-
-  // Tính toán hạnh kiểm tự động (Batch)
-  calculateConducts: async (payload: {
-    schoolYear: string;
-    semester: string;
-    classId?: string;
-    studentIds?: string[];
-  }) => {
-    const res = await axiosClient.post('/conduct-config/calculate', payload);
-    return res.data;
-  },
 };
+
+
+// 📊 Lấy thống kê hạnh kiểm các lớp (class statistics)
+export const getConductClassStatistics = async (params?: { year?: string; semester?: string }) => {
+  const res = await axiosClient.get('/conducts/class-statistics', { params });
+  return res.data;
+};
+
+// ✅ Phê duyệt hạnh kiểm cho 1 lớp
+export const approveConduct = async (classId: string) => {
+  const res = await axiosClient.post(`/conducts/approve/${classId}`);
+  return res.data;
+};
+
+// ✅ Phê duyệt tất cả hạnh kiểm
+export const approveAllConduct = async (params?: { year?: string; semester?: string }) => {
+  const res = await axiosClient.post('/conducts/approve-all', params);
+  return res.data;
+};
+
+
+// 📊 Thống kê hạnh kiểm theo khối (gốc)
+export const getConductBlockStatistics = async (params?: { 
+  year?: string; 
+  semester?: string; 
+}) => {
+  const res = await axiosClient.get('/conducts/block-statistics', { params });
+  return res.data;
+};
+
+// 📊 Thống kê hạnh kiểm theo từng lớp (dùng block-statistics, trả về từng lớp)
+export const getConductBlockStatisticsByClass = async (params?: { year?: string; semester?: string }) => {
+  const res = await axiosClient.get('/conducts/block-statistics', { params });
+  const data = res.data?.data || [];
+  // Mỗi khối có mảng lớp, cần chuyển thành từng lớp riêng
+  // Giả sử mỗi item có: grade, classCount, studentCount, stats, completedClass, và có thể có mảng classes
+  // Nếu không có mảng classes, cần backend trả về hoặc phải lấy từ nơi khác
+  // Ở đây sẽ kiểm tra nếu có mảng classes, còn không thì trả về rỗng
+  let classList = [];
+  for (const block of data) {
+    if (Array.isArray(block.classes)) {
+      classList.push(...block.classes.map(cls => ({
+        ...cls,
+        grade: block.grade
+      })));
+    }
+  }
+  return classList;
+};
+
 
 export default conductApi;
 

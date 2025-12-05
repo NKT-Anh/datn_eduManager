@@ -52,7 +52,8 @@ exports.getExamsByStudent = async (req, res) => {
         select: "name year semester type status startDate endDate",
         match: { status: "published" } // ✅ Chỉ lấy exam đã công bố
       })
-      .populate("class", "name grade")
+      // ⚠️ Class schema dùng field 'className' thay vì 'name'
+      .populate("class", "className classCode grade")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -98,7 +99,7 @@ exports.getExamsByStudent = async (req, res) => {
       startDate: es.exam.startDate,
       endDate: es.exam.endDate,
       grade: es.grade,
-      class: es.class,
+      class: es.class, // { className, classCode, grade }
     }));
 
     res.json(formattedData);
@@ -174,6 +175,8 @@ exports.getScheduleByStudent = async (req, res) => {
         room: roomCode ? { roomCode } : null,
         fixedRoomCode: fixedRoomCode,
         seatNumber: seatNumber,
+        // ✅ Trả về SBD chung của học sinh trong kỳ thi để hiển thị ở mọi lịch
+        sbd: examStudent.sbd,
       };
     });
 

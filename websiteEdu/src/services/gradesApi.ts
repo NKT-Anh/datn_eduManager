@@ -18,14 +18,40 @@ interface GradesApi {
   recomputeSummary: (payload: any) => Promise<any>;
   initGradeTable: (payload: any) => Promise<any>;
   getStudentGrades: (params?: any) => Promise<any>;
+  getStudentGradesWithTrend: (params?: any) => Promise<any>;
   getAllStudentsGrades: (params?: any) => Promise<any>;
+  getAllStudentsGradesWithTrend: (params?: any) => Promise<any>;
   getStatistics: (params?: any) => Promise<any>;
   getAuditLog: (params?: any) => Promise<any>;
   updateGradeItem: (id: string, payload: any) => Promise<any>;
   deleteGradeItem: (id: string) => Promise<any>;
   getHomeroomClassAllGrades: (params: any) => Promise<any>;
+  getHomeroomClassAllGradesWithTrend: (params: any) => Promise<any>;
   getHomeroomClassAverages: (params: any) => Promise<any>;
   getHomeroomClassClassification: (params: any) => Promise<any>;
+  getClassSemesterGPA: (params: any) => Promise<any>;
+  evaluateHomeroomAcademic: (payload: {
+    classId: string;
+    schoolYear: string;
+    semester: string; // '1' | '2' | 'CN'
+  }) => Promise<any>;
+  exportStudentReportCard: (params: {
+    studentId: string;
+    classId: string;
+    schoolYear: string;
+    semester: string;
+  }) => Promise<Blob>;
+  exportClassReportCards: (params: {
+    classId: string;
+    schoolYear: string;
+    semester: string;
+  }) => Promise<Blob>;
+  publishSubject: (payload: {
+    classId: string;
+    subjectId: string;
+    schoolYear: string;
+    semester: string;
+  }) => Promise<any>;
 }
 
 const gradesApi: GradesApi = {
@@ -265,6 +291,64 @@ const gradesApi: GradesApi = {
     semester?: string;
   }) => {
     const res = await axiosClient.get('/grades/homeroom/classification', { params });
+    return res.data;
+  },
+
+  // ✅ GVBM/GVCN/Admin: Lấy ĐTB học kỳ theo học sinh của lớp
+  getClassSemesterGPA: async (params: {
+    classId: string;
+    schoolYear: string;
+    semester: string;
+  }) => {
+    const res = await axiosClient.get('/grades/class/semester-gpa', { params });
+    return res.data;
+  },
+  
+  // ✅ GVCN/Admin: Xét học lực cho lớp CN theo học kỳ/năm
+  evaluateHomeroomAcademic: async (payload: {
+    classId: string;
+    schoolYear: string;
+    semester: string; // '1' | '2' | 'CN'
+  }) => {
+    const res = await axiosClient.post('/grades/homeroom/evaluate-academic', payload);
+    return res.data;
+  },
+
+  // ✅ GVCN tải phiếu kết quả học tập dạng PDF cho học sinh
+  exportStudentReportCard: async ({ studentId, classId, schoolYear, semester }: {
+    studentId: string;
+    classId: string;
+    schoolYear: string;
+    semester: string;
+  }) => {
+    const res = await axiosClient.get(`/grades/homeroom/report-card/${studentId}/pdf`, {
+      params: { classId, schoolYear, semester },
+      responseType: 'blob',
+    });
+    return res.data as Blob;
+  },
+
+  // ✅ GVCN tải ZIP phiếu kết quả học tập cho cả lớp
+  exportClassReportCards: async ({ classId, schoolYear, semester }: {
+    classId: string;
+    schoolYear: string;
+    semester: string;
+  }) => {
+    const res = await axiosClient.get('/grades/homeroom/report-card/bulk/pdf', {
+      params: { classId, schoolYear, semester },
+      responseType: 'blob',
+    });
+    return res.data as Blob;
+  },
+  
+  // ✅ Công bố điểm môn học cho cả lớp (đánh dấu isOfficial)
+  publishSubject: async (payload: {
+    classId: string;
+    subjectId: string;
+    schoolYear: string;
+    semester: string;
+  }) => {
+    const res = await axiosClient.post('/grades/publish', payload);
     return res.data;
   },
 };

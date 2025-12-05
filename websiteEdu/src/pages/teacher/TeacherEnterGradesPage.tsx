@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import gradesApi from "@/services/gradesApi";
 import schoolConfigApi from "@/services/schoolConfigApi";
@@ -7,12 +7,21 @@ import gradeConfigApi from "@/services/gradeConfigApi";
 import { useSchoolYears } from "@/hooks";
 import { useCurrentAcademicYear } from "@/hooks/useCurrentAcademicYear";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { assignmentApi } from "@/services/assignmentApi";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import settingApi from "@/services/settingApi";
+import { Clock, Lock } from "lucide-react";
 
 const TeacherEnterGradesPage: React.FC = () => {
   const { backendUser, loading: authLoading } = useAuth();
@@ -40,12 +49,15 @@ const TeacherEnterGradesPage: React.FC = () => {
   // validation errors: studentId -> component -> boolean
   const [errors, setErrors] = useState<Record<string, Record<string, boolean>>>({});
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  // Bỏ ĐTB HK khỏi trang giáo viên bộ môn
 
   // ✅ Cấu hình điểm từ admin
   const [gradeConfig, setGradeConfig] = useState<{
     weights: Record<string, number>;
     columnCounts?: Record<string, number>; // ✅ Số cột điểm cho mỗi component
     rounding: 'half-up' | 'none';
+    completionPolicy?: 'at-least-one' | 'require-counts';
     classification?: {
       excellent?: { minAverage: number; minSubjectScore: number };
       good?: { minAverage: number; minSubjectScore: number };
@@ -55,6 +67,97 @@ const TeacherEnterGradesPage: React.FC = () => {
   } | null>(null);
   const [loadingConfig, setLoadingConfig] = useState(false);
 
+  const [timeInfo, setTimeInfo] = useState<{
+    allowed: boolean;
+    startDate: string | null;
+    endDate: string | null;
+    message: string;
+  } | null>(null);
+
+  const formatDate = useCallback((dateString: string | null) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleDateString('vi-VN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+  }, []);
+
+  const refreshGradeEntryWindow = useCallback(async () => {
+    if (!selectedSemester) {
+      setTimeInfo(null);
+      return;
+    }
+
+    try {
+      const res = await settingApi.getSettings();
+      const settings = res?.data || res;
+
+      const semValue = String(selectedSemester || '').toUpperCase();
+      const isSecondSemester = semValue === '2' || semValue === 'HK2' || semValue === 'SEMESTER_2';
+      const startDate = isSecondSemester ? settings?.gradeEntryStartHK2 : settings?.gradeEntryStartHK1;
+      const endDate = isSecondSemester ? settings?.gradeEntryEndHK2 : settings?.gradeEntryEndHK1;
+
+      if (!startDate || !endDate) {
+        setTimeInfo({
+          allowed: false,
+          startDate: startDate || null,
+          endDate: endDate || null,
+          message: 'Chưa cấu hình thời gian nhập điểm cho học kỳ này',
+        });
+        return;
+      }
+
+      const now = new Date();
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        setTimeInfo({
+          allowed: false,
+          startDate,
+          endDate,
+          message: 'Không thể đọc dữ liệu thời gian nhập điểm',
+        });
+        return;
+      }
+
+      if (now < start) {
+        setTimeInfo({
+          allowed: false,
+          startDate,
+          endDate,
+          message: `Chưa đến thời gian nhập điểm. Thời gian cho phép: ${formatDate(startDate)} - ${formatDate(endDate)}`,
+        });
+      } else if (now > end) {
+        setTimeInfo({
+          allowed: false,
+          startDate,
+          endDate,
+          message: `Đã hết thời gian nhập điểm. Thời gian cho phép: ${formatDate(startDate)} - ${formatDate(endDate)}`,
+        });
+      } else {
+        setTimeInfo({
+          allowed: true,
+          startDate,
+          endDate,
+          message: `Đang trong thời gian nhập điểm: ${formatDate(startDate)} - ${formatDate(endDate)}`,
+        });
+      }
+    } catch (error) {
+      console.error('Không thể kiểm tra thời gian nhập điểm:', error);
+      setTimeInfo({
+        allowed: false,
+        startDate: null,
+        endDate: null,
+        message: 'Không thể kiểm tra thời gian nhập điểm',
+      });
+    }
+  }, [formatDate, selectedSemester]);
+
   
 
   // ✅ Lấy danh sách năm học từ hooks
@@ -62,12 +165,25 @@ const TeacherEnterGradesPage: React.FC = () => {
   const { currentYearCode, currentYearData } = useCurrentAcademicYear();
   
   useEffect(() => {
+  
     setSchoolYears(allSchoolYears.map((y) => ({ code: y.code, name: y.name })));
 
     // Prefer the active school year's code as default when not selected yet
     const defaultCode = currentYearCode || (allSchoolYears.length ? allSchoolYears[allSchoolYears.length - 1].code : '');
     if (defaultCode && !selectedYear) setSelectedYear(defaultCode);
   }, [allSchoolYears, currentYearCode, selectedYear]);
+
+  useEffect(() => {
+    if (!selectedSemester) {
+      setTimeInfo(null);
+      return;
+    }
+    refreshGradeEntryWindow();
+  }, [selectedYear, selectedSemester, refreshGradeEntryWindow]);
+
+  const isGradeWindowLoaded = timeInfo !== null;
+  const isGradeEntryAllowed = timeInfo?.allowed ?? false;
+  const gradeWindowMessage = timeInfo?.message || 'Đang kiểm tra thời gian nhập điểm';
 
   // 🔹 Lấy danh sách học kỳ và set học kỳ hiện tại
   useEffect(() => {
@@ -130,6 +246,7 @@ const TeacherEnterGradesPage: React.FC = () => {
             weights: configData.weights || {},
             columnCounts: configData.columnCounts || defaultColumnCounts,
             rounding: configData.rounding || 'half-up',
+            completionPolicy: configData.completionPolicy || 'at-least-one',
             classification: configData.classification,
           });
         } else {
@@ -138,6 +255,7 @@ const TeacherEnterGradesPage: React.FC = () => {
             weights: { oral: 1, quiz15: 1, quiz45: 2, midterm: 2, final: 3 },
             columnCounts: defaultColumnCounts,
             rounding: 'half-up',
+            completionPolicy: 'at-least-one',
           });
         }
       } catch (err: any) {
@@ -154,6 +272,7 @@ const TeacherEnterGradesPage: React.FC = () => {
           weights: { oral: 1, quiz15: 1, quiz45: 2, midterm: 2, final: 3 },
           columnCounts: defaultColumnCounts,
           rounding: 'half-up',
+          completionPolicy: 'at-least-one',
         });
       } finally {
         setLoadingConfig(false);
@@ -361,6 +480,8 @@ const TeacherEnterGradesPage: React.FC = () => {
         setInitialScores(map);
         // reset errors
         setErrors({});
+
+        // Không hiển thị ĐTB HK cho giáo viên bộ môn
       } catch (err) {
         console.error("Failed to load students", err);
         setStudents([]);
@@ -372,6 +493,9 @@ const TeacherEnterGradesPage: React.FC = () => {
   // 🔹 Cập nhật điểm (multi-component)
   // ✅ Hỗ trợ nhập nhiều điểm cho cùng component (ví dụ: "8, 9, 6.4")
   const handleScoreChange = (studentId: string, component: string, value: string) => {
+    if (!isGradeEntryAllowed) {
+      return;
+    }
     // Cho phép nhập nhiều điểm cách nhau bởi dấu phẩy
     // Ví dụ: "8, 9, 6.4" hoặc "8,9,6.4"
     
@@ -437,13 +561,15 @@ const TeacherEnterGradesPage: React.FC = () => {
       return;
     }
 
+    if (!isGradeEntryAllowed) {
+      toast.error(timeInfo?.message || 'Không trong thời gian cho phép nhập điểm');
+      return;
+    }
+
     const studentScores = scores[studentId] || {};
     const scoreValue: string | number | undefined = studentScores[component as keyof typeof studentScores] as string | number | undefined;
 
-    // Nếu điểm rỗng, không lưu
-    if (scoreValue === undefined || scoreValue === null) {
-      return;
-    }
+    // Cho phép lưu cả khi rỗng (để xóa hết điểm của component)
 
     // Kiểm tra lỗi validation
     if (errors[studentId]?.[component]) {
@@ -474,7 +600,61 @@ const TeacherEnterGradesPage: React.FC = () => {
       }
 
       if (scoreArray.length === 0) {
-        return; // Không có điểm hợp l
+        // Không còn điểm nào cho component này → gọi API xóa toàn bộ điểm component
+        try {
+          await gradesApi.deleteGradeItems({
+            studentId,
+            subjectId: selectedSubject,
+            component,
+            classId: selectedClass,
+            schoolYear: selectedYear,
+            semester: selectedSemester,
+          });
+
+          // Cập nhật local state
+          setScores(prev => ({
+            ...prev,
+            [studentId]: {
+              ...(prev[studentId] || {}),
+              [component]: undefined,
+            }
+          }));
+          setInitialScores(prev => ({
+            ...prev,
+            [studentId]: {
+              ...(prev[studentId] || {}),
+              [component]: undefined,
+            }
+          }));
+
+          // Reload lại điểm TB từ backend
+          try {
+            const res = await gradesApi.getClassSubjectSummary({
+              classId: selectedClass,
+              subjectId: selectedSubject,
+              schoolYear: selectedYear,
+              semester: selectedSemester,
+            });
+            const updatedStudent = res.data?.find((st: any) => st.studentId === studentId || st._id === studentId);
+            if (updatedStudent) {
+              setStudents(prev => prev.map(st => 
+                st._id === studentId 
+                  ? { ...st, average: updatedStudent.average, averages: updatedStudent.averages || {} }
+                  : st
+              ));
+            }
+          } catch (reloadErr) {
+            console.warn("Failed to reload student grade after delete", reloadErr);
+          }
+
+          const studentName = students.find(s => s._id === studentId)?.name || 'học sinh';
+          toast.success(`Đã xóa toàn bộ điểm ${componentLabels[component]} cho ${studentName}`);
+          return;
+        } catch (delErr) {
+          console.error('Delete empty component failed', delErr);
+          toast.error('Xóa điểm thất bại');
+          return;
+        }
       }
 
       console.log('[handleSaveSingleScore] Saving scores with params:', {
@@ -556,10 +736,17 @@ const TeacherEnterGradesPage: React.FC = () => {
     }
   };
 
+  // (Đã bỏ nút "Xóa cột"; việc xóa được thực hiện bằng cách xóa hết ô và lưu.)
+
   // 🔹 Lưu điểm (hàm này có thể không còn cần thiết vì đã dùng auto-save từng input)
   const handleSaveScores = async () => {
     if (!selectedClass || !selectedSubject || !selectedYear || !selectedSemester) {
       toast.error("Vui lòng chọn đủ thông tin lớp, môn, năm học, học kỳ");
+      return;
+    }
+
+    if (!isGradeEntryAllowed) {
+      toast.error(timeInfo?.message || 'Không trong thời gian cho phép nhập điểm');
       return;
     }
 
@@ -618,6 +805,64 @@ const TeacherEnterGradesPage: React.FC = () => {
       } finally {
         setSaving(false);
       }
+  };
+
+  // 🔹 Công bố điểm môn học (đánh dấu isOfficial cho toàn bộ học sinh của lớp/môn/học kỳ)
+  const handlePublish = async () => {
+    if (!selectedClass || !selectedSubject || !selectedYear || !selectedSemester) {
+      toast.error("Vui lòng chọn đủ thông tin lớp, môn, năm học, học kỳ");
+      return;
+    }
+
+    if (!isGradeEntryAllowed) {
+      toast.error(timeInfo?.message || 'Không trong thời gian cho phép nhập điểm');
+      return;
+    }
+    const subjectName = subjects.find(s => s._id === selectedSubject)?.name || 'môn học';
+    const className = classes.find(c => c._id === selectedClass)?.className || 'lớp';
+    const ok = window.confirm(`Công bố điểm ${subjectName} cho ${className} - năm ${selectedYear}, học kỳ ${selectedSemester}?\nSau khi công bố, học sinh và GVCN sẽ nhìn thấy điểm chính thức.`);
+    if (!ok) return;
+    try {
+      setPublishing(true);
+      await gradesApi.publishSubject({
+        classId: selectedClass,
+        subjectId: selectedSubject,
+        schoolYear: selectedYear,
+        semester: String(selectedSemester),
+      });
+      toast.success(`Đã công bố điểm ${subjectName} cho ${className} (HK${selectedSemester})`);
+      // Reload dữ liệu điểm để phản ánh trạng thái mới (nếu backend trả isOfficial)
+      try {
+        const res = await gradesApi.getClassSubjectSummary({
+          classId: selectedClass,
+          subjectId: selectedSubject,
+          schoolYear: selectedYear,
+          semester: String(selectedSemester),
+        });
+        const data = res.data || [];
+        const formattedData = data.map((st: any) => ({
+          _id: st.studentId || st._id,
+          name: st.name || st.studentId?.name || 'Chưa có tên',
+          studentCode: st.studentCode || st.studentId?.studentCode || '',
+          oral: st.averages?.oral ?? st.oral ?? undefined,
+          quiz15: st.averages?.quiz15 ?? st.quiz15 ?? undefined,
+          quiz45: st.averages?.quiz45 ?? st.quiz45 ?? undefined,
+          midterm: st.averages?.midterm ?? st.midterm ?? undefined,
+          final: st.averages?.final ?? st.final ?? undefined,
+          average: st.average,
+          averages: st.averages || {},
+          gradeItems: st.gradeItems || {},
+        }));
+        setStudents(formattedData);
+      } catch (e) {
+        // ignore
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Công bố điểm thất bại';
+      toast.error(msg);
+    } finally {
+      setPublishing(false);
+    }
   };
 
     const resetToInitial = () => {
@@ -717,6 +962,42 @@ const TeacherEnterGradesPage: React.FC = () => {
     return 'Yếu';
   };
 
+  // ✅ Kiểm tra đã đủ các thành phần có trọng số > 0 (theo cấu hình) hay chưa
+  const hasAllRequiredComponents = (studentScores: typeof scores[string]) => {
+    if (!gradeConfig?.weights) return false;
+    const required = Object.entries(gradeConfig.weights)
+      .filter(([, w]) => (w ?? 0) > 0)
+      .map(([k]) => k);
+
+    const policy = gradeConfig.completionPolicy || 'at-least-one';
+    const counts = required.map((comp) => {
+      const val = studentScores[comp as keyof typeof studentScores];
+      let count = 0;
+      if (val === undefined || val === null || val === "") {
+        count = 0;
+      } else if (typeof val === "number") {
+        count = 1;
+      } else if (typeof val === "string") {
+        const arr = val
+          .split(",")
+          .map((s) => s.trim())
+          .map((s) => parseFloat(s.replace(",", ".")))
+          .filter((n) => !isNaN(n));
+        count = arr.length;
+      }
+      return { comp, count };
+    });
+
+    if (policy === 'require-counts') {
+      return counts.every(({ comp, count }) => {
+        const need = gradeConfig.columnCounts?.[comp] ?? 1;
+        return count >= need;
+      });
+    }
+    // at-least-one
+    return counts.every(({ count }) => count > 0);
+  };
+
   // ✅ Lấy danh sách các loại điểm đang được sử dụng (weight > 0)
   const activeComponents = gradeConfig?.weights
     ? Object.entries(gradeConfig.weights)
@@ -802,6 +1083,30 @@ const TeacherEnterGradesPage: React.FC = () => {
 
         {students.length > 0 ? (
           <div className="mt-4 overflow-x-auto">
+            {/* ✅ Tổng quan nhanh: sĩ số, trung bình môn của lớp, tỷ lệ đạt */}
+            {students.length > 0 && (
+              <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
+                <span className="px-2 py-1 rounded bg-muted">Sĩ số: <b>{students.length}</b></span>
+                {(() => {
+                  const avgs = students
+                    .map((s) => (typeof s.average === 'number' ? s.average : calculateAverage(scores[s._id] || {}, s)))
+                    .filter((v) => typeof v === 'number' && !isNaN(v)) as number[];
+                  const classAvg = avgs.length ? Math.round((avgs.reduce((a, b) => a + b, 0) / avgs.length) * 10) / 10 : null;
+                  const passCount = avgs.filter((v) => v >= 5).length;
+                  const passRate = avgs.length ? Math.round((passCount / avgs.length) * 100) : 0;
+                  return (
+                    <>
+                      <span className="px-2 py-1 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-900 dark:text-blue-200">
+                        TB môn (cả lớp): <b>{classAvg !== null ? classAvg.toFixed(1) : '-'}</b>
+                      </span>
+                      <span className="px-2 py-1 rounded bg-green-50 dark:bg-green-900/20 text-green-900 dark:text-green-200">
+                        Tỉ lệ đạt (≥5.0): <b>{passRate}%</b>
+                      </span>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
             {/* ✅ Hiển thị thông tin cấu hình điểm */}
             {gradeConfig && (
               <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
@@ -811,14 +1116,37 @@ const TeacherEnterGradesPage: React.FC = () => {
                 <p className="text-xs text-blue-700 dark:text-blue-300">
                   Làm tròn: {gradeConfig.rounding === 'half-up' ? 'Làm tròn 0.5 lên' : 'Không làm tròn'}
                 </p>
+                <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                  Dấu *: {gradeConfig?.completionPolicy === 'require-counts' 
+                    ? 'Điểm tạm thời (chưa đủ số cột theo cấu hình)'
+                    : 'Điểm tạm thời (chưa đủ các thành phần bắt buộc)'}
+                </p>
               </div>
             )}
 
-            <table className="w-full text-sm border">
+            <Alert variant={!isGradeEntryAllowed && isGradeWindowLoaded ? "destructive" : "default"} className="mb-4">
+              <div className="flex items-start gap-3">
+                {!isGradeWindowLoaded ? (
+                  <Clock className="h-5 w-5 mt-1" />
+                ) : isGradeEntryAllowed ? (
+                  <Clock className="h-5 w-5 mt-1" />
+                ) : (
+                  <Lock className="h-5 w-5 mt-1" />
+                )}
+                <div>
+                  <AlertTitle>Thời gian nhập điểm</AlertTitle>
+                  <AlertDescription>
+                    {gradeWindowMessage}
+                  </AlertDescription>
+                </div>
+              </div>
+            </Alert>
+
+            <table className="w-full text-sm border relative">
               <thead>
-                <tr className="bg-gray-100 text-left">
-                  <th className="p-2 border">STT</th>
-                  <th className="p-2 border">Họ và tên</th>
+                <tr className="bg-gray-100 text-left sticky top-0 z-20">
+                  <th className="p-2 border sticky left-0 z-30 bg-gray-100">STT</th>
+                  <th className="p-2 border sticky left-12 z-30 bg-gray-100 min-w-[180px]">Họ và tên</th>
                   {/* ✅ Hiển thị các cột điểm động theo cấu hình - Header có colspan nếu columnCount > 1 */}
                   {activeComponents.map(component => {
                     const columnCount = gradeConfig?.columnCounts?.[component] || 1;
@@ -837,7 +1165,7 @@ const TeacherEnterGradesPage: React.FC = () => {
                       </th>
                     );
                   })}
-                  <th className="p-2 border">ĐTB môn</th>
+                  <th className="p-2 border sticky right-0 z-30 bg-gray-100 min-w-[110px] text-center">ĐTB môn</th>
                 </tr>
               </thead>
               <tbody>
@@ -862,8 +1190,8 @@ const TeacherEnterGradesPage: React.FC = () => {
                   
                   return (
                     <tr key={st._id} className="border">
-                      <td className="p-2 border">{i + 1}</td>
-                      <td className="p-2 border font-medium">{st.name}</td>
+                      <td className="p-2 border sticky left-0 bg-background z-10 w-12 text-center">{i + 1}</td>
+                      <td className="p-2 border font-medium sticky left-12 bg-background z-10 min-w-[180px]">{st.name}</td>
                       {/* ✅ Hiển thị các ô nhập điểm - Nhiều cột input riêng biệt nếu columnCount > 1 */}
                       {activeComponents.map(component => {
                         const columnCount = gradeConfig?.columnCounts?.[component] || 1;
@@ -884,10 +1212,18 @@ const TeacherEnterGradesPage: React.FC = () => {
                         while (scoreArray.length < columnCount) {
                           scoreArray.push(undefined);
                         }
+
+                        // 🔹 Tính số cột còn thiếu (chỉ khi require-counts)
+                        let missingCount: number | null = null;
+                        if ((gradeConfig?.completionPolicy || 'at-least-one') === 'require-counts') {
+                          const have = scoreArray.filter(v => typeof v === 'number').length;
+                          const need = gradeConfig?.columnCounts?.[component] ?? 1;
+                          missingCount = have < need ? (need - have) : 0;
+                        }
                         
                         // Hiển thị nhiều input riêng biệt (mỗi input cho 1 điểm)
                         return scoreArray.slice(0, columnCount).map((score, index) => (
-                          <td key={`${component}-${index}`} className="p-2 border">
+                          <td key={`${component}-${index}`} className="p-2 border min-w-[80px] align-top">
                             <Input
                               type="number"
                               step="0.1"
@@ -911,62 +1247,53 @@ const TeacherEnterGradesPage: React.FC = () => {
                               onKeyDown={async (e) => {
                                 if (e.key === 'Enter') {
                                   e.preventDefault();
-                                  // Lấy tất cả điểm của component này và lưu
-                                  const currentScores = scores[st._id] || {};
-                                  const currentValue = currentScores[component as keyof typeof currentScores] as string | number | undefined;
-                                  
-                                  // Parse thành mảng số
-                                  let scoreArrayToSave: number[] = [];
-                                  if (typeof currentValue === 'string') {
-                                    scoreArrayToSave = currentValue
-                                      .split(',')
-                                      .map(s => s.trim())
-                                      .map(s => parseFloat(s.replace(',', '.')))
-                                      .filter(n => !isNaN(n) && n >= 0 && n <= 10);
-                                  } else if (typeof currentValue === 'number' && !isNaN(currentValue)) {
-                                    scoreArrayToSave = [currentValue];
-                                  }
-                                  
-                                  // Lưu lên backend
-                                  if (scoreArrayToSave.length > 0) {
-                                    await handleSaveSingleScore(st._id, component);
-                                  }
+                                  // Luôn gọi lưu (kể cả khi rỗng → xóa)
+                                  await handleSaveSingleScore(st._id, component);
                                   e.currentTarget.blur();
                                 }
                               }}
                               onBlur={async () => {
-                                // Lấy tất cả điểm của component này và lưu
-                                const currentScores = scores[st._id] || {};
-                                const currentValue = currentScores[component as keyof typeof currentScores] as string | number | undefined;
-                                
-                                // Parse thành mảng số
-                                let scoreArrayToSave: number[] = [];
-                                if (typeof currentValue === 'string') {
-                                  scoreArrayToSave = currentValue
-                                    .split(',')
-                                    .map(s => s.trim())
-                                    .map(s => parseFloat(s.replace(',', '.')))
-                                    .filter(n => !isNaN(n) && n >= 0 && n <= 10);
-                                } else if (typeof currentValue === 'number' && !isNaN(currentValue)) {
-                                  scoreArrayToSave = [currentValue];
-                                }
-                                
-                                // Lưu lên backend
-                                if (scoreArrayToSave.length > 0) {
-                                  await handleSaveSingleScore(st._id, component);
-                                }
+                                // Luôn gọi lưu (kể cả khi rỗng → xóa)
+                                await handleSaveSingleScore(st._id, component);
                               }}
                               className={`w-20 ${errors[st._id]?.[component] ? 'border border-destructive' : ''}`}
-                              disabled={loadingConfig || saving}
+                              disabled={loadingConfig || saving || !isGradeEntryAllowed}
                               placeholder=""
                             />
+                            {index === 0 && missingCount !== null && missingCount > 0 && (
+                              <div className="mt-1">
+                                <Badge variant="destructive">Thiếu {missingCount}</Badge>
+                              </div>
+                            )}
                           </td>
                         ));
                       })}
                       {/* ✅ Hiển thị điểm trung bình môn với màu sắc */}
-                      <td className={`p-2 border text-center font-semibold ${getAverageColorClass(average)}`}>
-                        {average !== null ? average.toFixed(1) : '-'}
+                      <td className={`p-2 border text-center font-semibold sticky right-0 bg-background z-10 min-w-[110px] ${getAverageColorClass(average)}`}>
+                        {average !== null ? (
+                          <div className="flex items-center justify-center gap-1">
+                            <span>{average.toFixed(1)}</span>
+                            {!hasAllRequiredComponents(studentScores) && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-muted-foreground cursor-help">*</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <span>{gradeConfig?.completionPolicy === 'require-counts' 
+                                      ? 'Điểm tạm thời (chưa đủ số cột theo cấu hình)'
+                                      : 'Điểm tạm thời (chưa đủ các thành phần bắt buộc)'}
+                                    </span>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+                          </div>
+                        ) : (
+                          '-'
+                        )}
                       </td>
+                      {/* Bỏ cột ĐTB HK ở trang giáo viên bộ môn */}
                     </tr>
                   );
                 })}
@@ -985,10 +1312,13 @@ const TeacherEnterGradesPage: React.FC = () => {
               </div>
 
               <div className="flex gap-2">
+                <Button variant="secondary" onClick={handlePublish} disabled={publishing || !selectedClass || !selectedSubject || !selectedYear || !selectedSemester || !isGradeEntryAllowed}>
+                  {publishing ? 'Đang công bố...' : '📢 Công bố điểm'}
+                </Button>
                 <Button variant="outline" onClick={resetToInitial} disabled={!isDirty || saving}>
                   Đặt lại
                 </Button>
-                <Button onClick={handleSaveScores} disabled={saving || !isDirty || hasInvalid}>
+                <Button onClick={handleSaveScores} disabled={saving || !isDirty || hasInvalid || !isGradeEntryAllowed}>
                   {saving ? "Đang lưu..." : "💾 Lưu điểm"}
                 </Button>
               </div>

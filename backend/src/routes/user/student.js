@@ -5,6 +5,7 @@ const authMiddleware = require('../../middlewares/authMiddleware');
 const checkPermission = require('../../middlewares/checkPermission');
 const { PERMISSIONS } = require('../../config/permissions');
 const { auditLog } = require('../../middlewares/auditLogMiddleware');
+const { getClassName, getStudentName } = require('../../utils/auditLogHelpers');
 
 // ✅ Danh sách học sinh - Tất cả roles có quyền xem (với context)
 router.get('/', 
@@ -14,7 +15,7 @@ router.get('/',
     PERMISSIONS.STUDENT_VIEW_HOMEROOM,
     PERMISSIONS.STUDENT_VIEW_TEACHING,
     PERMISSIONS.STUDENT_VIEW_SELF
-  ], { checkContext: false }),
+  ], { checkContext: true }),
   studentController.getStudents
 );
 
@@ -42,6 +43,17 @@ router.get('/:id/year-detail',
   studentController.getStudentYearDetail
 );
 
+// ✅ Lịch sử chuyển lớp - Admin, BGH, GVCN
+router.get(
+  '/:id/transfer-history',
+  authMiddleware,
+  checkPermission([
+    PERMISSIONS.STUDENT_VIEW,
+    PERMISSIONS.STUDENT_VIEW_HOMEROOM,
+  ], { checkContext: true }),
+  studentController.getStudentTransferHistory
+);
+
 // ✅ Thêm học sinh - Chỉ Admin
 router.post('/', 
   authMiddleware, 
@@ -67,6 +79,27 @@ router.put('/:id',
     getDescription: (req) => `Cập nhật học sinh: ${req.body?.name || req.params.id}`,
   }),
   studentController.updateStudent
+);
+
+// ✅ Chuyển lớp cho học sinh - Chỉ Admin/BGH
+router.post(
+  '/:id/transfer',
+  authMiddleware,
+  checkPermission(PERMISSIONS.STUDENT_UPDATE),
+  auditLog({
+    action: 'UPDATE',
+    resource: 'STUDENT',
+    getResourceId: (req) => req.params.id,
+    getDescription: async (req) => {
+      const [studentName, targetClassName] = await Promise.all([
+        getStudentName(req.params.id),
+        getClassName(req.body?.targetClassId),
+      ]);
+      const baseMessage = `Chuyển lớp học sinh ${studentName} sang ${targetClassName}`;
+      return req.body?.reason ? `${baseMessage}. Lý do: ${req.body.reason}` : baseMessage;
+    },
+  }),
+  studentController.transferStudent
 );
 
 // ✅ Xóa mềm học sinh - Chỉ Admin (không xóa thật)

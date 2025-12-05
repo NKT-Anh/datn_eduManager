@@ -7,6 +7,10 @@ const { initGradesForStudent } = require('../../services/gradeService');
 const Setting = require('../../models/settings');
 const Class = require('../../models/class/class');
 const StudentYearRecord = require('../../models/user/studentYearRecord');
+const GradeItem = require('../../models/grade/gradeItem');
+const GradeSummary = require('../../models/grade/gradeSummary');
+const Attendance = require('../../models/class/attendance');
+const StudentTransferHistory = require('../../models/user/studentTransferHistory');
 const mongoose = require('mongoose');
 
 /* =========================================================
@@ -67,6 +71,75 @@ exports.getStudents = async (req, res) => {
       filter.isDeleted = { $ne: true };
     }
 
+    const permissionContext = req.permissionContext || null;
+    const restrictToClasses = (allowedIds = []) => {
+      const normalized = (allowedIds || [])
+        .map((id) => (id ? String(id) : null))
+        .filter(Boolean);
+
+      if (!normalized.length) {
+        return false;
+      }
+
+      if (!filter.classId) {
+        filter.classId = normalized.length === 1 ? normalized[0] : { $in: normalized };
+        return true;
+      }
+
+      const requested = [];
+      if (typeof filter.classId === 'string') {
+        requested.push(String(filter.classId));
+      } else if (filter.classId && typeof filter.classId === 'object') {
+        if (Array.isArray(filter.classId.$in)) {
+          requested.push(...filter.classId.$in.map((id) => String(id)));
+        } else if (filter.classId.$eq) {
+          requested.push(String(filter.classId.$eq));
+        } else {
+          Object.values(filter.classId).forEach((value) => {
+            if (value) {
+              requested.push(String(value));
+            }
+          });
+        }
+      }
+
+      if (!requested.length) {
+        requested.push(...normalized);
+      }
+
+      const allowedSet = new Set(normalized);
+      const intersection = requested.filter((id) => allowedSet.has(String(id)));
+
+      if (!intersection.length) {
+        return false;
+      }
+
+      filter.classId = intersection.length === 1 ? intersection[0] : { $in: intersection };
+      return true;
+    };
+
+    if (permissionContext) {
+      if (permissionContext.studentId) {
+        filter._id = permissionContext.studentId;
+      }
+
+      const isAdminLike = permissionContext.role === 'admin' || permissionContext.isLeader;
+
+      if (!isAdminLike) {
+        if (permissionContext.isHomeroom) {
+          const ok = restrictToClasses(permissionContext.homeroomClassIds || []);
+          if (!ok) {
+            return res.json([]);
+          }
+        } else if (Array.isArray(permissionContext.teachingClassIds) && permissionContext.teachingClassIds.length) {
+          const ok = restrictToClasses(permissionContext.teachingClassIds);
+          if (!ok) {
+            return res.json([]);
+          }
+        }
+      }
+    }
+
     const students = await Student.find(filter)
       .populate({ 
         path: 'classId', 
@@ -122,6 +195,36 @@ exports.getStudentById = async (req, res) => {
       .lean();
 
     if (!student) return res.status(404).json({ message: 'Student not found' });
+
+    const permissionContext = req.permissionContext || null;
+    if (permissionContext) {
+      const isAdminLike = permissionContext.role === 'admin' || permissionContext.isLeader;
+      if (!isAdminLike) {
+        const studentIdMatches = permissionContext.studentId && String(permissionContext.studentId) === String(student._id);
+        const studentClassId = student.classId ? String(student.classId._id || student.classId) : null;
+
+        const homeroomMatch =
+          permissionContext.isHomeroom &&
+          studentClassId &&
+          Array.isArray(permissionContext.homeroomClassIds) &&
+          permissionContext.homeroomClassIds
+            .map((id) => (id ? String(id) : null))
+            .filter(Boolean)
+            .includes(studentClassId);
+
+        const teachingMatch =
+          studentClassId &&
+          Array.isArray(permissionContext.teachingClassIds) &&
+          permissionContext.teachingClassIds
+            .map((id) => (id ? String(id) : null))
+            .filter(Boolean)
+            .includes(studentClassId);
+
+        if (!studentIdMatches && !homeroomMatch && !teachingMatch) {
+          return res.status(403).json({ message: 'Không có quyền xem học sinh này.' });
+        }
+      }
+    }
 
     // ✅ Vì đã dùng .lean(), student đã là plain object, không cần .toObject()
     const obj = { ...student }; // Tạo copy của object
@@ -292,7 +395,10 @@ exports.getStudentYearDetail = async (req, res) => {
           midterm: getComponentScores(hk1Items, 'midterm'),
           final: getComponentScores(hk1Items, 'final'),
           average: hk1Summary?.average || null,
-          averages: hk1Summary?.averages || {}
+          averages: hk1Summary?.averages || {},
+          isOfficial: hk1Summary?.isOfficial === true,
+          officialAt: hk1Summary?.officialAt || null,
+          officialBy: hk1Summary?.officialBy || null
         },
         hk2: {
           coefficient1: {
@@ -305,7 +411,10 @@ exports.getStudentYearDetail = async (req, res) => {
           midterm: getComponentScores(hk2Items, 'midterm'),
           final: getComponentScores(hk2Items, 'final'),
           average: hk2Summary?.average || null,
-          averages: hk2Summary?.averages || {}
+          averages: hk2Summary?.averages || {},
+          isOfficial: hk2Summary?.isOfficial === true,
+          officialAt: hk2Summary?.officialAt || null,
+          officialBy: hk2Summary?.officialBy || null
         },
         yearAverage: null // Sẽ tính sau
       };
@@ -742,6 +851,404 @@ exports.updateStudent = async (req, res) => {
 };
 
 /* =========================================================
+   📜 LỊCH SỬ CHUYỂN LỚP HỌC SINH
+========================================================= */
+exports.getStudentTransferHistory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'ID học sinh không hợp lệ.' });
+    }
+
+    const permissionContext = req.permissionContext || null;
+    let studentDoc = null;
+
+    const isAdminLike = permissionContext?.role === 'admin' || permissionContext?.isLeader;
+    if (permissionContext && !isAdminLike) {
+      studentDoc = await Student.findById(id).select('classId').lean();
+      if (!studentDoc) {
+        return res.status(404).json({ message: 'Không tìm thấy học sinh.' });
+      }
+
+      const studentIdMatches = permissionContext.studentId && String(permissionContext.studentId) === String(id);
+      const studentClassId = studentDoc.classId ? String(studentDoc.classId) : null;
+
+      const homeroomMatch =
+        permissionContext.isHomeroom &&
+        studentClassId &&
+        Array.isArray(permissionContext.homeroomClassIds) &&
+        permissionContext.homeroomClassIds
+          .map((clsId) => (clsId ? String(clsId) : null))
+          .filter(Boolean)
+          .includes(studentClassId);
+
+      const teachingMatch =
+        studentClassId &&
+        Array.isArray(permissionContext.teachingClassIds) &&
+        permissionContext.teachingClassIds
+          .map((clsId) => (clsId ? String(clsId) : null))
+          .filter(Boolean)
+          .includes(studentClassId);
+
+      if (!studentIdMatches && !homeroomMatch && !teachingMatch) {
+        return res.status(403).json({ message: 'Không có quyền xem lịch sử chuyển lớp của học sinh này.' });
+      }
+    }
+
+    const rawLimit = req.query.limit;
+    const rawPage = req.query.page;
+
+    const parsedLimit = rawLimit === 'all'
+      ? null
+      : Math.min(Math.max(parseInt(rawLimit, 10) || 20, 1), 100);
+    const parsedPage = Math.max(parseInt(rawPage, 10) || 1, 1);
+    const skip = parsedLimit ? (parsedPage - 1) * parsedLimit : 0;
+
+    const query = { studentId: id };
+
+    const [historyDocs, total] = await Promise.all([
+      StudentTransferHistory.find(query)
+        .sort({ createdAt: -1 })
+        .skip(parsedLimit ? skip : 0)
+        .limit(parsedLimit ? parsedLimit : 0)
+        .lean(),
+      StudentTransferHistory.countDocuments(query),
+    ]);
+
+    const history = historyDocs.map((doc) => {
+      const {
+        _id,
+        studentId,
+        fromClassId,
+        toClassId,
+        performedBy,
+        ...rest
+      } = doc;
+      return {
+        id: String(_id),
+        studentId: studentId ? String(studentId) : null,
+        fromClassId: fromClassId ? String(fromClassId) : null,
+        toClassId: toClassId ? String(toClassId) : null,
+        ...rest,
+        performedBy: performedBy
+          ? {
+              ...performedBy,
+              accountId: performedBy.accountId ? String(performedBy.accountId) : null,
+            }
+          : null,
+      };
+    });
+
+    return res.json({
+      data: history,
+      pagination: {
+        total,
+        page: parsedPage,
+        limit: parsedLimit || total,
+        pages: parsedLimit ? Math.ceil(total / parsedLimit) || 1 : 1,
+      },
+    });
+  } catch (error) {
+    console.error('[getStudentTransferHistory] Lỗi:', error);
+    res.status(500).json({ message: 'Lỗi khi lấy lịch sử chuyển lớp học sinh.', error: error.message });
+  }
+};
+
+/* =========================================================
+   🔄 CHUYỂN LỚP CHO HỌC SINH
+========================================================= */
+exports.transferStudent = async (req, res) => {
+  let session = null;
+  let transactionsSupported = false;
+  try {
+    const { id } = req.params;
+    const {
+      targetClassId,
+      effectiveDate,
+      reason,
+      keepOldYearRecords = true,
+    } = req.body || {};
+
+    const normalizedReason =
+      typeof reason === 'string' && reason.trim() ? reason.trim() : null;
+
+    let transferEffectiveDate = new Date();
+    if (effectiveDate) {
+      const parsedEffectiveDate = new Date(effectiveDate);
+      if (!Number.isNaN(parsedEffectiveDate.getTime())) {
+        transferEffectiveDate = parsedEffectiveDate;
+      }
+    }
+
+    if (!targetClassId) {
+      return res.status(400).json({ message: 'Vui lòng chọn lớp chuyển đến.' });
+    }
+
+    const mongoClient =
+      typeof mongoose.connection.getClient === 'function'
+        ? mongoose.connection.getClient()
+        : mongoose.connection.client;
+    const topology = mongoClient?.topology;
+    transactionsSupported = !!(
+      topology &&
+      typeof topology.hasSessionSupport === 'function' &&
+      topology.hasSessionSupport()
+    );
+
+    session = transactionsSupported ? await mongoose.startSession() : null;
+    if (!transactionsSupported) {
+      console.warn(
+        '[transferStudent] Transactions not supported by MongoDB topology. Proceeding without transactional guarantees.'
+      );
+    }
+
+    const withSession = (query) => (session ? query.session(session) : query);
+
+    if (session) {
+      await session.startTransaction();
+    }
+
+    const studentQuery = Student.findById(id).populate('classId', 'className year');
+    const student = await withSession(studentQuery);
+
+    if (!student || student.isDeleted) {
+      if (session) {
+        await session.abortTransaction();
+      }
+      return res.status(404).json({ message: 'Không tìm thấy học sinh.' });
+    }
+
+    const previousClassInfo = student.classId
+      ? {
+          id: student.classId._id,
+          name: student.classId.className,
+          year: student.classId.year,
+        }
+      : null;
+    const previousYear = student.currentYear;
+    const previousGrade = student.grade;
+
+    const targetClassQuery = Class.findOne({ _id: targetClassId, isDeleted: { $ne: true } });
+    const targetClass = await withSession(targetClassQuery);
+    if (!targetClass) {
+      if (session) {
+        await session.abortTransaction();
+      }
+      return res.status(404).json({ message: 'Không tìm thấy lớp chuyển đến.' });
+    }
+
+    if (student.classId && String(student.classId._id) === String(targetClassId)) {
+      if (session) {
+        await session.abortTransaction();
+      }
+      return res.status(400).json({ message: 'Học sinh hiện đã thuộc lớp này.' });
+    }
+
+    if (targetClass.capacity && targetClass.currentSize >= targetClass.capacity) {
+      if (session) {
+        await session.abortTransaction();
+      }
+      return res.status(400).json({ message: 'Lớp đã đạt sĩ số tối đa.' });
+    }
+
+    const oldClassId = student.classId ? student.classId._id : null;
+    const oldClass = oldClassId
+      ? await withSession(Class.findById(oldClassId))
+      : null;
+
+    if (oldClass) {
+      const oldClassStudents = Array.isArray(oldClass.students)
+        ? [...oldClass.students]
+        : [];
+      oldClass.students = oldClassStudents.filter(
+        (sid) => String(sid) !== String(student._id)
+      );
+      oldClass.currentSize = Math.max(0, oldClass.students.length);
+      if (session) {
+        await oldClass.save({ session });
+      } else {
+        await oldClass.save();
+      }
+    }
+
+    const targetClassStudents = Array.isArray(targetClass.students)
+      ? [...targetClass.students]
+      : [];
+    const alreadyInTarget = targetClassStudents.some(
+      (sid) => String(sid) === String(student._id)
+    );
+    if (!alreadyInTarget) {
+      targetClassStudents.push(student._id);
+      targetClass.students = targetClassStudents;
+      targetClass.currentSize = targetClassStudents.length;
+    }
+    if (session) {
+      await targetClass.save({ session });
+    } else {
+      await targetClass.save();
+    }
+
+    student.classId = targetClass._id;
+    student.grade = targetClass.grade;
+    student.currentYear = targetClass.year;
+    if (student.status !== 'active') {
+      student.status = 'active';
+    }
+
+    if (session) {
+      await student.save({ session });
+    } else {
+      await student.save();
+    }
+
+    const targetYear = targetClass.year || previousYear || student.currentYear || null;
+
+    if (!keepOldYearRecords && oldClass) {
+      await withSession(
+        StudentYearRecord.deleteMany({
+        studentId: student._id,
+        year: oldClass.year,
+      })
+      );
+    } else if (oldClass && oldClass.year !== targetYear) {
+      await withSession(
+        StudentYearRecord.updateMany(
+        { studentId: student._id, year: oldClass.year },
+        { $set: { classId: oldClass._id } }
+      )
+      );
+    }
+
+    const existingYearRecords = await withSession(
+      StudentYearRecord.find({
+      studentId: student._id,
+      year: targetYear,
+    })
+    ).lean();
+
+    if (existingYearRecords.length) {
+      await withSession(
+        StudentYearRecord.updateMany(
+        { studentId: student._id, year: targetYear },
+        { $set: { classId: targetClass._id } }
+      )
+      );
+    } else {
+      const records = ['HK1', 'HK2', 'CN'].map((semester) => ({
+        studentId: student._id,
+        classId: targetClass._id,
+        year: targetYear,
+        semester,
+      }));
+      await StudentYearRecord.insertMany(records, session ? { session } : undefined);
+    }
+
+    await withSession(
+      GradeItem.updateMany(
+      { studentId: student._id, schoolYear: targetYear },
+      { $set: { classId: targetClass._id } }
+    )
+    );
+
+    await withSession(
+      GradeSummary.updateMany(
+      { studentId: student._id, schoolYear: targetYear },
+      { $set: { classId: targetClass._id } }
+    )
+    );
+
+    await withSession(
+      Attendance.updateMany(
+      { studentId: student._id, schoolYear: targetYear },
+      { $set: { classId: targetClass._id } }
+    )
+    );
+
+    if (session) {
+      await session.commitTransaction();
+    }
+
+    try {
+      await initGradesForStudent({
+        studentId: student._id,
+        classId: targetClass._id,
+        schoolYear: targetYear,
+        semester: '1',
+      });
+      await initGradesForStudent({
+        studentId: student._id,
+        classId: targetClass._id,
+        schoolYear: targetYear,
+        semester: '2',
+      });
+    } catch (gradeError) {
+      console.warn('[transferStudent] Lỗi khởi tạo bảng điểm:', gradeError.message);
+    }
+
+    const updatedStudent = await Student.findById(id)
+      .populate({ path: 'classId', select: 'className classCode grade year' })
+      .populate({ path: 'accountId', select: 'email phone role' })
+      .populate({ path: 'parentIds', select: 'name phone relation occupation' })
+      .lean();
+
+    let historyPayload = null;
+    try {
+      const historyDoc = await StudentTransferHistory.create({
+        studentId: student._id,
+        fromClassId: previousClassInfo?.id || null,
+        fromClassName: previousClassInfo?.name || null,
+        fromGrade: previousGrade || null,
+        fromYear: previousClassInfo?.year || previousYear || null,
+        toClassId: targetClass._id,
+        toClassName: targetClass.className,
+        toGrade: targetClass.grade,
+        toYear: targetYear || previousYear || null,
+        effectiveDate: transferEffectiveDate,
+        reason: normalizedReason,
+        performedBy: {
+          accountId: req.user?.accountId || null,
+          role: req.user?.role || null,
+          email: req.user?.email || null,
+          name: req.user?.name || null,
+          uid: req.user?.uid || null,
+        },
+        metadata: {
+          keepOldYearRecords: !!keepOldYearRecords,
+        },
+      });
+
+      const obj = historyDoc.toObject({ versionKey: false });
+      const { _id, ...rest } = obj;
+      historyPayload = { id: _id, ...rest };
+    } catch (historyError) {
+      console.warn('[transferStudent] Không thể lưu lịch sử chuyển lớp:', historyError.message);
+    }
+
+    return res.json({
+      message: 'Chuyển lớp thành công.',
+      data: {
+        student: updatedStudent,
+        fromClass: oldClass ? { id: oldClass._id, name: oldClass.className } : null,
+        toClass: { id: targetClass._id, name: targetClass.className },
+        effectiveDate: transferEffectiveDate,
+        reason: normalizedReason,
+        history: historyPayload,
+      },
+    });
+  } catch (error) {
+    console.error('[transferStudent] Lỗi chuyển lớp:', error);
+    if (session) {
+      await session.abortTransaction();
+    }
+    res.status(500).json({ message: 'Lỗi khi chuyển lớp học sinh.', error: error.message });
+  } finally {
+    if (session) {
+      await session.endSession();
+    }
+  }
+};
+
+/* =========================================================
    🗑️ XOÁ HỌC SINH
 ========================================================= */
 // ✅ Soft Delete - Xóa mềm học sinh (chỉ đánh dấu, không xóa thật)
@@ -754,10 +1261,22 @@ exports.deleteStudent = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy học sinh' });
     }
 
+
+    // Lưu classId trước khi xóa
+    const classId = student.classId;
+
     // ✅ Đánh dấu isDeleted = true (soft delete)
     student.isDeleted = true;
     student.status = 'inactive'; // Đồng thời cập nhật status
     await student.save();
+
+    // Giảm currentSize của lớp nếu có
+    if (classId) {
+      await require('../../models/class/class').findByIdAndUpdate(classId, {
+        $pull: { students: student._id },
+        $inc: { currentSize: -1 },
+      });
+    }
 
     res.json({ 
       message: 'Đã xóa học sinh thành công (soft delete)',
@@ -1367,10 +1886,22 @@ exports.softDeleteStudent = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy học sinh' });
     }
 
+
+    // Lưu classId trước khi xóa
+    const classId = student.classId;
+
     // ✅ Đánh dấu isDeleted = true
     student.isDeleted = true;
     student.status = 'inactive'; // Đồng thời cập nhật status
     await student.save();
+
+    // Giảm currentSize của lớp nếu có
+    if (classId) {
+      await require('../../models/class/class').findByIdAndUpdate(classId, {
+        $pull: { students: student._id },
+        $inc: { currentSize: -1 },
+      });
+    }
 
     res.json({
       message: 'Đã xóa mềm học sinh thành công',

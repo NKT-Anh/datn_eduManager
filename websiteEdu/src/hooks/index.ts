@@ -48,3 +48,7 @@ export * from "./activities/useActivities";
 // Surveys
 export * from "./survey/useSurveys";
 
+// Settings
+export * from "./useSettings";
+export * from "./usePublicSchoolInfo";
+

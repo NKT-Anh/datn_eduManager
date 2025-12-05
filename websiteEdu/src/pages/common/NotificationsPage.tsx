@@ -101,6 +101,7 @@ interface CreatedBy {
   _id: string;
   email?: string;
   role?: string;
+  displayName?: string;
   linkedId?: {
     name?: string;
     avatarUrl?: string;
@@ -125,6 +126,8 @@ interface Notification {
   isRead?: boolean; // ✅ Field từ backend
   createdBy?: CreatedBy | string; // ✅ Thông tin người gửi
   attachments?: Attachment[]; // ✅ Tệp đính kèm
+  sender?: string;
+  senderDisplayName?: string;
 }
 
 /**
@@ -233,6 +236,9 @@ export default function NotificationsPage() {
   // Quyền gửi theo role: Chỉ Admin và BGH
   const canSendByRole = isAdmin || isBGHUser;
 
+  // Thêm state tab vào đầu NotificationsPage
+  const [tab, setTab] = useState<'received' | 'sent'>('received');
+
   useEffect(() => {
     if (canView) {
     fetchNotifications();
@@ -281,7 +287,7 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     filterNotifications();
-  }, [notifications, filterType, filterPriority, filterReadStatus, searchTerm]);
+  }, [notifications, filterType, filterPriority, filterReadStatus, searchTerm, tab]);
 
   // ✅ Fetch unread count cho học sinh
   useEffect(() => {
@@ -326,9 +332,23 @@ export default function NotificationsPage() {
     }
   };
 
+  // Sửa filterNotifications để dùng state tab
   const filterNotifications = () => {
     let filtered = [...notifications];
-    
+    // Tách tab: Đã nhận vs Đã gửi
+    if (tab === 'received') {
+      filtered = filtered.filter(n => {
+        if (isStudent) return n.recipientRole === 'student' || n.recipientType === 'all' || n.recipientId === backendUser?._id;
+        if (isTeacher) return n.recipientRole === 'teacher' || n.recipientType === 'all' || n.recipientId === backendUser?._id;
+        if (isQLBMUser) return n.recipientRole === 'department_head' || n.recipientType === 'all' || n.recipientId === backendUser?._id;
+        return true;
+      });
+    } else {
+      filtered = filtered.filter(n => {
+        if (typeof n.createdBy === 'string') return n.createdBy === backendUser?._id;
+        return n.createdBy?._id === backendUser?._id;
+      });
+    }
     // ✅ Tìm kiếm theo tiêu đề và nội dung
     if (searchTerm.trim()) {
       const searchLower = searchTerm.toLowerCase().trim();
@@ -337,11 +357,9 @@ export default function NotificationsPage() {
         n.content.toLowerCase().includes(searchLower)
       );
     }
-    
     if (filterType !== "all") {
       filtered = filtered.filter(n => n.type === filterType);
     }
-    
     if (filterPriority !== "all") {
       filtered = filtered.filter(n => n.priority === filterPriority);
     }
@@ -360,10 +378,16 @@ export default function NotificationsPage() {
 
   // ✅ Lấy tên người gửi với prefix theo role
   const getSenderName = (notification: Notification): string => {
-    if (typeof notification.createdBy === 'string') return 'Hệ thống';
+    if (notification.senderDisplayName) return notification.senderDisplayName;
+    if (notification.sender) return notification.sender;
+
+    if (typeof notification.createdBy === 'string' || !notification.createdBy) {
+      return 'Hệ thống';
+    }
+
     const createdBy = notification.createdBy;
-    if (!createdBy) return 'Hệ thống';
-    
+    if (createdBy.displayName) return createdBy.displayName;
+
     if (createdBy.role === 'admin') {
       return 'Ban Giám hiệu';
     }
@@ -373,31 +397,24 @@ export default function NotificationsPage() {
       const gender = createdBy.linkedId?.gender;
       
       if (name) {
-        // Phân biệt giới tính để thêm Cô/Thầy
         if (gender === 'female' || gender === 'nữ') {
           return `Cô ${name}`;
-        } else if (gender === 'male' || gender === 'nam') {
-          return `Thầy ${name}`;
-        } else {
-          // Fallback: đoán từ tên nếu không có gender
-          const isFemale = name.toLowerCase().includes('anh') || 
-                          name.toLowerCase().includes('lan') ||
-                          name.toLowerCase().includes('mai') ||
-                          name.toLowerCase().includes('linh') ||
-                          name.toLowerCase().includes('hương') ||
-                          name.toLowerCase().includes('thu') ||
-                          name.toLowerCase().includes('hoa');
-          return isFemale ? `Cô ${name}` : `Thầy ${name}`;
         }
+        if (gender === 'male' || gender === 'nam') {
+          return `Thầy ${name}`;
+        }
+        const lower = name.toLowerCase();
+        const maybeFemale = ['anh', 'lan', 'mai', 'linh', 'hương', 'huong', 'thu', 'hoa', 'ngọc', 'ngoc', 'như', 'nhu', 'phương', 'phuong', 'trang'];
+        return maybeFemale.some((hint) => lower.includes(hint)) ? `Cô ${name}` : `Thầy ${name}`;
       }
-      return 'Giáo viên';
+      return createdBy.email || 'Giáo viên';
     }
     
     if (createdBy.linkedId?.name) {
       return createdBy.linkedId.name;
     }
     
-    return 'Hệ thống';
+    return createdBy.email || 'Hệ thống';
   };
 
   // ✅ Lấy avatar người gửi
@@ -897,6 +914,11 @@ export default function NotificationsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Tabs: Đã nhận / Đã gửi */}
+      <div className="flex gap-2 mb-4">
+        <button onClick={() => setTab('received')} className={`px-4 py-2 font-medium rounded-t ${tab === 'received' ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'}`}>Đã nhận</button>
+        <button onClick={() => setTab('sent')} className={`px-4 py-2 font-medium rounded-t ${tab === 'sent' ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'}`}>Đã gửi</button>
+      </div>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -1761,92 +1783,55 @@ export default function NotificationsPage() {
                 </Select>
               </div>
             </div>
-            
-            {/* Ngày đăng (bắt đầu hiển thị) và Ngày kết thúc */}
+            {/* Chọn ngày (lịch tiếng Việt) */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label className="text-sm font-medium">Ngày đăng</Label>
-                  <span className="text-xs text-slate-500 dark:text-slate-400">dd/mm/yyyy</span>
-              </div>
+              <div>
+                <Label>Ngày bắt đầu (tùy chọn)</Label>
                 <Popover>
                   <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !formData.startDate && "text-muted-foreground"
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {formData.startDate ? (
-                        format(new Date(formData.startDate), "dd/MM/yyyy", { locale: vi })
-                      ) : (
-                        <span>Chọn ngày đăng (mặc định: hôm nay)</span>
-                      )}
+                    <Button variant="outline" className="w-full justify-start text-left">
+                      {formData.startDate ?
+                        format(new Date(formData.startDate), "dd/MM/yyyy", { locale: vi }) :
+                        "Chọn ngày bắt đầu"
+                      }
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
+                  <PopoverContent align="start">
                     <Calendar
                       mode="single"
                       selected={formData.startDate ? new Date(formData.startDate) : undefined}
-                      onSelect={(date) => {
-                        if (date) {
-                          const dateStr = date.toISOString().split('T')[0];
-                          setFormData({ ...formData, startDate: dateStr });
-                  } else {
-                          setFormData({ ...formData, startDate: "" });
-                        }
+                      onSelect={date => {
+                        setFormData({ ...formData, startDate: date ? date.toISOString().split('T')[0] : "" });
                       }}
+                      locale={vi}
                       initialFocus
                     />
                   </PopoverContent>
                 </Popover>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Ngày bắt đầu hiển thị thông báo (mặc định: hôm nay)
-                </p>
               </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label className="text-sm font-medium">Ngày kết thúc (tùy chọn)</Label>
-                  <span className="text-xs text-slate-500 dark:text-slate-400">dd/mm/yyyy</span>
-                </div>
+              <div>
+                <Label>Ngày kết thúc (tùy chọn)</Label>
                 <Popover>
                   <PopoverTrigger asChild>
-                        <Button
-                      variant="outline"
-                      className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !formData.endDate && "text-muted-foreground"
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {formData.endDate ? (
-                        format(new Date(formData.endDate), "dd/MM/yyyy", { locale: vi })
-                      ) : (
-                        <span>Chọn ngày kết thúc</span>
-                      )}
-                      </Button>
+                    <Button variant="outline" className="w-full justify-start text-left">
+                      {formData.endDate ?
+                        format(new Date(formData.endDate), "dd/MM/yyyy", { locale: vi }) :
+                        "Chọn ngày kết thúc"
+                      }
+                    </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
+                  <PopoverContent align="start">
                     <Calendar
                       mode="single"
                       selected={formData.endDate ? new Date(formData.endDate) : undefined}
-                      onSelect={(date) => {
-                        if (date) {
-                          const dateStr = date.toISOString().split('T')[0];
-                          setFormData({ ...formData, endDate: dateStr });
-                        } else {
-                          setFormData({ ...formData, endDate: "" });
-                        }
+                      onSelect={date => {
+                        setFormData({ ...formData, endDate: date ? date.toISOString().split('T')[0] : "" });
                       }}
+                      locale={vi}
                       initialFocus
                     />
                   </PopoverContent>
                 </Popover>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Thông báo sẽ ẩn sau ngày này (để trống = hiển thị vĩnh viễn)
-                </p>
               </div>
             </div>
           </div>
@@ -1937,22 +1922,55 @@ export default function NotificationsPage() {
                 </Select>
               </div>
             </div>
+            {/* Chọn ngày (lịch tiếng Việt) */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Ngày bắt đầu (tùy chọn)</Label>
-                <Input
-                  type="date"
-                  value={formData.startDate}
-                  onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full justify-start text-left">
+                      {formData.startDate ?
+                        format(new Date(formData.startDate), "dd/MM/yyyy", { locale: vi }) :
+                        "Chọn ngày bắt đầu"
+                      }
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start">
+                    <Calendar
+                      mode="single"
+                      selected={formData.startDate ? new Date(formData.startDate) : undefined}
+                      onSelect={date => {
+                        setFormData({ ...formData, startDate: date ? date.toISOString().split('T')[0] : "" });
+                      }}
+                      locale={vi}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
               <div>
                 <Label>Ngày kết thúc (tùy chọn)</Label>
-                <Input
-                  type="date"
-                  value={formData.endDate}
-                  onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full justify-start text-left">
+                      {formData.endDate ?
+                        format(new Date(formData.endDate), "dd/MM/yyyy", { locale: vi }) :
+                        "Chọn ngày kết thúc"
+                      }
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start">
+                    <Calendar
+                      mode="single"
+                      selected={formData.endDate ? new Date(formData.endDate) : undefined}
+                      onSelect={date => {
+                        setFormData({ ...formData, endDate: date ? date.toISOString().split('T')[0] : "" });
+                      }}
+                      locale={vi}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
             <div>

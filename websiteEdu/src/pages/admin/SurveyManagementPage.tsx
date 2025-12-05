@@ -570,7 +570,7 @@ export default function SurveyManagementPage() {
                       {progressMap[survey._id] ? (
                         <div className="flex items-center gap-2">
                           <span className="text-sm">
-                            {progressMap[survey._id].submittedCount}/{progressMap[survey._id].totalCount}
+                            <span className="font-medium text-muted-foreground">Đã nộp:</span> {progressMap[survey._id].submittedCount} / <span className="font-medium text-muted-foreground">Sĩ số:</span> {progressMap[survey._id].totalCount}
                           </span>
                           <Button
                             variant="ghost"

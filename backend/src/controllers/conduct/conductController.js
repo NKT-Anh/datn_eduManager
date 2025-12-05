@@ -161,6 +161,7 @@ exports.getConducts = async (req, res) => {
           year: year,
           semester: semester,
           conduct: null,
+          conductDraft: null,
           conductSuggested: null,
           conductNote: '',
           conductStatus: 'draft',
@@ -276,7 +277,8 @@ exports.updateConduct = async (req, res) => {
           classId: student.classId?._id || student.classId,
           year: year,
           semester: semester,
-          conduct: conduct || null,
+          conduct: null,
+          conductDraft: conduct || null,
           conductNote: conductNote || '',
           conductStatus: 'draft',
           gpa: null,
@@ -337,11 +339,11 @@ exports.updateConduct = async (req, res) => {
       }
       
       // Cập nhật hạnh kiểm
-      if (conduct) {
-        if (!['Tốt', 'Khá', 'Trung bình', 'Yếu'].includes(conduct)) {
+      if (conduct !== undefined) {
+        if (conduct && !['Tốt', 'Khá', 'Trung bình', 'Yếu'].includes(conduct)) {
           return res.status(400).json({ error: 'Hạnh kiểm không hợp lệ' });
         }
-        record.conduct = conduct;
+        record.conductDraft = conduct || null;
         record.homeroomTeacherId = teacher._id;
       }
       
@@ -349,13 +351,17 @@ exports.updateConduct = async (req, res) => {
       if (conductNote !== undefined) {
         record.conductNote = conductNote;
       }
+
+      record.homeroomTeacherId = teacher._id;
       
       // Xử lý action
       if (action === 'submit') {
         // ✅ Gửi phê duyệt: cần có hạnh kiểm
-        if (!conduct) {
+        const draftValue = conduct || record.conductDraft;
+        if (!draftValue) {
           return res.status(400).json({ error: 'Vui lòng nhập hạnh kiểm trước khi gửi phê duyệt' });
         }
+        record.conductDraft = draftValue;
         // Gửi phê duyệt: chuyển từ draft → pending
         if (record.conductStatus === 'draft' || !record.conductStatus) {
           record.conductStatus = 'pending';
@@ -377,11 +383,12 @@ exports.updateConduct = async (req, res) => {
     else if (isAdminOrBGH) {
       const { gpa, rank, note, conductStatus } = req.body;
       
-      if (conduct) {
-        if (!['Tốt', 'Khá', 'Trung bình', 'Yếu'].includes(conduct)) {
+      if (conduct !== undefined) {
+        if (conduct && !['Tốt', 'Khá', 'Trung bình', 'Yếu'].includes(conduct)) {
           return res.status(400).json({ error: 'Hạnh kiểm không hợp lệ' });
         }
-        record.conduct = conduct;
+        record.conduct = conduct || null;
+        record.conductDraft = conduct || null;
       }
       if (gpa !== undefined) record.gpa = gpa;
       if (rank !== undefined) record.rank = rank;
@@ -459,45 +466,201 @@ exports.calculateSuggestedConduct = async (req, res) => {
   }
 };
 
+// ...existing code...
+
 /**
- * ✅ PHÊ DUYỆT HẠNH KIỂM (BGH)
+ * ✅ Phê duyệt hạnh kiểm cho 1 lớp
+ */
+exports.approveConduct = async (req, res) => {
+  try {
+    const classId = req.params.classId;
+    await StudentYearRecord.updateMany({ classId }, { $set: { conductStatus: 'approved', conductApprovedAt: new Date() } });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+/**
+ * ✅ Phê duyệt tất cả hạnh kiểm
+ */
+exports.approveAllConduct = async (req, res) => {
+  try {
+    await StudentYearRecord.updateMany({}, { $set: { conductStatus: 'approved', conductApprovedAt: new Date() } });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+/**
+ * 📊 Thống kê hạnh kiểm theo khối
+ */
+/**
+ * 📊 Thống kê hạnh kiểm theo khối (đúng chuẩn: lấy tất cả lớp trong năm học)
+ */
+exports.getConductBlockStatistics = async (req, res) => {
+  try {
+    const { year, semester = "CN" } = req.query;
+
+    if (!year) {
+      return res.status(400).json({ message: "Missing academic year" });
+    }
+
+    // Lấy tất cả lớp trong năm học
+    const classes = await Class.find({ year }).lean();
+    if (!classes.length) return res.json({ year, semester, totalBlocks: 0, data: [] });
+
+    const classIds = classes.map(cls => cls._id);
+
+    // Lấy tất cả record đã locked theo lớp
+    const match = { year, classId: { $in: classIds }, conductStatus: "locked" };
+    if (semester !== "all") match.semester = semester;
+
+    const conductRecords = await StudentYearRecord.aggregate([
+      { $match: match },
+      { $group: { _id: { classId: "$classId", conduct: "$conduct" }, count: { $sum: 1 } } },
+    ]);
+
+    const conductKeyMap = { "Tốt": "TOT", "Khá": "KHA", "Trung bình": "TB", "Yếu": "YEU" };
+    const conductMap = {};
+    conductRecords.forEach(r => {
+      const clsId = r._id.classId.toString();
+      if (!conductMap[clsId]) conductMap[clsId] = { TOT: 0, KHA: 0, TB: 0, YEU: 0 };
+      const key = conductKeyMap[r._id.conduct] || r._id.conduct;
+      conductMap[clsId][key] = r.count;
+    });
+
+
+    // Đếm sĩ số từng lớp bằng Student
+    const studentCounts = await Student.aggregate([
+      {
+        $match: {
+          classId: { $in: classIds },
+          status: 'active',
+          currentYear: year,
+          isDeleted: { $ne: true },
+        },
+      },
+      {
+        $group: {
+          _id: "$classId",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+    const studentCountMap = {};
+    studentCounts.forEach(sc => {
+      studentCountMap[sc._id.toString()] = sc.count;
+    });
+
+    // Gom theo khối, đồng thời tạo mảng classes cho từng khối
+    const grouped = {};
+    for (const cls of classes) {
+      const grade = parseInt(cls.className.slice(0, 2));
+      if (!grouped[grade]) {
+        grouped[grade] = {
+          grade,
+          classCount: 0,
+          studentCount: 0,
+          stats: { TOT: 0, KHA: 0, TB: 0, YEU: 0 },
+          completedClass: 0,
+          classes: [],
+        };
+      }
+      grouped[grade].classCount++;
+      const clsIdStr = cls._id.toString();
+      const totalStudents = studentCountMap[clsIdStr] || 0;
+      grouped[grade].studentCount += totalStudents;
+
+      // Tính trạng thái hoàn thành của lớp
+      const conductCounts = conductMap[clsIdStr] || { TOT: 0, KHA: 0, TB: 0, YEU: 0 };
+      const lockedCount = Object.values(conductCounts).reduce((a, b) => a + b, 0);
+      const isCompleted = totalStudents > 0 && lockedCount === totalStudents;
+      if (isCompleted) grouped[grade].completedClass++;
+
+      // Cộng dồn thống kê hạnh kiểm
+      grouped[grade].stats.TOT += conductCounts.TOT;
+      grouped[grade].stats.KHA += conductCounts.KHA;
+      grouped[grade].stats.TB += conductCounts.TB;
+      grouped[grade].stats.YEU += conductCounts.YEU;
+
+      // Thêm thông tin từng lớp vào mảng classes
+      grouped[grade].classes.push({
+        classId: cls._id,
+        className: cls.className,
+        teacherName: cls.teacherId?.name || "Chưa có",
+        studentCount: totalStudents,
+        TOT: conductCounts.TOT,
+        KHA: conductCounts.KHA,
+        TB: conductCounts.TB,
+        YEU: conductCounts.YEU,
+        progressPercent: totalStudents > 0 ? Math.round((lockedCount / totalStudents) * 100) : 0,
+        status: isCompleted ? "Đã hoàn thành" : "Chưa hoàn thành",
+      });
+    }
+
+    res.json({
+      year,
+      semester,
+      totalBlocks: Object.keys(grouped).length,
+      data: Object.values(grouped),
+    });
+  } catch (error) {
+    console.error("[ERROR getConductBlockStatistics]", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+
+
+
+
+
+/**
+ * ✅ PHÊ DUYỆT HẠNH KIỂM (BGH + Admin)
  * - Approve: Duyệt hạnh kiểm
  * - Reject: Yêu cầu chỉnh sửa (chuyển về draft)
  * - Lock: Chốt dữ liệu (không cho sửa nữa)
  */
 exports.approveConduct = async (req, res) => {
   try {
-    const { id } = req.params;
     const { role, accountId } = req.user;
-    const { action, comment } = req.body; // action: 'approve', 'reject', 'lock'
-    
-    // Chỉ BGH mới được phê duyệt
-    if (role !== 'teacher' || !req.user.teacherFlags?.isLeader) {
-      return res.status(403).json({ error: 'Chỉ Ban Giám Hiệu mới được phê duyệt hạnh kiểm' });
+    const { id } = req.params;
+    const { action = 'approve', comment } = req.body;
+    const isAdminOrBGH = role === 'admin' || (role === 'teacher' && req.user.teacherFlags?.isLeader);
+    if (!isAdminOrBGH) {
+      return res.status(403).json({ error: 'Chỉ Ban Giám Hiệu hoặc Admin mới được phê duyệt hạnh kiểm' });
     }
-    
     const record = await StudentYearRecord.findById(id);
     if (!record) {
       return res.status(404).json({ error: 'Không tìm thấy hạnh kiểm' });
     }
-    
-    const teacher = await Teacher.findOne({ accountId });
-    if (!teacher) {
-      return res.status(404).json({ error: 'Không tìm thấy thông tin giáo viên' });
+    let approverId = null;
+    if (role === 'admin') {
+      approverId = accountId;
+    } else {
+      const teacher = await Teacher.findOne({ accountId });
+      if (!teacher) {
+        approverId = accountId; // fallback nếu là BGH nhưng không có teacher
+      } else {
+        approverId = teacher._id;
+      }
     }
-    
     if (action === 'approve') {
-      // Duyệt: pending → approved
+      const approvedConduct = record.conductDraft ?? record.conduct;
+      if (approvedConduct) {
+        record.conduct = approvedConduct;
+        record.conductDraft = approvedConduct;
+      }
       record.conductStatus = 'approved';
-      record.conductApprovedBy = teacher._id;
+      record.conductApprovedBy = approverId;
       record.conductApprovedAt = new Date();
       if (comment) record.conductComment = comment;
     } else if (action === 'reject') {
-      // Từ chối: pending → draft (để GVCN chỉnh sửa lại)
       record.conductStatus = 'draft';
       record.conductComment = comment || 'Yêu cầu chỉnh sửa lại';
     } else if (action === 'lock') {
-      // Chốt: approved → locked
       if (record.conductStatus !== 'approved') {
         return res.status(400).json({ error: 'Chỉ có thể chốt hạnh kiểm đã được phê duyệt' });
       }
@@ -507,9 +670,7 @@ exports.approveConduct = async (req, res) => {
     } else {
       return res.status(400).json({ error: 'Action không hợp lệ. Phải là: approve, reject, hoặc lock' });
     }
-    
     await record.save();
-    
     const populated = await StudentYearRecord.findById(record._id)
       .populate('studentId', 'name studentCode')
       .populate('classId', 'className grade')
@@ -558,7 +719,7 @@ exports.getPendingConducts = async (req, res) => {
 };
 
 /**
- * ✅ PHÊ DUYỆT HÀNG LOẠT HẠNH KIỂM (BGH)
+ * ✅ PHÊ DUYỆT HÀNG LOẠT HẠNH KIỂM (BGH + Admin)
  * - action = 'approve': pending → approved
  * - action = 'lock': approved → locked
  */
@@ -566,21 +727,21 @@ exports.bulkApproveConducts = async (req, res) => {
   try {
     const { role, accountId } = req.user;
     const { action = 'approve', comment, year, semester, classId, ids } = req.body;
-
-    // Chỉ BGH mới được phê duyệt hàng loạt
-    if (role !== 'teacher' || !req.user.teacherFlags?.isLeader) {
-      return res.status(403).json({ error: 'Chỉ Ban Giám Hiệu mới được phê duyệt hạnh kiểm' });
+    const isAdminOrBGH = role === 'admin' || (role === 'teacher' && req.user.teacherFlags?.isLeader);
+    if (!isAdminOrBGH) {
+      return res.status(403).json({ error: 'Chỉ Ban Giám Hiệu hoặc Admin mới được phê duyệt hạnh kiểm' });
     }
-
-    if (!['approve', 'lock'].includes(action)) {
-      return res.status(400).json({ error: 'Action không hợp lệ. Phải là: approve hoặc lock' });
+    let approverId = null;
+    if (role === 'admin') {
+      approverId = accountId;
+    } else {
+      const teacher = await Teacher.findOne({ accountId });
+      if (!teacher) {
+        approverId = accountId;
+      } else {
+        approverId = teacher._id;
+      }
     }
-
-    const teacher = await Teacher.findOne({ accountId });
-    if (!teacher) {
-      return res.status(404).json({ error: 'Không tìm thấy thông tin giáo viên' });
-    }
-
     const filter = {};
     if (action === 'approve') {
       filter.conductStatus = 'pending';
@@ -595,27 +756,42 @@ exports.bulkApproveConducts = async (req, res) => {
     if (semester) filter.semester = semester;
     if (classId) filter.classId = classId;
 
-    const update = {};
     const now = new Date();
 
-    if (action === 'approve') {
-      update.conductStatus = 'approved';
-      update.conductApprovedBy = teacher._id;
-      update.conductApprovedAt = now;
-      if (comment) update.conductComment = comment;
-    } else if (action === 'lock') {
-      update.conductStatus = 'locked';
-      update.conductLockedAt = now;
-      if (comment) update.conductComment = comment;
-    }
+    const records = await StudentYearRecord.find(filter);
 
-    const result = await StudentYearRecord.updateMany(filter, { $set: update });
+    let matchedCount = records.length;
+    let modifiedCount = 0;
+
+    for (const record of records) {
+      if (action === 'approve') {
+        if (record.conductStatus !== 'pending') continue;
+        const approvedConduct = record.conductDraft ?? record.conduct;
+        if (approvedConduct) {
+          record.conduct = approvedConduct;
+          record.conductDraft = approvedConduct;
+        }
+        record.conductStatus = 'approved';
+        record.conductApprovedBy = approverId;
+        record.conductApprovedAt = now;
+        if (comment) record.conductComment = comment;
+        await record.save();
+        modifiedCount += 1;
+      } else if (action === 'lock') {
+        if (record.conductStatus !== 'approved') continue;
+        record.conductStatus = 'locked';
+        record.conductLockedAt = now;
+        if (comment) record.conductComment = comment;
+        await record.save();
+        modifiedCount += 1;
+      }
+    }
 
     res.json({
       success: true,
       action,
-      matchedCount: result.matchedCount ?? result.nMatched ?? 0,
-      modifiedCount: result.modifiedCount ?? result.nModified ?? 0,
+      matchedCount,
+      modifiedCount,
     });
   } catch (error) {
     console.error('❌ Lỗi bulkApproveConducts:', error);
@@ -800,6 +976,7 @@ exports.createConduct = async (req, res) => {
       year,
       semester,
       conduct: conduct || null, // ✅ Không tự động gắn "Tốt", để GVCN nhập thủ công
+      conductDraft: conduct || null,
       conductNote: conductNote || '',
       conductStatus: 'draft',
       gpa: gpa || null,
@@ -818,19 +995,104 @@ exports.createConduct = async (req, res) => {
   }
 };
 
+/**
+ * 📊 Thống kê hạnh kiểm các lớp (theo năm học, học kỳ, cả năm)
+ */
+/**
+ * 📊 Thống kê hạnh kiểm các lớp (theo năm học, học kỳ hoặc cả năm)
+ */
+exports.getConductClassStatistics = async (req, res) => {
+  try {
+    const { year, semester } = req.query;
+    if (!year) return res.status(400).json({ message: "Year is required" });
+
+    // Lấy tất cả lớp trong năm học, populate giáo viên
+    const classes = await Class.find({ year, isDeleted: false })
+      .populate('teacherId', 'name')
+      .lean();
+    if (!classes.length) return res.json([]);
+
+    const classIds = classes.map(cls => cls._id);
+
+    // Lấy tất cả record của các lớp trong năm học và học kỳ (không chỉ locked)
+    const match = {
+      year,
+      classId: { $in: classIds },
+    };
+    if (semester && semester !== "all") match.semester = semester;
+
+    // Lấy tất cả record của các lớp
+    const allRecords = await StudentYearRecord.find(match).lean();
+
+    // Gom theo classId và conductStatus
+    const conductKeyMap = { "Tốt": "TOT", "Khá": "KHA", "Trung bình": "TB", "Yếu": "YEU" };
 
 
+    // Đếm sĩ số từng lớp bằng Student
+    const studentCounts = await Student.aggregate([
+      {
+        $match: {
+          classId: { $in: classIds },
+          status: 'active',
+          currentYear: year,
+          isDeleted: { $ne: true },
+        },
+      },
+      {
+        $group: {
+          _id: "$classId",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+    const studentCountMap = {};
+    studentCounts.forEach(sc => {
+      studentCountMap[sc._id.toString()] = sc.count;
+    });
 
+    // Map: { classId: { locked: {TOT, KHA, TB, YEU}, total: n, lockedCount: n } }
+    const classStats = {};
+    for (const cls of classes) {
+      const clsIdStr = cls._id.toString();
+      classStats[clsIdStr] = {
+        TOT: 0, KHA: 0, TB: 0, YEU: 0,
+        lockedCount: 0,
+        total: studentCountMap[clsIdStr] || 0,
+      };
+    }
 
+    for (const record of allRecords) {
+      const clsIdStr = record.classId?.toString?.() || record.classId;
+      if (!classStats[clsIdStr]) continue;
+      if (record.conductStatus === 'locked') {
+        const key = conductKeyMap[record.conduct] || record.conduct;
+        if (['TOT', 'KHA', 'TB', 'YEU'].includes(key)) {
+          classStats[clsIdStr][key]++;
+        }
+        classStats[clsIdStr].lockedCount++;
+      }
+    }
 
+    const result = classes.map(cls => {
+      const clsIdStr = cls._id.toString();
+      const stats = classStats[clsIdStr] || { TOT: 0, KHA: 0, TB: 0, YEU: 0, lockedCount: 0, total: 0 };
+      const progress = stats.total > 0 ? Math.round((stats.lockedCount / stats.total) * 100) : 0;
+      return {
+        classId: cls._id,
+        className: cls.className,
+        studentCount: stats.total,
+        teacherName: cls.teacherId?.name || "Chưa có",
+        TOT: stats.TOT,
+        KHA: stats.KHA,
+        TB: stats.TB,
+        YEU: stats.YEU,
+        progressPercent: progress,
+      };
+    });
 
-
-
-
-
-
-
-
-
-
-
+    res.json(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};

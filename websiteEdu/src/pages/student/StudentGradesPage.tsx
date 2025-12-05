@@ -3,10 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useAuth } from '@/contexts/AuthContext';
 import gradesApi from '@/services/gradesApi';
 import conductApi from '@/services/conductApi';
+import gradeConfigApi from '@/services/gradeConfigApi';
 import { 
   BarChart3,
   BookOpen,
@@ -17,7 +17,6 @@ import {
   Download,
   Loader2,
   GraduationCap,
-  Calendar,
   Info
 } from 'lucide-react';
 import {
@@ -58,9 +57,19 @@ interface GradeSummary {
     midterm?: number[];
     final?: number[];
   };
+  gradeItemLogs?: {
+    oral?: { score: number; attempt?: number; teacher?: { _id?: string; name?: string; code?: string } | null; date?: string }[];
+    quiz15?: { score: number; attempt?: number; teacher?: { _id?: string; name?: string; code?: string } | null; date?: string }[];
+    quiz45?: { score: number; attempt?: number; teacher?: { _id?: string; name?: string; code?: string } | null; date?: string }[];
+    midterm?: { score: number; attempt?: number; teacher?: { _id?: string; name?: string; code?: string } | null; date?: string }[];
+    final?: { score: number; attempt?: number; teacher?: { _id?: string; name?: string; code?: string } | null; date?: string }[];
+  };
   average: number | null; // Điểm TB (chỉ có nếu môn tính điểm TB)
   result: string | null; // "D" hoặc "K" (chỉ có nếu môn không tính điểm TB)
   computedAt: string;
+  isOfficial?: boolean;
+  officialAt?: string | null;
+  officialBy?: string | null;
 }
 
 interface ConductRecord {
@@ -86,10 +95,39 @@ const StudentGradesPage = () => {
   const { backendUser } = useAuth();
   const [grades, setGrades] = useState<GradeSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedYear, setSelectedYear] = useState<string>('');
+  const [studentId, setStudentId] = useState<string | null>(null);
+  const [classId, setClassId] = useState<string | null>(null);
+  const [gradeConfig, setGradeConfig] = useState<{
+    weights: Record<string, number>;
+    columnCounts?: Record<string, number>;
+    rounding: 'half-up' | 'none';
+    classification?: {
+      excellent: { minAverage: number; minSubjectScore: number };
+      good: { minAverage: number; minSubjectScore: number };
+      average: { minAverage: number; minSubjectScore: number };
+      weak: { maxAverage: number; maxSubjectScore?: number };
+    };
+  } | null>(null);
+  const [loadingConfig, setLoadingConfig] = useState(false);
+  // Helper: current school year string and semester
+  const getCurrentSchoolYear = () => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth() + 1; // 1-12
+    // School year starts in Sep (9)
+    return m >= 9 ? `${y}-${y + 1}` : `${y - 1}-${y}`;
+  };
+  const getCurrentSemesterTab = () => {
+    const m = new Date().getMonth() + 1;
+    if (m >= 9 || m === 12) return 'HK1';
+    if (m >= 1 && m <= 5) return 'HK2';
+    return 'CN'; // summer: show yearly summary
+  };
+
+  const [selectedYear, setSelectedYear] = useState<string>(getCurrentSchoolYear());
   const [currentClass, setCurrentClass] = useState<{ className: string; grade: string; classCode?: string } | null>(null);
   const [conductRecords, setConductRecords] = useState<ConductRecord[]>([]);
-  const [activeTab, setActiveTab] = useState<string>('HK2'); // Mặc định là HK2
+  const [activeTab, setActiveTab] = useState<string>(getCurrentSemesterTab()); // Mặc định: học kỳ hiện tại
   const [previousSemesterComparison, setPreviousSemesterComparison] = useState<{ semester: string; schoolYear: string; comparison: TrendComparison[] } | null>(null);
   const [previousYearComparison, setPreviousYearComparison] = useState<{ schoolYear: string; semester: string; comparison: TrendComparison[] } | null>(null);
 
@@ -101,10 +139,15 @@ const StudentGradesPage = () => {
   
   // Nếu chưa chọn năm học và có dữ liệu, tự động chọn năm học mới nhất
   useEffect(() => {
-    if (!selectedYear && schoolYears.length > 0 && !loading) {
-      setSelectedYear(schoolYears[0]);
+    if (!loading && schoolYears.length > 0) {
+      const prefer = schoolYears.includes(getCurrentSchoolYear())
+        ? getCurrentSchoolYear()
+        : schoolYears[0];
+      if (!selectedYear || !schoolYears.includes(selectedYear)) {
+        setSelectedYear(prefer);
+      }
     }
-  }, [schoolYears.length, loading]); // Chỉ phụ thuộc vào length để tránh loop
+  }, [schoolYears, loading]);
 
   // Lấy thông tin lớp từ dữ liệu điểm hoặc từ student API
   useEffect(() => {
@@ -122,7 +165,9 @@ const StudentGradesPage = () => {
             grade: currentYearGrades[0].class.grade,
             classCode: currentYearGrades[0].class.classCode,
           });
-          return;
+          if ((currentYearGrades[0].class as any)?._id) {
+            setClassId(String((currentYearGrades[0].class as any)._id));
+          }
         }
         
         // Nếu không có trong điểm, lấy từ student API
@@ -134,6 +179,7 @@ const StudentGradesPage = () => {
           s.accountId === backendUser._id
         );
         
+        if (student?._id) setStudentId(String(student._id));
         if (student?.classId) {
           const classInfo = typeof student.classId === 'object' 
             ? student.classId 
@@ -144,6 +190,7 @@ const StudentGradesPage = () => {
               grade: classInfo.grade || '',
               classCode: classInfo.classCode || '',
             });
+            if (classInfo._id) setClassId(String(classInfo._id));
           }
         }
       } catch (err) {
@@ -158,7 +205,7 @@ const StudentGradesPage = () => {
 
   useEffect(() => {
     fetchGrades();
-  }, []); // Fetch điểm một lần khi component mount
+  }, [selectedYear]); // Refetch khi đổi năm học
 
   useEffect(() => {
     fetchConducts();
@@ -169,8 +216,8 @@ const StudentGradesPage = () => {
       setLoading(true);
       // Lấy điểm của cả 2 học kỳ với xu hướng
       const [hk1Res, hk2Res] = await Promise.all([
-        gradesApi.getStudentGradesWithTrend({ semester: '1', schoolYear: selectedYear || undefined }),
-        gradesApi.getStudentGradesWithTrend({ semester: '2', schoolYear: selectedYear || undefined }),
+        (gradesApi as any).getStudentGradesWithTrend({ semester: '1', schoolYear: selectedYear || undefined }),
+        (gradesApi as any).getStudentGradesWithTrend({ semester: '2', schoolYear: selectedYear || undefined }),
       ]);
 
       const allGrades: GradeSummary[] = [];
@@ -238,6 +285,79 @@ const StudentGradesPage = () => {
     }
   };
 
+  // 🔧 Lấy cấu hình điểm theo năm học + học kỳ (chỉ cho HK1/HK2)
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        if (!selectedYear) {
+          setGradeConfig(null);
+          return;
+        }
+        // Luôn lấy config: HK1 -> '1', HK2 -> '2', CN -> ưu tiên '2' để có classification
+        const semesterParam = activeTab === 'HK1' ? '1' : activeTab === 'HK2' ? '2' : '2';
+        setLoadingConfig(true);
+        const res = await gradeConfigApi.getConfig({ schoolYear: selectedYear, semester: semesterParam });
+        const cfg = res.data || res;
+        if (cfg && cfg.weights) {
+          setGradeConfig({
+            weights: cfg.weights,
+            columnCounts: cfg.columnCounts,
+            rounding: cfg.rounding || 'half-up',
+            classification: cfg.classification,
+          });
+        } else {
+          setGradeConfig({
+            weights: { oral: 1, quiz15: 1, quiz45: 2, midterm: 2, final: 3 },
+            rounding: 'half-up',
+          });
+        }
+      } catch (e) {
+        // Fallback cấu hình mặc định
+        setGradeConfig({
+          weights: { oral: 1, quiz15: 1, quiz45: 2, midterm: 2, final: 3 },
+          rounding: 'half-up',
+        });
+      } finally {
+        setLoadingConfig(false);
+      }
+    };
+    loadConfig();
+  }, [selectedYear, activeTab]);
+
+  // ✅ GPA học kỳ từ backend (chỉ hiện khi đủ môn)
+  const [gpaHK1, setGpaHK1] = useState<number | null>(null);
+  const [gpaHK2, setGpaHK2] = useState<number | null>(null);
+
+  useEffect(() => {
+    const fetchSemesterGPA = async () => {
+      try {
+        if (!classId || !selectedYear) {
+          setGpaHK1(null);
+          setGpaHK2(null);
+          return;
+        }
+        const [res1, res2] = await Promise.all([
+          (gradesApi as any).getClassSemesterGPA({ classId, schoolYear: selectedYear, semester: '1' }),
+          (gradesApi as any).getClassSemesterGPA({ classId, schoolYear: selectedYear, semester: '2' }),
+        ]);
+        const sid = studentId;
+        const pick = (res: any): number | null => {
+          const list = res?.data || [];
+          if (!sid) return null;
+          const row = list.find((r: any) => String(r.studentId) === String(sid));
+          return typeof row?.gpa === 'number' ? row.gpa : null;
+        };
+        setGpaHK1(pick(res1));
+        setGpaHK2(pick(res2));
+      } catch (e) {
+        console.warn('Không lấy được GPA học kỳ', e);
+        setGpaHK1(null);
+        setGpaHK2(null);
+      }
+    };
+    fetchSemesterGPA();
+  }, [classId, selectedYear, studentId]);
+
   // Lọc điểm theo năm học
   const yearGrades = grades.filter(g => 
     (!selectedYear || g.schoolYear === selectedYear)
@@ -298,6 +418,8 @@ const StudentGradesPage = () => {
         }
       }
 
+      const hk1IsOfficial = hk1?.isOfficial === true;
+      const hk2IsOfficial = hk2?.isOfficial === true;
       return {
         _id: `${subjectId}_year`,
         subject,
@@ -314,10 +436,13 @@ const StudentGradesPage = () => {
         average: yearAverage,
         result: yearResult,
         computedAt: new Date().toISOString(),
+        isOfficial: hk1IsOfficial && hk2IsOfficial,
         // Thêm điểm TB HK1 và HK2 để hiển thị trong bảng cả năm
         hk1Average: hk1?.average ?? null,
         hk2Average: hk2?.average ?? null,
-      } as GradeSummary & { hk1Average?: number | null; hk2Average?: number | null };
+        hk1IsOfficial,
+        hk2IsOfficial,
+      } as GradeSummary & { hk1Average?: number | null; hk2Average?: number | null; hk1IsOfficial?: boolean; hk2IsOfficial?: boolean };
     }).filter((g): g is GradeSummary => g !== null);
   }, [hk1Grades, hk2Grades, displayYear]);
 
@@ -332,25 +457,63 @@ const StudentGradesPage = () => {
   };
 
   // Tính điểm TB tất cả các môn cho từng học kỳ
-  const overallHk1Average = useMemo(() => {
-    return calculateOverallAverage(hk1Grades);
-  }, [hk1Grades]);
-
-  const overallHk2Average = useMemo(() => {
-    return calculateOverallAverage(hk2Grades);
-  }, [hk2Grades]);
+  const overallHk1Average = gpaHK1;
+  const overallHk2Average = gpaHK2;
 
   // Tính điểm TB tất cả các môn cả năm = (TB HK1 + TB HK2) / 2
   const overallYearAverage = useMemo(() => {
     if (overallHk1Average !== null && overallHk2Average !== null) {
       return (overallHk1Average + overallHk2Average) / 2;
-    } else if (overallHk1Average !== null) {
-      return overallHk1Average;
-    } else if (overallHk2Average !== null) {
-      return overallHk2Average;
     }
     return null;
   }, [overallHk1Average, overallHk2Average]);
+
+  // ✅ Chỉ coi ĐTB môn là chính thức khi đã được công bố (isOfficial)
+  const isOfficialAverage = (g: GradeSummary | (GradeSummary & { hk1Average?: number | null; hk2Average?: number | null; hk1IsOfficial?: boolean; hk2IsOfficial?: boolean })) => {
+    if (!g || g.subject?.includeInAverage === false) return false;
+    // Trường hợp render theo học kỳ hiện tại
+    if (g.average !== undefined) {
+      return g.average !== null && (g as any).isOfficial === true;
+    }
+    return false;
+  };
+
+  // 🧮 Tính học lực dự kiến (dựa trên điểm TB và ngưỡng trong gradeConfig)
+  const computeProvisionalAcademicLevel = (
+    gradesList: GradeSummary[],
+    overallAverage: number | null
+  ): string | null => {
+    const cls = gradeConfig?.classification;
+    if (!cls || overallAverage === null) return null;
+    // Tính điểm TB tối thiểu của từng môn (chỉ các môn tính TB)
+    const subjectAverages = gradesList
+      .filter(g => g.subject.includeInAverage !== false && g.average !== null)
+      .map(g => g.average as number);
+    if (subjectAverages.length === 0) return null;
+    const minSubjectAvg = Math.min(...subjectAverages);
+
+    // Xác định học lực dựa trên ngưỡng
+    if (
+      overallAverage >= (cls.excellent?.minAverage ?? 8) &&
+      minSubjectAvg >= (cls.excellent?.minSubjectScore ?? 6.5)
+    ) return 'Giỏi';
+
+    if (
+      overallAverage >= (cls.good?.minAverage ?? 6.5) &&
+      minSubjectAvg >= (cls.good?.minSubjectScore ?? 5.0)
+    ) return 'Khá';
+
+    if (
+      overallAverage >= (cls.average?.minAverage ?? 5.0) &&
+      minSubjectAvg > (cls.average?.minSubjectScore ?? 3.5)
+    ) return 'Trung bình';
+
+    return 'Yếu';
+  };
+
+  const provisionalHK1 = null;
+  const provisionalHK2 = null;
+  const provisionalCN = null;
 
   // Tự động lưu điểm TB cả năm lên backend
   useEffect(() => {
@@ -408,11 +571,11 @@ const StudentGradesPage = () => {
       }
     };
 
-    // Chỉ lưu khi có đủ dữ liệu và không đang loading
+    // Chỉ lưu khi có đủ dữ liệu (đã có GPA HK1 & HK2) và không đang loading
     if (!loading && overallYearAverage !== null && displayYear) {
       saveYearGPA();
     }
-  }, [overallYearAverage, displayYear, backendUser, yearAverageGrades, hk1Grades, hk2Grades, loading]);
+  }, [overallYearAverage, displayYear, backendUser, loading]);
 
   // Tính số môn đạt/không đạt (cho môn không tínhTB)
   const getPassFailCount = (gradesList: GradeSummary[]) => {
@@ -440,6 +603,22 @@ const StudentGradesPage = () => {
     if (score === null || score === undefined) return '-';
     return score.toFixed(1);
   };
+
+  // 🔤 Nhãn thành phần điểm + danh sách component đang bật theo cấu hình
+  const componentLabels: Record<string, string> = {
+    oral: 'Miệng',
+    quiz15: '15 phút',
+    quiz45: '45 phút',
+    midterm: 'Giữa kỳ',
+    final: 'Cuối kỳ',
+  };
+
+  const activeComponents: string[] = useMemo(() => {
+    if (!gradeConfig?.weights) return [];
+    return Object.entries(gradeConfig.weights)
+      .filter(([_, w]) => (w ?? 0) > 0)
+      .map(([k]) => k);
+  }, [gradeConfig]);
 
   // 🎯 Lấy xu hướng điểm của môn học
   const getSubjectTrend = (subjectId: string, semester: 'HK1' | 'HK2') => {
@@ -492,102 +671,20 @@ const StudentGradesPage = () => {
     yearLabel: string
   ) => {
     const conductInfo = getConductInfo(semester);
+    const MobileItem = ({ label, value }: { label: string; value: React.ReactNode }) => (
+      <div className="flex items-start justify-between py-1">
+        <span className="text-sm text-muted-foreground mr-3">{label}</span>
+        <div className="text-sm font-medium text-right">{value}</div>
+      </div>
+    );
     
     return (
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <CardTitle className="flex items-center space-x-2">
-                <BarChart3 className="h-5 w-5 text-primary" />
-                <span>{title}</span>
-                {yearLabel && <span className="text-muted-foreground">- {yearLabel}</span>}
-              </CardTitle>
-              <CardDescription className="mt-1">
-                {gradesList.length > 0 && gradesList[0]?.class && (
-                  <span>
-                    Lớp: <strong className="text-foreground">{gradesList[0].class.className}</strong>
-                    {gradesList[0].class.classCode && ` (${gradesList[0].class.classCode})`}
-                    {' - '}
-                    Khối <strong className="text-foreground">{gradesList[0].class.grade}</strong>
-                  </span>
-                )}
-                {gradesList.length === 0 && !loading && 'Chi tiết điểm số các môn học'}
-              </CardDescription>
-            </div>
-            {/* Học lực và Hạnh kiểm - Góc phải */}
-            <div className="flex flex-col items-end gap-2 ml-4 min-w-[120px]">
-              {conductInfo.academicLevel ? (
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground mb-1">Học lực</p>
-                  <Badge 
-                    variant="outline" 
-                    className={`font-semibold ${
-                      conductInfo.academicLevel === 'Giỏi' ? 'border-green-500 text-green-700 bg-green-50 dark:bg-green-950' :
-                      conductInfo.academicLevel === 'Khá' ? 'border-blue-500 text-blue-700 bg-blue-50 dark:bg-blue-950' :
-                      conductInfo.academicLevel === 'Trung bình' ? 'border-yellow-500 text-yellow-700 bg-yellow-50 dark:bg-yellow-950' :
-                      'border-red-500 text-red-700 bg-red-50 dark:bg-red-950'
-                    }`}
-                  >
-                    {conductInfo.academicLevel}
-                  </Badge>
-                </div>
-              ) : (
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground mb-1">Học lực</p>
-                  <Badge variant="outline" className="font-semibold text-muted-foreground">
-                    Chưa có
-                  </Badge>
-                </div>
-              )}
-              {conductInfo.conduct ? (
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground mb-1">Hạnh kiểm</p>
-                  <Badge 
-                    variant="outline" 
-                    className={`font-semibold ${
-                      conductInfo.conduct === 'Tốt' ? 'border-green-500 text-green-700 bg-green-50 dark:bg-green-950' :
-                      conductInfo.conduct === 'Khá' ? 'border-blue-500 text-blue-700 bg-blue-50 dark:bg-blue-950' :
-                      conductInfo.conduct === 'Trung bình' ? 'border-yellow-500 text-yellow-700 bg-yellow-50 dark:bg-yellow-950' :
-                      'border-red-500 text-red-700 bg-red-50 dark:bg-red-950'
-                    }`}
-                  >
-                    {conductInfo.conduct}
-                  </Badge>
-                </div>
-              ) : (
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground mb-1">Hạnh kiểm</p>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Badge variant="outline" className="font-semibold text-amber-700 bg-amber-50 dark:bg-amber-950 border-amber-300 cursor-help">
-                          Chờ phê duyệt
-                        </Badge>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="text-sm font-medium">Hạnh kiểm đang chờ phê duyệt từ Ban Giám Hiệu</p>
-                        <p className="text-xs text-muted-foreground mt-1">Sau khi được phê duyệt, hạnh kiểm sẽ hiển thị tại đây</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-              )}
-              {/* Thông báo xét giấy khen cho bảng cả năm */}
-              {semester === 'CN' && conductInfo.academicLevel && conductInfo.conduct && (
-                <div className="mt-2 pt-2 border-t border-border">
-                  <p className="text-xs font-medium text-primary">
-                    {conductInfo.academicLevel === 'Giỏi' && conductInfo.conduct === 'Tốt' 
-                      ? '✅ Đủ điều kiện xét giấy khen'
-                      : conductInfo.academicLevel === 'Khá' && conductInfo.conduct === 'Tốt'
-                      ? '✅ Đủ điều kiện xét giấy khen'
-                      : '📋 Xem xét điều kiện xét giấy khen'
-                    }
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
+          <CardTitle className="flex items-center space-x-2">
+            <BarChart3 className="h-5 w-5 text-primary" />
+            <span>{title}</span>
+          </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
@@ -609,346 +706,437 @@ const StudentGradesPage = () => {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[600px]">
-                <thead className="bg-muted">
-                  <tr>
-                    <th className="p-3 text-left font-medium text-muted-foreground">Môn học</th>
-                    {semester === 'CN' ? (
-                      <>
-                        <th className="p-3 text-center font-medium text-muted-foreground">ĐTB HK1</th>
-                        <th className="p-3 text-center font-medium text-muted-foreground">ĐTB HK2</th>
-                        <th className="p-3 text-center font-medium text-muted-foreground">ĐTB cả năm</th>
-                      </>
-                    ) : (
-                      <>
-                        <th className="p-3 text-center font-medium text-muted-foreground">Miệng</th>
-                        <th className="p-3 text-center font-medium text-muted-foreground">15 phút</th>
-                        <th className="p-3 text-center font-medium text-muted-foreground">1 tiết</th>
-                        <th className="p-3 text-center font-medium text-muted-foreground">Giữa kỳ</th>
-                        <th className="p-3 text-center font-medium text-muted-foreground">Cuối kỳ</th>
-                        <th className="p-3 text-center font-medium text-muted-foreground">ĐTB môn</th>
-                        <th className="p-3 text-center font-medium text-muted-foreground">Kết quả</th>
-                      </>
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {gradesList.map((grade, index) => (
-                    <tr key={grade._id} className={index % 2 === 0 ? 'bg-background' : 'bg-muted/30'}>
-                      <td className="p-3">
-                        <div className="flex items-center space-x-2">
-                          <BookOpen className="h-4 w-4 text-primary" />
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{grade.subject.name}</span>
-                            {grade.subject.includeInAverage === false && (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Badge variant="outline" className="text-xs cursor-help">
-                                      Đánh giá nhận xét
-                                      <Info className="h-3 w-3 ml-1 inline" />
-                                    </Badge>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="max-w-xs">
-                                    <p className="text-sm">
-                                      Môn này <strong>không tính vào điểm trung bình</strong>. 
-                                      Kết quả đánh giá: <strong>Đạt (D)</strong> hoặc <strong>Không đạt (K)</strong>.
-                                    </p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            )}
-                          </div>
-                        </div>
-                      </td>
+            <>
+              {/* Cấu hình điểm (chỉ HK1/HK2) */}
+              {(semester === 'HK1' || semester === 'HK2') && gradeConfig && (
+                <div className="mx-3 my-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <p className="text-sm font-medium text-blue-900 dark:text-blue-200 mb-1">
+                    Cấu hình điểm: {activeComponents.map((comp) => `${componentLabels[comp] || comp} (×${gradeConfig.weights[comp]})`).join(' + ')}
+                  </p>
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    Làm tròn: {gradeConfig.rounding === 'half-up' ? 'Làm tròn 0.5 lên' : 'Không làm tròn'}
+                  </p>
+                </div>
+              )}
+              {/* Desktop/tablet: bảng chi tiết */}
+              <div className="hidden sm:block overflow-x-auto">
+                <table className="w-full min-w-[600px]">
+                  <thead className="bg-muted">
+                    <tr>
+                      <th className="p-3 text-left font-medium text-muted-foreground">Môn học</th>
                       {semester === 'CN' ? (
                         <>
-                          {/* Bảng cả năm - chỉ hiển thị điểm TB */}
-                          <td className="p-3 text-center">
-                            {grade.subject.includeInAverage !== false ? (
-                              <Badge 
-                                variant="outline" 
-                                className={`${getGradeColor((grade as any).hk1Average)} border-current font-semibold`}
-                              >
-                                {(grade as any).hk1Average !== null && (grade as any).hk1Average !== undefined 
-                                  ? (grade as any).hk1Average.toFixed(1) 
-                                  : '-'
-                                }
-                              </Badge>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </td>
-                          <td className="p-3 text-center">
-                            {grade.subject.includeInAverage !== false ? (
-                              <Badge 
-                                variant="outline" 
-                                className={`${getGradeColor((grade as any).hk2Average)} border-current font-semibold`}
-                              >
-                                {(grade as any).hk2Average !== null && (grade as any).hk2Average !== undefined 
-                                  ? (grade as any).hk2Average.toFixed(1) 
-                                  : '-'
-                                }
-                              </Badge>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </td>
-                          <td className="p-3 text-center">
-                            {grade.subject.includeInAverage !== false ? (
-                              <div className="flex flex-col items-center gap-1">
-                                <Badge 
-                                  variant="outline" 
-                                  className={`${getGradeColor(grade.average)} border-current font-semibold`}
-                                >
-                                  {grade.average !== null ? grade.average.toFixed(1) : '-'}
-                                </Badge>
-                                {/* Hiển thị xu hướng */}
-                                {(() => {
-                                  const trend = getSubjectTrend(grade.subject._id, semester as 'HK1' | 'HK2');
-                                  if (trend && trend.trend !== null && trend.trend !== undefined) {
-                                    return (
-                                      <div className="flex items-center gap-1 text-xs">
-                                        {getTrendIcon(trend.trend)}
-                                        <span className={getTrendColor(trend.trend)}>
-                                          {trend.trend > 0 ? '+' : ''}{trend.trend.toFixed(1)}
-                                        </span>
-                                        {trend.trendPercentage !== null && (
-                                          <span className={`text-xs ${getTrendColor(trend.trend)}`}>
-                                            ({trend.trendPercentage > 0 ? '+' : ''}{trend.trendPercentage.toFixed(1)}%)
-                                          </span>
-                                        )}
-                                      </div>
-                                    );
-                                  }
-                                  return null;
-                                })()}
-                              </div>
-                            ) : (
-                              <div className="flex flex-col items-center gap-1">
-                                <Badge 
-                                  variant={grade.result === 'D' ? 'default' : grade.result === 'K' ? 'destructive' : 'outline'}
-                                  className="font-semibold"
-                                >
-                                  {grade.result === 'D' ? 'Đạt' : grade.result === 'K' ? 'Không đạt' : '-'}
-                                </Badge>
-                                {grade.result && (
-                                  <span className="text-xs text-muted-foreground">
-                                    ({grade.result})
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </td>
+                          <th className="p-3 text-center font-medium text-muted-foreground">ĐTB HK1</th>
+                          <th className="p-3 text-center font-medium text-muted-foreground">ĐTB HK2</th>
+                          <th className="p-3 text-center font-medium text-muted-foreground">ĐTB cả năm</th>
                         </>
                       ) : (
                         <>
-                          {/* Bảng HK1/HK2 - hiển thị chi tiết */}
-                          <td className="p-3 text-center">
-                            {grade.gradeItems?.oral && grade.gradeItems.oral.length > 0 ? (
-                              <div className="flex flex-wrap gap-1 justify-center">
-                                {grade.gradeItems.oral.map((score, idx) => (
-                                  <span key={idx} className={getGradeColor(score)}>
-                                    {score.toFixed(1)}
-                                    {idx < grade.gradeItems!.oral!.length - 1 && <span className="text-muted-foreground">,</span>}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className={getGradeColor(grade.averages?.oral)}>
-                                {renderScore(grade.averages?.oral)}
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-3 text-center">
-                            {grade.gradeItems?.quiz15 && grade.gradeItems.quiz15.length > 0 ? (
-                              <div className="flex flex-wrap gap-1 justify-center">
-                                {grade.gradeItems.quiz15.map((score, idx) => (
-                                  <span key={idx} className={getGradeColor(score)}>
-                                    {score.toFixed(1)}
-                                    {idx < grade.gradeItems!.quiz15!.length - 1 && <span className="text-muted-foreground">,</span>}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className={getGradeColor(grade.averages?.quiz15)}>
-                                {renderScore(grade.averages?.quiz15)}
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-3 text-center">
-                            {grade.gradeItems?.quiz45 && grade.gradeItems.quiz45.length > 0 ? (
-                              <div className="flex flex-wrap gap-1 justify-center">
-                                {grade.gradeItems.quiz45.map((score, idx) => (
-                                  <span key={idx} className={getGradeColor(score)}>
-                                    {score.toFixed(1)}
-                                    {idx < grade.gradeItems!.quiz45!.length - 1 && <span className="text-muted-foreground">,</span>}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className={getGradeColor(grade.averages?.quiz45)}>
-                                {renderScore(grade.averages?.quiz45)}
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-3 text-center">
-                            {grade.gradeItems?.midterm && grade.gradeItems.midterm.length > 0 ? (
-                              <div className="flex flex-wrap gap-1 justify-center">
-                                {grade.gradeItems.midterm.map((score, idx) => (
-                                  <span key={idx} className={getGradeColor(score)}>
-                                    {score.toFixed(1)}
-                                    {idx < grade.gradeItems!.midterm!.length - 1 && <span className="text-muted-foreground">,</span>}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className={getGradeColor(grade.averages?.midterm)}>
-                                {renderScore(grade.averages?.midterm)}
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-3 text-center">
-                            {grade.gradeItems?.final && grade.gradeItems.final.length > 0 ? (
-                              <div className="flex flex-wrap gap-1 justify-center">
-                                {grade.gradeItems.final.map((score, idx) => (
-                                  <span key={idx} className={getGradeColor(score)}>
-                                    {score.toFixed(1)}
-                                    {idx < grade.gradeItems!.final!.length - 1 && <span className="text-muted-foreground">,</span>}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className={getGradeColor(grade.averages?.final)}>
-                                {renderScore(grade.averages?.final)}
-                              </span>
-                            )}
-                          </td>
-                          {/* Cột ĐTB môn (tính theo hệ số) */}
-                          <td className="p-3 text-center">
-                            {grade.subject.includeInAverage !== false ? (
-                              <div className="flex flex-col items-center gap-1">
-                                <Badge 
-                                  variant="outline" 
-                                  className={`${getGradeColor(grade.average)} border-current font-semibold`}
-                                >
-                                  {grade.average !== null ? grade.average.toFixed(1) : '-'}
-                                </Badge>
-                                {/* Hiển thị xu hướng */}
-                                {(() => {
-                                  const trend = getSubjectTrend(grade.subject._id, semester as 'HK1' | 'HK2');
-                                  if (trend && trend.trend !== null && trend.trend !== undefined) {
-                                    return (
-                                      <div className="flex items-center gap-1 text-xs">
-                                        {getTrendIcon(trend.trend)}
-                                        <span className={getTrendColor(trend.trend)}>
-                                          {trend.trend > 0 ? '+' : ''}{trend.trend.toFixed(1)}
-                                        </span>
-                                        {trend.trendPercentage !== null && (
-                                          <span className={`text-xs ${getTrendColor(trend.trend)}`}>
-                                            ({trend.trendPercentage > 0 ? '+' : ''}{trend.trendPercentage.toFixed(1)}%)
-                                          </span>
-                                        )}
-                                      </div>
-                                    );
-                                  }
-                                  return null;
-                                })()}
-                              </div>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </td>
-                          {/* Cột Kết quả (Đạt/Không đạt cho môn không tính điểm TB) */}
-                          <td className="p-3 text-center">
-                            {grade.subject.includeInAverage !== false ? (
-                              <span className="text-muted-foreground">-</span>
-                            ) : (
-                              <div className="flex flex-col items-center gap-1">
-                                <Badge 
-                                  variant={grade.result === 'D' ? 'default' : grade.result === 'K' ? 'destructive' : 'outline'}
-                                  className="font-semibold"
-                                >
-                                  {grade.result === 'D' ? 'Đạt' : grade.result === 'K' ? 'Không đạt' : '-'}
-                                </Badge>
-                                {grade.result && (
-                                  <span className="text-xs text-muted-foreground">
-                                    ({grade.result})
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </td>
+                          {activeComponents.map((comp) => (
+                            <th key={comp} className="p-3 text-center font-medium text-muted-foreground">
+                              {componentLabels[comp] || comp}
+                              {gradeConfig?.weights?.[comp] !== undefined && (
+                                <span className="text-xs text-muted-foreground ml-1">
+                                  (×{gradeConfig.weights[comp]})
+                                </span>
+                              )}
+                            </th>
+                          ))}
+                          <th className="p-3 text-center font-medium text-muted-foreground">ĐTB môn</th>
+                          <th className="p-3 text-center font-medium text-muted-foreground">Kết quả</th>
                         </>
                       )}
                     </tr>
-                  ))}
-                  {/* Hàng hiển thị điểm TB tất cả các môn - cho HK1, HK2 và cả năm */}
-                  {(semester === 'HK1' || semester === 'HK2') && (
-                    <tr className="bg-primary/10 border-t-2 border-primary">
-                      <td className="p-3 font-semibold" colSpan={6}>
-                        <div className="flex items-center gap-2">
-                          <TrendingUp className="h-4 w-4 text-primary" />
-                          <span>Điểm trung bình tất cả các môn</span>
+                  </thead>
+                  <tbody>
+                    {gradesList.map((grade, index) => (
+                      <tr key={grade._id} className={index % 2 === 0 ? 'bg-background' : 'bg-muted/30'}>
+                        <td className="p-3">
+                          <div className="flex items-center space-x-2">
+                            <BookOpen className="h-4 w-4 text-primary" />
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{grade.subject.name}</span>
+                              {grade.subject.includeInAverage === false && (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Badge variant="outline" className="text-xs cursor-help">
+                                        Đánh giá nhận xét
+                                        <Info className="h-3 w-3 ml-1 inline" />
+                                      </Badge>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-xs">
+                                      <p className="text-sm">
+                                        Môn này <strong>không tính vào điểm trung bình</strong>. 
+                                        Kết quả đánh giá: <strong>Đạt (D)</strong> hoặc <strong>Không đạt (K)</strong>.
+                                      </p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        {semester === 'CN' ? (
+                          <>
+                            <td className="p-3 text-center">
+                              {grade.subject.includeInAverage !== false ? (
+                                <Badge 
+                                  variant="outline" 
+                                  className={`${getGradeColor((grade as any).hk1Average)} border-current font-semibold`}
+                                >
+                                  {((grade as any).hk1Average !== null && (grade as any).hk1Average !== undefined && (grade as any).hk1IsOfficial)
+                                    ? (grade as any).hk1Average.toFixed(1)
+                                    : '-'}
+                                </Badge>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-center">
+                              {grade.subject.includeInAverage !== false ? (
+                                <Badge 
+                                  variant="outline" 
+                                  className={`${getGradeColor((grade as any).hk2Average)} border-current font-semibold`}
+                                >
+                                  {((grade as any).hk2Average !== null && (grade as any).hk2Average !== undefined && (grade as any).hk2IsOfficial)
+                                    ? (grade as any).hk2Average.toFixed(1)
+                                    : '-'}
+                                </Badge>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-center">
+                              {grade.subject.includeInAverage !== false ? (
+                                <div className="flex flex-col items-center gap-1">
+                                  <Badge 
+                                    variant="outline" 
+                                    className={`${getGradeColor(grade.average)} border-current font-semibold`}
+                                  >
+                                    {isOfficialAverage(grade) ? grade.average!.toFixed(1) : '-'}
+                                  </Badge>
+                                  {(() => {
+                                    const trend = getSubjectTrend(grade.subject._id, semester as 'HK1' | 'HK2');
+                                    if (trend && trend.trend !== null && trend.trend !== undefined) {
+                                      return (
+                                        <div className="flex items-center gap-1 text-xs">
+                                          {getTrendIcon(trend.trend)}
+                                          <span className={getTrendColor(trend.trend)}>
+                                            {trend.trend > 0 ? '+' : ''}{trend.trend.toFixed(1)}
+                                          </span>
+                                          {trend.trendPercentage !== null && (
+                                            <span className={`text-xs ${getTrendColor(trend.trend)}`}>
+                                              ({trend.trendPercentage > 0 ? '+' : ''}{trend.trendPercentage.toFixed(1)}%)
+                                            </span>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
+                                </div>
+                              ) : (
+                                <div className="flex flex-col items-center gap-1">
+                                  <Badge 
+                                    variant={grade.result === 'D' ? 'default' : grade.result === 'K' ? 'destructive' : 'outline'}
+                                    className="font-semibold"
+                                  >
+                                    {grade.result === 'D' ? 'Đạt' : grade.result === 'K' ? 'Không đạt' : '-'}
+                                  </Badge>
+                                  {grade.result && (
+                                    <span className="text-xs text-muted-foreground">
+                                      ({grade.result})
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            {activeComponents.map((comp) => {
+                              const logs = (grade.gradeItemLogs?.[comp as keyof NonNullable<typeof grade.gradeItemLogs>] as any[] | undefined) || [];
+                              const latest = logs
+                                .slice()
+                                .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())[0];
+                              const latestLabel = latest && latest.teacher ? `${latest.teacher.name || ''}${latest.teacher.code ? ` (${latest.teacher.code})` : ''}` : null;
+                              const latestDate = latest?.date ? new Date(latest.date).toLocaleDateString('vi-VN') : null;
+                              return (
+                                <td key={comp} className="p-3 text-center">
+                                  {grade.gradeItems?.[comp as keyof NonNullable<typeof grade.gradeItems>] && (grade.gradeItems?.[comp as keyof NonNullable<typeof grade.gradeItems>] as number[])?.length > 0 ? (
+                                    <div className="flex flex-col items-center gap-1">
+                                      <div className="flex flex-wrap gap-1 justify-center">
+                                        {(grade.gradeItems?.[comp as keyof NonNullable<typeof grade.gradeItems>] as number[]).map((score: number, idx: number) => (
+                                          <span key={idx} className={getGradeColor(score)}>
+                                            {score.toFixed(1)}
+                                            {idx < (grade.gradeItems?.[comp as keyof NonNullable<typeof grade.gradeItems>] as number[]).length - 1 && <span className="text-muted-foreground">,</span>}
+                                          </span>
+                                        ))}
+                                      </div>
+                                      {latestLabel && (
+                                        <div className="text-[10px] text-muted-foreground">GV nhập: {latestLabel}{latestDate ? ` · ${latestDate}` : ''}</div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className="flex flex-col items-center gap-1">
+                                      <span className={getGradeColor(grade.averages?.[comp as keyof NonNullable<typeof grade.averages>] as number | undefined)}>
+                                        {renderScore(grade.averages?.[comp as keyof NonNullable<typeof grade.averages>] as number | undefined)}
+                                      </span>
+                                      {latestLabel && (
+                                        <div className="text-[10px] text-muted-foreground">GV nhập: {latestLabel}{latestDate ? ` · ${latestDate}` : ''}</div>
+                                      )}
+                                    </div>
+                                  )}
+                                </td>
+                              );
+                            })}
+                            <td className="p-3 text-center">
+                              {grade.subject.includeInAverage !== false ? (
+                                <div className="flex flex-col items-center gap-1">
+                                  <Badge 
+                                    variant="outline" 
+                                    className={`${getGradeColor(grade.average)} border-current font-semibold`}
+                                  >
+                                    {isOfficialAverage(grade) ? grade.average!.toFixed(1) : '-'}
+                                  </Badge>
+                                  {(() => {
+                                    const trend = getSubjectTrend(grade.subject._id, semester as 'HK1' | 'HK2');
+                                    if (trend && trend.trend !== null && trend.trend !== undefined) {
+                                      return (
+                                        <div className="flex items-center gap-1 text-xs">
+                                          {getTrendIcon(trend.trend)}
+                                          <span className={getTrendColor(trend.trend)}>
+                                            {trend.trend > 0 ? '+' : ''}{trend.trend.toFixed(1)}
+                                          </span>
+                                          {trend.trendPercentage !== null && (
+                                            <span className={`text-xs ${getTrendColor(trend.trend)}`}>
+                                              ({trend.trendPercentage > 0 ? '+' : ''}{trend.trendPercentage.toFixed(1)}%)
+                                            </span>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-center">
+                              {grade.subject.includeInAverage !== false ? (
+                                <span className="text-muted-foreground">-</span>
+                              ) : (
+                                <div className="flex flex-col items-center gap-1">
+                                  <Badge 
+                                    variant={grade.result === 'D' ? 'default' : grade.result === 'K' ? 'destructive' : 'outline'}
+                                    className="font-semibold"
+                                  >
+                                    {grade.result === 'D' ? 'Đạt' : grade.result === 'K' ? 'Không đạt' : '-'}
+                                  </Badge>
+                                  {grade.result && (
+                                    <span className="text-xs text-muted-foreground">
+                                      ({grade.result})
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                    {(semester === 'HK1' || semester === 'HK2') && (
+                      <tr className="bg-primary/10 border-t-2 border-primary">
+                        <td className="p-3 font-semibold" colSpan={1 + activeComponents.length}>
+                          <div className="flex items-center gap-2">
+                            <TrendingUp className="h-4 w-4 text-primary" />
+                            <span>Điểm trung bình tất cả các môn</span>
+                          </div>
+                        </td>
+                        <td className="p-3 text-center">
+                          <Badge 
+                            variant="outline" 
+                            className={`${getGradeColor(
+                              semester === 'HK1' ? overallHk1Average : overallHk2Average
+                            )} border-current font-semibold text-base px-4 py-2`}
+                          >
+                            {semester === 'HK1' 
+                              ? (overallHk1Average !== null ? overallHk1Average.toFixed(1) : '-')
+                              : (overallHk2Average !== null ? overallHk2Average.toFixed(1) : '-')
+                            }
+                          </Badge>
+                        </td>
+                        <td className="p-3 text-center">
+                          <span className="text-muted-foreground">-</span>
+                        </td>
+                      </tr>
+                    )}
+                    {semester === 'CN' && (
+                      <tr className="bg-primary/10 border-t-2 border-primary">
+                        <td className="p-3 font-semibold">
+                          <div className="flex items-center gap-2">
+                            <TrendingUp className="h-4 w-4 text-primary" />
+                            <span>Điểm trung bình tất cả các môn</span>
+                          </div>
+                        </td>
+                        <td className="p-3 text-center">
+                          <Badge 
+                            variant="outline" 
+                            className={`${getGradeColor(overallHk1Average)} border-current font-semibold`}
+                          >
+                            {overallHk1Average !== null ? overallHk1Average.toFixed(1) : '-'}
+                          </Badge>
+                        </td>
+                        <td className="p-3 text-center">
+                          <Badge 
+                            variant="outline" 
+                            className={`${getGradeColor(overallHk2Average)} border-current font-semibold`}
+                          >
+                            {overallHk2Average !== null ? overallHk2Average.toFixed(1) : '-'}
+                          </Badge>
+                        </td>
+                        <td className="p-3 text-center">
+                          <Badge 
+                            variant="outline" 
+                            className={`${getGradeColor(overallYearAverage)} border-current font-semibold text-base px-4 py-2`}
+                          >
+                            {overallYearAverage !== null ? overallYearAverage.toFixed(1) : '-'}
+                          </Badge>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile: thẻ gọn cho từng môn */}
+              <div className="block sm:hidden space-y-3">
+                {gradesList.map((grade) => (
+                  <div key={grade._id} className="border rounded-lg p-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2">
+                        <BookOpen className="h-4 w-4 text-primary" />
+                        <span className="font-semibold">{grade.subject.name}</span>
+                      </div>
+                      {grade.subject.includeInAverage === false && (
+                        <Badge variant="outline" className="text-[10px]">Đánh giá nhận xét</Badge>
+                      )}
+                    </div>
+
+                    {semester === 'CN' ? (
+                      <div className="mt-2 space-y-1">
+                        <MobileItem
+                          label="ĐTB HK1"
+                          value={grade.subject.includeInAverage !== false ? (
+                            <span className={getGradeColor((grade as any).hk1Average)}>
+                              {((grade as any).hk1Average !== null && (grade as any).hk1Average !== undefined && (grade as any).hk1IsOfficial) ? (grade as any).hk1Average.toFixed(1) : '-'}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        />
+                        <MobileItem
+                          label="ĐTB HK2"
+                          value={grade.subject.includeInAverage !== false ? (
+                            <span className={getGradeColor((grade as any).hk2Average)}>
+                              {((grade as any).hk2Average !== null && (grade as any).hk2Average !== undefined && (grade as any).hk2IsOfficial) ? (grade as any).hk2Average.toFixed(1) : '-'}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        />
+                        <MobileItem
+                          label="Cả năm"
+                          value={grade.subject.includeInAverage !== false ? (
+                            <Badge variant="outline" className={`${getGradeColor(grade.average)} border-current`}>
+                              {isOfficialAverage(grade) ? grade.average!.toFixed(1) : '-'}
+                            </Badge>
+                          ) : (
+                            <Badge variant={grade.result === 'D' ? 'default' : grade.result === 'K' ? 'destructive' : 'outline'}>
+                              {grade.result === 'D' ? 'Đạt' : grade.result === 'K' ? 'Không đạt' : '-'}
+                            </Badge>
+                          )}
+                        />
+                      </div>
+                    ) : (
+                      <div className="mt-2 space-y-1">
+                        {activeComponents.map((comp) => (
+                          <MobileItem
+                            key={comp}
+                            label={`${componentLabels[comp] || comp}${gradeConfig?.weights?.[comp] !== undefined ? ` (×${gradeConfig.weights[comp]})` : ''}`}
+                            value={
+                              (grade.gradeItems?.[comp as keyof NonNullable<typeof grade.gradeItems>] as number[] | undefined)?.length ? (
+                                <span className="space-x-1">
+                                  {(grade.gradeItems?.[comp as keyof NonNullable<typeof grade.gradeItems>] as number[])!.map((s, i) => (
+                                    <span key={i} className={getGradeColor(s)}>
+                                      {s.toFixed(1)}{i < (grade.gradeItems?.[comp as keyof NonNullable<typeof grade.gradeItems>] as number[])!.length - 1 ? ',' : ''}
+                                    </span>
+                                  ))}
+                                </span>
+                              ) : (
+                                <span className={getGradeColor(grade.averages?.[comp as keyof NonNullable<typeof grade.averages>] as number | undefined)}>
+                                  {renderScore(grade.averages?.[comp as keyof NonNullable<typeof grade.averages>] as number | undefined)}
+                                </span>
+                              )
+                            }
+                          />
+                        ))}
+                        <div className="flex items-center justify-between pt-2 border-t mt-2">
+                          <span className="text-sm text-muted-foreground">ĐTB môn</span>
+                          {grade.subject.includeInAverage !== false ? (
+                            <Badge variant="outline" className={`${getGradeColor(grade.average)} border-current`}>
+                              {isOfficialAverage(grade) ? grade.average!.toFixed(1) : '-'}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
                         </div>
-                      </td>
-                      <td className="p-3 text-center">
-                        <Badge 
-                          variant="outline" 
-                          className={`${getGradeColor(
-                            semester === 'HK1' ? overallHk1Average : overallHk2Average
-                          )} border-current font-semibold text-base px-4 py-2`}
-                        >
-                          {semester === 'HK1' 
-                            ? (overallHk1Average !== null ? overallHk1Average.toFixed(1) : '-')
-                            : (overallHk2Average !== null ? overallHk2Average.toFixed(1) : '-')
-                          }
-                        </Badge>
-                      </td>
-                      <td className="p-3 text-center">
-                        <span className="text-muted-foreground">-</span>
-                      </td>
-                    </tr>
-                  )}
-                  {/* Hàng hiển thị điểm TB tất cả các môn - cho bảng cả năm */}
-                  {semester === 'CN' && (
-                    <tr className="bg-primary/10 border-t-2 border-primary">
-                      <td className="p-3 font-semibold">
-                        <div className="flex items-center gap-2">
-                          <TrendingUp className="h-4 w-4 text-primary" />
-                          <span>Điểm trung bình tất cả các môn</span>
-                        </div>
-                      </td>
-                      <td className="p-3 text-center">
-                        <Badge 
-                          variant="outline" 
-                          className={`${getGradeColor(overallHk1Average)} border-current font-semibold`}
-                        >
-                          {overallHk1Average !== null ? overallHk1Average.toFixed(1) : '-'}
-                        </Badge>
-                      </td>
-                      <td className="p-3 text-center">
-                        <Badge 
-                          variant="outline" 
-                          className={`${getGradeColor(overallHk2Average)} border-current font-semibold`}
-                        >
-                          {overallHk2Average !== null ? overallHk2Average.toFixed(1) : '-'}
-                        </Badge>
-                      </td>
-                      <td className="p-3 text-center">
-                        <Badge 
-                          variant="outline" 
-                          className={`${getGradeColor(overallYearAverage)} border-current font-semibold text-base px-4 py-2`}
-                        >
-                          {overallYearAverage !== null ? overallYearAverage.toFixed(1) : '-'}
-                        </Badge>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                        {grade.subject.includeInAverage === false && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-muted-foreground">Kết quả</span>
+                            <Badge variant={grade.result === 'D' ? 'default' : grade.result === 'K' ? 'destructive' : 'outline'}>
+                              {grade.result === 'D' ? 'Đạt' : grade.result === 'K' ? 'Không đạt' : '-'}
+                            </Badge>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {/* Tổng kết TB tất cả môn cho mobile */}
+                {(semester === 'HK1' || semester === 'HK2') && (
+                  <div className="border rounded-lg p-3 bg-primary/5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <TrendingUp className="h-4 w-4 text-primary" />
+                        <span className="text-sm font-medium">TB tất cả các môn</span>
+                      </div>
+                      <Badge variant="outline" className={`${getGradeColor(semester === 'HK1' ? overallHk1Average : overallHk2Average)} border-current`}>
+                        {semester === 'HK1' 
+                          ? (overallHk1Average !== null ? overallHk1Average.toFixed(1) : '-')
+                          : (overallHk2Average !== null ? overallHk2Average.toFixed(1) : '-')}
+                      </Badge>
+                    </div>
+                  </div>
+                )}
+                {semester === 'CN' && (
+                  <div className="border rounded-lg p-3 bg-primary/5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <TrendingUp className="h-4 w-4 text-primary" />
+                        <span className="text-sm font-medium">TB tất cả các môn</span>
+                      </div>
+                      <Badge variant="outline" className={`${getGradeColor(overallYearAverage)} border-current`}>
+                        {overallYearAverage !== null ? overallYearAverage.toFixed(1) : '-'}
+                      </Badge>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -961,68 +1149,61 @@ const StudentGradesPage = () => {
       <div className="flex flex-col gap-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Điểm số của tôi</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Điểm số của tôi</h1>
           <p className="text-muted-foreground">Xem điểm số các môn học theo học kỳ và năm học</p>
         </div>
-        <Button variant="outline" size="sm">
+        <Button variant="outline" size="sm" className="w-full sm:w-auto">
           <Download className="h-4 w-4 mr-2" />
           Xuất bảng điểm
         </Button>
       </div>
-
-        {/* Thông tin lớp - Hiển thị nổi bật */}
-        {currentClass && (
-          <Card className="bg-primary/5 border-primary/20">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-4 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <GraduationCap className="h-5 w-5 text-primary" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">Lớp hiện tại</p>
-                    <p className="text-lg font-semibold text-foreground">
-                      {currentClass.className}
-                      {currentClass.classCode && ` (${currentClass.classCode})`}
-                    </p>
-                  </div>
-                </div>
-                {currentClass.grade && (
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="text-sm">
-                      Khối {currentClass.grade}
-                    </Badge>
-                  </div>
-                )}
-                {displayYear && (
-                  <div className="flex items-center gap-2 ml-auto">
-                    <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">Năm học: <strong>{displayYear}</strong></span>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
 
-      {/* Filters - Chỉ còn năm học */}
+      {/* Filters - Bảng điểm: năm học + học kỳ */}
       <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-col sm:flex-row gap-4">
-            {schoolYears.length > 0 && (
-              <Select value={selectedYear || 'all'} onValueChange={(value) => setSelectedYear(value === 'all' ? '' : value)}>
-                <SelectTrigger className="w-full sm:w-[200px]">
-                  <SelectValue placeholder="Chọn năm học">
-                    {displayYear || 'Tất cả năm học'}
-                  </SelectValue>
+        <CardHeader className="pb-2">
+          <div className="flex items-start gap-3">
+            <div className="h-8 w-8 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center">
+              <Award className="h-4 w-4" />
+            </div>
+            <div>
+              <CardTitle className="text-xl">Bảng điểm</CardTitle>
+              <CardDescription>Xem điểm theo năm học và học kỳ</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-4 pt-0">
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm text-muted-foreground mb-2">Năm học</p>
+              {schoolYears.length > 0 ? (
+                <Select value={selectedYear || schoolYears[0]} onValueChange={(value) => setSelectedYear(value)}>
+                  <SelectTrigger className="w-full sm:w-[240px]">
+                    <SelectValue placeholder="Chọn năm học" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {schoolYears.map(year => (
+                      <SelectItem key={year} value={year}>{year}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="text-sm text-muted-foreground">Đang tải năm học...</div>
+              )}
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground mb-2">Học kỳ</p>
+              <Select value={activeTab} onValueChange={setActiveTab}>
+                <SelectTrigger className="w-full sm:w-[240px]">
+                  <SelectValue placeholder="Chọn học kỳ" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả năm học</SelectItem>
-                  {schoolYears.map(year => (
-                    <SelectItem key={year} value={year}>{year}</SelectItem>
-                  ))}
+                  <SelectItem value="HK1">Học kỳ I</SelectItem>
+                  <SelectItem value="HK2">Học kỳ II</SelectItem>
+                  <SelectItem value="CN">Cả năm</SelectItem>
                 </SelectContent>
               </Select>
-            )}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -1047,26 +1228,10 @@ const StudentGradesPage = () => {
             <CardTitle className="text-2xl font-bold">Bảng điểm chi tiết</CardTitle>
           </CardHeader>
           <CardContent>
-            {/* Tabs */}
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="HK1">
-                  Học kỳ 1{displayYear ? `, ${displayYear}` : ''}
-                </TabsTrigger>
-                <TabsTrigger value="HK2">
-                  Học kỳ 2{displayYear ? `, ${displayYear}` : ''}
-                </TabsTrigger>
-                <TabsTrigger value="CN">
-                  Cả năm
-                </TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="HK1" className="mt-4">
-                {/* Summary boxes - hiển thị trong tab HK1 */}
+            {activeTab === 'HK1' && (
+              <>
                 <div className="flex flex-col sm:flex-row gap-4 mb-6">
-                  {/* 2 hộp xám bên trái */}
                   <div className="flex flex-col sm:flex-row gap-4 flex-1">
-                    {/* Học lực HK1 */}
                     <Card className="bg-muted/50 flex-1">
                       <CardContent className="p-4">
                         <div className="flex items-center gap-3">
@@ -1074,14 +1239,12 @@ const StudentGradesPage = () => {
                           <div>
                             <p className="text-sm text-muted-foreground">Học lực học kỳ 1</p>
                             <p className="text-lg font-semibold">
-                              {getConductInfo('HK1').academicLevel || 'Chưa có'}
+                              {getConductInfo('HK1').academicLevel || provisionalHK1 || 'Chưa có'}
                             </p>
                           </div>
                         </div>
                       </CardContent>
                     </Card>
-                    
-                    {/* Hạnh kiểm HK1 */}
                     <Card className="bg-muted/50 flex-1">
                       <CardContent className="p-4">
                         <div className="flex items-center gap-3">
@@ -1096,36 +1259,28 @@ const StudentGradesPage = () => {
                       </CardContent>
                     </Card>
                   </div>
-                  
-                  {/* Hộp xanh bên phải */}
-                  <Card className="bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+                  <Card className="bg-gradient-to-br from-emerald-500 to-green-600 border-none shadow-md">
                     <CardContent className="p-4">
-                      <div className="flex items-center gap-3">
-                        <TrendingUp className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                        <div>
-                          <p className="text-sm text-muted-foreground">Điểm TB chung học kỳ 1</p>
-                          <p className={`text-2xl font-bold text-blue-600 dark:text-blue-400`}>
-                            {overallHk1Average !== null ? overallHk1Average.toFixed(1) : '-'}
-                          </p>
-                        </div>
+                      <div className="flex flex-col text-white">
+                        <span className="text-sm/5 opacity-90">Điểm trung bình</span>
+                        <span className="mt-1 text-4xl font-bold">
+                          {overallHk1Average !== null ? overallHk1Average.toFixed(1) : '-'}
+                        </span>
+                        <span className="mt-1 text-sm/5 opacity-90">
+                          {getConductInfo('HK1').academicLevel || provisionalHK1 || 'Chưa có'}
+                        </span>
                       </div>
                     </CardContent>
                   </Card>
                 </div>
-                {renderGradeTable(
-                  'Bảng điểm học kỳ 1',
-                  hk1Grades,
-                  'HK1',
-                  displayYear
-                )}
-              </TabsContent>
-              
-              <TabsContent value="HK2" className="mt-4">
-                {/* Summary boxes - hiển thị trong tab HK2 */}
+                {renderGradeTable('Bảng điểm học kỳ 1', hk1Grades, 'HK1', displayYear)}
+              </>
+            )}
+
+            {activeTab === 'HK2' && (
+              <>
                 <div className="flex flex-col sm:flex-row gap-4 mb-6">
-                  {/* 2 hộp xám bên trái */}
                   <div className="flex flex-col sm:flex-row gap-4 flex-1">
-                    {/* Học lực HK2 */}
                     <Card className="bg-muted/50 flex-1">
                       <CardContent className="p-4">
                         <div className="flex items-center gap-3">
@@ -1133,14 +1288,12 @@ const StudentGradesPage = () => {
                           <div>
                             <p className="text-sm text-muted-foreground">Học lực học kỳ 2</p>
                             <p className="text-lg font-semibold">
-                              {getConductInfo('HK2').academicLevel || 'Chưa có'}
+                              {getConductInfo('HK2').academicLevel || provisionalHK2 || 'Chưa có'}
                             </p>
                           </div>
                         </div>
                       </CardContent>
                     </Card>
-                    
-                    {/* Hạnh kiểm HK2 */}
                     <Card className="bg-muted/50 flex-1">
                       <CardContent className="p-4">
                         <div className="flex items-center gap-3">
@@ -1155,36 +1308,28 @@ const StudentGradesPage = () => {
                       </CardContent>
                     </Card>
                   </div>
-                  
-                  {/* Hộp xanh bên phải */}
-                  <Card className="bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+                  <Card className="bg-gradient-to-br from-emerald-500 to-green-600 border-none shadow-md">
                     <CardContent className="p-4">
-                      <div className="flex items-center gap-3">
-                        <TrendingUp className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                        <div>
-                          <p className="text-sm text-muted-foreground">Điểm TB chung học kỳ 2</p>
-                          <p className={`text-2xl font-bold text-blue-600 dark:text-blue-400`}>
-                            {overallHk2Average !== null ? overallHk2Average.toFixed(1) : '-'}
-                          </p>
-                        </div>
+                      <div className="flex flex-col text-white">
+                        <span className="text-sm/5 opacity-90">Điểm trung bình</span>
+                        <span className="mt-1 text-4xl font-bold">
+                          {overallHk2Average !== null ? overallHk2Average.toFixed(1) : '-'}
+                        </span>
+                        <span className="mt-1 text-sm/5 opacity-90">
+                          {getConductInfo('HK2').academicLevel || provisionalHK2 || 'Chưa có'}
+                        </span>
                       </div>
                     </CardContent>
                   </Card>
                 </div>
-                {renderGradeTable(
-                  'Bảng điểm học kỳ 2',
-                  hk2Grades,
-                  'HK2',
-                  displayYear
-                )}
-              </TabsContent>
-              
-              <TabsContent value="CN" className="mt-4">
-                {/* Summary boxes - hiển thị trong tab CN */}
+                {renderGradeTable('Bảng điểm học kỳ 2', hk2Grades, 'HK2', displayYear)}
+              </>
+            )}
+
+            {activeTab === 'CN' && (
+              <>
                 <div className="flex flex-col sm:flex-row gap-4 mb-6">
-                  {/* 2 hộp xám bên trái */}
                   <div className="flex flex-col sm:flex-row gap-4 flex-1">
-                    {/* Học lực cả năm */}
                     <Card className="bg-muted/50 flex-1">
                       <CardContent className="p-4">
                         <div className="flex items-center gap-3">
@@ -1192,14 +1337,12 @@ const StudentGradesPage = () => {
                           <div>
                             <p className="text-sm text-muted-foreground">Học lực cả năm</p>
                             <p className="text-lg font-semibold">
-                              {getConductInfo('CN').academicLevel || 'Chưa có'}
+                              {getConductInfo('CN').academicLevel || provisionalCN || 'Chưa có'}
                             </p>
                           </div>
                         </div>
                       </CardContent>
                     </Card>
-                    
-                    {/* Hạnh kiểm cả năm */}
                     <Card className="bg-muted/50 flex-1">
                       <CardContent className="p-4">
                         <div className="flex items-center gap-3">
@@ -1214,24 +1357,21 @@ const StudentGradesPage = () => {
                       </CardContent>
                     </Card>
                   </div>
-                  
-                  {/* Hộp xanh bên phải */}
-                  <Card className="bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+                  <Card className="bg-gradient-to-br from-emerald-500 to-green-600 border-none shadow-md">
                     <CardContent className="p-4">
-                      <div className="flex items-center gap-3">
-                        <TrendingUp className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                        <div>
-                          <p className="text-sm text-muted-foreground">Điểm TB chung cả năm</p>
-                          <p className={`text-2xl font-bold text-blue-600 dark:text-blue-400`}>
-                            {overallYearAverage !== null ? overallYearAverage.toFixed(1) : '-'}
-                          </p>
-                        </div>
+                      <div className="flex flex-col text-white">
+                        <span className="text-sm/5 opacity-90">Điểm trung bình</span>
+                        <span className="mt-1 text-4xl font-bold">
+                          {overallYearAverage !== null ? overallYearAverage.toFixed(1) : '-'}
+                        </span>
+                        <span className="mt-1 text-sm/5 opacity-90">
+                          {getConductInfo('CN').academicLevel || provisionalCN || 'Chưa có'}
+                        </span>
                       </div>
                     </CardContent>
                   </Card>
                 </div>
 
-                {/* Bảng điểm cả năm - layout đặc biệt */}
                 <div className="space-y-4">
                   <h3 className="text-lg font-semibold">Bảng điểm Chi tiết các Môn học</h3>
                   {loading ? (
@@ -1270,8 +1410,8 @@ const StudentGradesPage = () => {
                               <td className="p-3 text-center">
                                 {grade.subject.includeInAverage !== false ? (
                                   <span className={getGradeColor((grade as any).hk1Average)}>
-                                    {(grade as any).hk1Average !== null && (grade as any).hk1Average !== undefined 
-                                      ? (grade as any).hk1Average.toFixed(1) 
+                                    {((grade as any).hk1Average !== null && (grade as any).hk1Average !== undefined && (grade as any).hk1IsOfficial)
+                                      ? (grade as any).hk1Average.toFixed(1)
                                       : '-'
                                     }
                                   </span>
@@ -1282,8 +1422,8 @@ const StudentGradesPage = () => {
                               <td className="p-3 text-center">
                                 {grade.subject.includeInAverage !== false ? (
                                   <span className={getGradeColor((grade as any).hk2Average)}>
-                                    {(grade as any).hk2Average !== null && (grade as any).hk2Average !== undefined 
-                                      ? (grade as any).hk2Average.toFixed(1) 
+                                    {((grade as any).hk2Average !== null && (grade as any).hk2Average !== undefined && (grade as any).hk2IsOfficial)
+                                      ? (grade as any).hk2Average.toFixed(1)
                                       : '-'
                                     }
                                   </span>
@@ -1294,7 +1434,7 @@ const StudentGradesPage = () => {
                               <td className="p-3 text-center">
                                 {grade.subject.includeInAverage !== false ? (
                                   <span className={`font-bold ${getGradeColor(grade.average)}`}>
-                                    {grade.average !== null ? grade.average.toFixed(1) : '-'}
+                                    {isOfficialAverage(grade) && grade.average !== null ? grade.average.toFixed(1) : '-'}
                                   </span>
                                 ) : (
                                   <span className="font-bold text-green-600">
@@ -1309,8 +1449,8 @@ const StudentGradesPage = () => {
                     </div>
                   )}
                 </div>
-              </TabsContent>
-            </Tabs>
+              </>
+            )}
           </CardContent>
         </Card>
       )}

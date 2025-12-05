@@ -3,14 +3,10 @@
  */
 
 import React, {useEffect, useState} from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  ActivityIndicator,
-} from 'react-native';
+import {View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator} from 'react-native';
+import Text from '../../components/ui/Text';
+import Card from '../../components/ui/Card';
+import {colors, spacing} from '../../theme';
 import {useStudentData, useStudentExamSchedules} from '../../hooks';
 import {StudentExam} from '../../services/studentApi';
 
@@ -68,20 +64,19 @@ const StudentExamsScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Lịch thi</Text>
+      <Text variant="h1" style={styles.title}>Lịch thi</Text>
 
       <FlatList
         data={exams}
         renderItem={renderExamItem}
         keyExtractor={item => item._id}
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>Chưa có kỳ thi nào</Text>
-        }
+        contentContainerStyle={{ paddingBottom: spacing.xl }}
+        ListEmptyComponent={<Text muted style={styles.emptyText}>Chưa có kỳ thi nào</Text>}
       />
 
       {selectedExamId && (
         <View style={styles.schedulesContainer}>
-          <Text style={styles.schedulesTitle}>Lịch thi chi tiết</Text>
+          <Text variant="h2" style={styles.schedulesTitle}>Lịch thi chi tiết</Text>
           {schedulesLoading ? (
             <ActivityIndicator />
           ) : (
@@ -89,9 +84,7 @@ const StudentExamsScreen: React.FC = () => {
               data={schedules}
               renderItem={renderScheduleItem}
               keyExtractor={item => item._id}
-              ListEmptyComponent={
-                <Text style={styles.emptyText}>Chưa có lịch thi</Text>
-              }
+              ListEmptyComponent={<Text muted style={styles.emptyText}>Chưa có lịch thi</Text>}
             />
           )}
         </View>
@@ -103,8 +96,8 @@ const StudentExamsScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    backgroundColor: '#FFFFFF',
+    padding: spacing.lg,
+    backgroundColor: colors.background,
   },
   centerContainer: {
     flex: 1,
@@ -112,25 +105,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 16,
+    marginBottom: spacing.lg,
   },
   loadingText: {
     marginTop: 8,
     color: '#666666',
   },
   examItem: {
-    padding: 16,
-    marginBottom: 12,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#DDDDDD',
+    borderColor: colors.border,
   },
   examItemSelected: {
-    backgroundColor: '#E3F2FD',
-    borderColor: '#2196F3',
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.primary,
   },
   examName: {
     fontSize: 18,
@@ -139,30 +130,30 @@ const styles = StyleSheet.create({
   },
   examInfo: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     marginBottom: 4,
   },
   examType: {
     fontSize: 12,
-    color: '#2196F3',
+    color: colors.primary,
     fontWeight: '500',
   },
   schedulesContainer: {
-    marginTop: 24,
-    paddingTop: 16,
+    marginTop: spacing.xl,
+    paddingTop: spacing.lg,
     borderTopWidth: 1,
-    borderTopColor: '#DDDDDD',
+    borderTopColor: colors.border,
   },
   schedulesTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   scheduleItem: {
-    padding: 12,
-    marginBottom: 8,
-    backgroundColor: '#F9F9F9',
-    borderRadius: 6,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   scheduleSubject: {
     fontSize: 16,
@@ -171,23 +162,23 @@ const styles = StyleSheet.create({
   },
   scheduleDate: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     marginBottom: 2,
   },
   scheduleRoom: {
     fontSize: 12,
-    color: '#2196F3',
+    color: colors.primary,
     marginTop: 4,
   },
   scheduleSeat: {
     fontSize: 12,
-    color: '#4CAF50',
+    color: colors.success,
     marginTop: 2,
   },
   emptyText: {
     textAlign: 'center',
-    color: '#999999',
-    marginTop: 24,
+    color: colors.textSecondary,
+    marginTop: spacing.xl,
   },
 });
 

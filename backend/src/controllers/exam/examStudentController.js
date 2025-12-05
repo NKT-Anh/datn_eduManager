@@ -4,6 +4,72 @@ const Student = require("../../models/user/student");
 const Class = require("../../models/class/class");
 const mongoose = require("mongoose");
 const xlsx = require("xlsx");
+const ExamSchedule = require("../../models/exam/examSchedule");
+
+// 🔧 Helper: Backfill ExamStudent.subjects khi thêm HS vào kỳ thi sau khi lịch đã tồn tại
+async function backfillSubjectsForNewExamStudents({ examId, gradeToStudentIdsMap }) {
+  try {
+    // gradeToStudentIdsMap: Map<stringGrade, ObjectId[]>
+    const entries = Array.from(gradeToStudentIdsMap.entries());
+    for (const [gradeStr, studentIds] of entries) {
+      if (!studentIds || studentIds.length === 0) continue;
+
+      // Lấy tất cả schedule của exam + grade này
+      const schedules = await ExamSchedule.find({
+        exam: examId,
+        grade: String(gradeStr),
+        isDeleted: { $ne: true },
+      })
+        .select("_id subject grade")
+        .lean();
+
+      if (!schedules.length) continue;
+
+      for (const sch of schedules) {
+        const subjectId = sch.subject?._id || sch.subject;
+        if (!subjectId) continue;
+
+        // 1) Set examSchedule cho entry đã tồn tại
+        await ExamStudent.updateMany(
+          {
+            exam: examId,
+            grade: String(gradeStr),
+            student: { $in: studentIds },
+            "subjects.subject": subjectId,
+          },
+          {
+            $set: { "subjects.$[elem].examSchedule": sch._id },
+          },
+          {
+            arrayFilters: [{ "elem.subject": subjectId }],
+          }
+        );
+
+        // 2) Tạo entry nếu chưa có
+        await ExamStudent.updateMany(
+          {
+            exam: examId,
+            grade: String(gradeStr),
+            student: { $in: studentIds },
+            subjects: { $not: { $elemMatch: { subject: subjectId } } },
+          },
+          {
+            $push: {
+              subjects: {
+                subject: subjectId,
+                examSchedule: sch._id,
+                status: "registered",
+                score: null,
+              },
+            },
+          }
+        );
+      }
+    }
+  } catch (err) {
+    console.error("⚠️ Lỗi backfillSubjectsForNewExamStudents:", err.message);
+  }
+}
 
 /* =========================================================
    ➕ GÁN HỌC SINH VÀO KỲ THI (TỰ ĐỘNG THEO KHỐI)
@@ -108,6 +174,19 @@ exports.addStudentsToExam = async (req, res) => {
     }));
 
     await ExamStudent.insertMany(examStudents, { ordered: false });
+    
+    // 🔄 Đồng bộ subjects cho HS vừa thêm (nếu đã có lịch thi)
+    try {
+      const gradeToStudentIdsMap = new Map();
+      studentsWithClass.forEach(s => {
+        const g = String(s.grade);
+        if (!gradeToStudentIdsMap.has(g)) gradeToStudentIdsMap.set(g, []);
+        gradeToStudentIdsMap.get(g).push(s._id);
+      });
+      await backfillSubjectsForNewExamStudents({ examId, gradeToStudentIdsMap });
+    } catch (e) {
+      console.error("⚠️ Không thể backfill subjects sau khi thêm HS:", e.message);
+    }
     
     let message = `✅ Đã thêm ${examStudents.length} học sinh vào kỳ thi.`;
     if (studentsWithClass.length < newStudents.length) {
@@ -224,6 +303,19 @@ exports.addMultipleStudents = async (req, res) => {
     }));
 
     await ExamStudent.insertMany(examStudents, { ordered: false });
+
+    // 🔄 Đồng bộ subjects cho HS vừa thêm (nếu đã có lịch thi)
+    try {
+      const gradeToStudentIdsMap = new Map();
+      studentsWithClass.forEach(s => {
+        const g = String(s.grade);
+        if (!gradeToStudentIdsMap.has(g)) gradeToStudentIdsMap.set(g, []);
+        gradeToStudentIdsMap.get(g).push(s._id);
+      });
+      await backfillSubjectsForNewExamStudents({ examId, gradeToStudentIdsMap });
+    } catch (e) {
+      console.error("⚠️ Không thể backfill subjects sau khi thêm nhiều HS:", e.message);
+    }
 
     res.json({
       message: `✅ Đã thêm ${examStudents.length} học sinh vào kỳ thi.`,
@@ -704,6 +796,19 @@ exports.addAllStudentsByGrades = async (req, res) => {
       message += ` (${newStudents.length - studentsWithClass.length} học sinh chưa có lớp đã bỏ qua)`;
     }
 
+    // 🔄 Đồng bộ subjects cho HS vừa thêm (nếu đã có lịch thi)
+    try {
+      const gradeToStudentIdsMap = new Map();
+      studentsWithClass.forEach(s => {
+        const g = String(s.grade);
+        if (!gradeToStudentIdsMap.has(g)) gradeToStudentIdsMap.set(g, []);
+        gradeToStudentIdsMap.get(g).push(s._id);
+      });
+      await backfillSubjectsForNewExamStudents({ examId, gradeToStudentIdsMap });
+    } catch (e) {
+      console.error("⚠️ Không thể backfill subjects sau khi thêm tất cả HS theo khối:", e.message);
+    }
+
     res.json({
       message,
       total: students.length,
@@ -795,6 +900,20 @@ exports.importStudentsFromExcel = async (req, res) => {
       return res.status(400).json({ error: "Không có học sinh hợp lệ." });
 
     await ExamStudent.insertMany(studentsData);
+    
+    // 🔄 Đồng bộ subjects cho HS import (nếu đã có lịch thi)
+    try {
+      const gradeToStudentIdsMap = new Map();
+      // Ở import theo file, grade được nhận từ body hoặc theo từng dòng; ở đây nhóm theo grade trong dữ liệu đã push
+      studentsData.forEach(s => {
+        const g = String(s.grade);
+        if (!gradeToStudentIdsMap.has(g)) gradeToStudentIdsMap.set(g, []);
+        gradeToStudentIdsMap.get(g).push(s.student);
+      });
+      await backfillSubjectsForNewExamStudents({ examId, gradeToStudentIdsMap });
+    } catch (e) {
+      console.error("⚠️ Không thể backfill subjects sau khi import HS:", e.message);
+    }
     res.json({
       message: "✅ Import danh sách học sinh thành công.",
       total: studentsData.length,
@@ -1014,5 +1133,41 @@ exports.exportStudentsByFixedRooms = async (req, res) => {
   } catch (err) {
     console.error("❌ Lỗi exportStudentsByFixedRooms:", err);
     res.status(500).json({ error: "Lỗi khi xuất danh sách học sinh", details: err.message });
+  }
+};
+
+/* =========================================================
+   🧹 BACKFILL SUBJECTS CHO TOÀN BỘ HỌC SINH TRONG KỲ THI
+   - Dùng khi dữ liệu cũ trước khi cập nhật logic sync
+   - Nhóm theo grade và gọi helper để đồng bộ subjects từ ExamSchedule
+========================================================= */
+exports.backfillSubjectsForExam = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    if (!examId || !mongoose.Types.ObjectId.isValid(examId)) {
+      return res.status(400).json({ error: "examId không hợp lệ." });
+    }
+
+    const students = await ExamStudent.find({ exam: examId })
+      .select("_id grade")
+      .lean();
+
+    if (!students.length) {
+      return res.json({ message: "Không có học sinh trong kỳ thi để backfill.", total: 0 });
+    }
+
+    const gradeToStudentIdsMap = new Map();
+    students.forEach(s => {
+      const g = String(s.grade);
+      if (!gradeToStudentIdsMap.has(g)) gradeToStudentIdsMap.set(g, []);
+      gradeToStudentIdsMap.get(g).push(s._id);
+    });
+
+    await backfillSubjectsForNewExamStudents({ examId, gradeToStudentIdsMap });
+
+    res.json({ message: "✅ Đã backfill subjects cho kỳ thi.", grades: Array.from(gradeToStudentIdsMap.keys()), total: students.length });
+  } catch (err) {
+    console.error("❌ Lỗi backfillSubjectsForExam:", err);
+    res.status(500).json({ error: err.message });
   }
 };

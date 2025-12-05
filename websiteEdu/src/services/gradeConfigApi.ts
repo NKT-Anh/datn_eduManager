@@ -12,6 +12,7 @@ const gradeConfigApi = {
     weights: Record<string, number>;
     columnCounts?: Record<string, number>;
     rounding: 'half-up' | 'none';
+    completionPolicy?: 'at-least-one' | 'require-counts';
     classification?: any;
     requiredSubjects?: any[];
     schoolYear?: string;

@@ -2,7 +2,96 @@ const Notification = require('../../models/notification');
 const Teacher = require('../../models/user/teacher');
 const Student = require('../../models/user/student');
 const Class = require('../../models/class/class');
+const User = require('../../models/user/user');
 const { getCurrentSchoolYear } = require('../../utils/schoolYearHelper');
+
+const TEACHER_ROLE_VARIANTS = ['teacher', 'gvcn', 'gvbm', 'qlbm', 'bgh'];
+
+const buildTeacherContext = (role, teacherFlags = {}) => {
+  const isTeacherRole = TEACHER_ROLE_VARIANTS.includes(role);
+  const isLeader = !!teacherFlags.isLeader || role === 'bgh';
+  const isDepartmentHead = !!teacherFlags.isDepartmentHead || role === 'qlbm';
+  const isHomeroom = !!teacherFlags.isHomeroom || role === 'gvcn';
+  return {
+    isTeacherRole,
+    isLeader,
+    isDepartmentHead,
+    isHomeroom,
+    isSubjectTeacher: isTeacherRole && !isLeader && !isDepartmentHead && !isHomeroom,
+  };
+};
+
+const FEMALE_NAME_HINTS = ['anh', 'lan', 'mai', 'linh', 'hương', 'huong', 'thu', 'hoa', 'ngọc', 'ngoc', 'như', 'nhu', 'phương', 'phuong', 'anh thư', 'thư', 'ngan', 'yen', 'trang'];
+
+const isLikelyFemaleName = (name = '') => {
+  const lower = name.toLowerCase();
+  return FEMALE_NAME_HINTS.some((hint) => lower.includes(hint));
+};
+
+const formatTeacherDisplayName = (name, gender) => {
+  if (!name) return null;
+  const normalizedGender = (gender || '').toLowerCase();
+  if (normalizedGender === 'female' || normalizedGender === 'nữ') {
+    return `Cô ${name}`;
+  }
+  if (normalizedGender === 'male' || normalizedGender === 'nam') {
+    return `Thầy ${name}`;
+  }
+  return isLikelyFemaleName(name) ? `Cô ${name}` : `Thầy ${name}`;
+};
+
+const enrichSenderMetadata = async (notification) => {
+  if (!notification) {
+    return notification;
+  }
+
+  const createdByInfo = notification.createdBy;
+  const createdByRole =
+    typeof createdByInfo === 'object' && createdByInfo !== null
+      ? createdByInfo.role
+      : undefined;
+  const accountId =
+    typeof createdByInfo === 'object' && createdByInfo !== null
+      ? createdByInfo._id || createdByInfo.accountId
+      : createdByInfo;
+
+  let userProfile = null;
+  if (accountId) {
+    userProfile = await User.findOne({ accountId })
+      .select('name avatarUrl gender')
+      .lean();
+  }
+
+  const name = userProfile?.name;
+  const gender = userProfile?.gender;
+  let displayName;
+
+  if (createdByRole === 'teacher') {
+    displayName =
+      formatTeacherDisplayName(name, gender) || createdByInfo?.email || 'Giáo viên';
+  } else if (createdByRole === 'admin') {
+    displayName = name || createdByInfo?.email || 'Ban Giám hiệu';
+  } else {
+    displayName = name || createdByInfo?.email || 'Hệ thống';
+  }
+
+  if (typeof createdByInfo === 'object' && createdByInfo !== null) {
+    if (userProfile) {
+      createdByInfo.linkedId = {
+        ...(createdByInfo.linkedId || {}),
+        name: userProfile.name,
+        avatarUrl: userProfile.avatarUrl,
+        gender: userProfile.gender,
+      };
+    }
+    createdByInfo.displayName = displayName;
+  }
+
+  notification.sender = displayName;
+  notification.senderDisplayName = displayName;
+
+  return notification;
+};
 
 /**
  * 📋 LẤY DANH SÁCH THÔNG BÁO
@@ -17,17 +106,25 @@ exports.getNotifications = async (req, res) => {
     const { recipientType, recipientRole, recipientId, classId } = req.query;
     
     let filter = {};
+    const teacherFlags = req.user.teacherFlags || {};
+    const {
+      isTeacherRole,
+      isLeader,
+      isDepartmentHead,
+      isHomeroom,
+      isSubjectTeacher,
+    } = buildTeacherContext(role, teacherFlags);
+    const isAdmin = role === 'admin';
     
     // Admin và BGH: Xem tất cả
-    if (role === 'admin' || (role === 'teacher' && req.user.teacherFlags?.isLeader)) {
+    if (isAdmin || (isTeacherRole && isLeader)) {
       if (recipientType) filter.recipientType = recipientType;
       if (recipientRole) filter.recipientRole = recipientRole;
       if (recipientId) filter.recipientId = recipientId;
       if (classId) filter.classId = classId;
     }
     // Trưởng bộ môn (QLBM): Xem tất cả thông báo (tương tự BGH nhưng không phải BGH)
-    else if (role === 'teacher' && req.user.teacherFlags?.isDepartmentHead && 
-             !req.user.teacherFlags?.isLeader) {
+    else if (isTeacherRole && isDepartmentHead && !isLeader) {
       // Trưởng bộ môn có thể xem tất cả thông báo
       if (recipientType) filter.recipientType = recipientType;
       if (recipientRole) filter.recipientRole = recipientRole;
@@ -35,7 +132,7 @@ exports.getNotifications = async (req, res) => {
       if (classId) filter.classId = classId;
     }
     // GVCN: Xem thông báo đã gửi cho lớp CN
-    else if (role === 'teacher' && req.user.teacherFlags?.isHomeroom) {
+    else if (isTeacherRole && isHomeroom) {
       const teacher = await Teacher.findOne({ accountId: req.user.accountId })
         .populate('homeroomClassIds');
       if (!teacher || !teacher.homeroomClassIds || teacher.homeroomClassIds.length === 0) {
@@ -50,13 +147,18 @@ exports.getNotifications = async (req, res) => {
       ];
     }
     // GVBM: Xem thông báo đã gửi cho lớp đang dạy
-    else if (role === 'teacher' && !req.user.teacherFlags?.isHomeroom && 
-             !req.user.teacherFlags?.isLeader && !req.user.teacherFlags?.isDepartmentHead) {
+    else if (isSubjectTeacher) {
+      const teacher = await Teacher.findOne({ accountId: req.user.accountId })
+        .select('_id')
+        .lean();
+      if (!teacher) {
+        return res.json({ success: true, total: 0, data: [] });
+      }
       // ✅ Lấy danh sách lớp đang dạy từ TeachingAssignment
       const TeachingAssignment = require('../../models/subject/teachingAssignment');
       const currentYear = await getCurrentSchoolYear();
       const assignments = await TeachingAssignment.find({
-        teacherId: req.user.accountId,
+        teacherId: teacher._id,
         year: currentYear || new Date().getFullYear()
       }).select('classId').lean();
       
@@ -92,9 +194,8 @@ exports.getNotifications = async (req, res) => {
     // ✅ Filter theo thời gian hiển thị (startDate và endDate)
     // Admin, BGH và Trưởng bộ môn: Xem tất cả (kể cả đã hết hạn)
     // Các role khác: Chỉ xem thông báo đang còn hiệu lực
-    if (role !== 'admin' && 
-        !(role === 'teacher' && req.user.teacherFlags?.isLeader) &&
-        !(role === 'teacher' && req.user.teacherFlags?.isDepartmentHead && !req.user.teacherFlags?.isLeader)) {
+    const skipDateFilter = isAdmin || (isTeacherRole && (isLeader || isDepartmentHead));
+    if (!skipDateFilter) {
       const now = new Date();
       const dateFilter = {
         $or: [
@@ -142,23 +243,8 @@ exports.getNotifications = async (req, res) => {
         createdAt: -1 
       })
       .lean(); // Dùng lean() để có thể modify object
-    
-    // ✅ Populate thông tin user (name, avatarUrl, gender) cho createdBy
-    const User = require('../../models/user/user');
-    for (const notif of notifications) {
-      if (notif.createdBy && notif.createdBy._id) {
-        const user = await User.findOne({ accountId: notif.createdBy._id })
-          .select('name avatarUrl gender')
-          .lean();
-        if (user) {
-          notif.createdBy.linkedId = {
-            name: user.name,
-            avatarUrl: user.avatarUrl,
-            gender: user.gender
-          };
-        }
-      }
-    }
+
+    await Promise.all(notifications.map((notif) => enrichSenderMetadata(notif)));
     
     // ✅ Thêm field isRead cho mỗi notification
     const notificationsWithReadStatus = notifications.map(notif => {
@@ -186,7 +272,9 @@ exports.getNotificationById = async (req, res) => {
     const { id } = req.params;
     const { role } = req.user;
     
-    const notification = await Notification.findById(id);
+    const notification = await Notification.findById(id)
+      .populate('createdBy', 'email role')
+      .lean();
     if (!notification) {
       return res.status(404).json({ error: 'Không tìm thấy thông báo' });
     }
@@ -207,6 +295,8 @@ exports.getNotificationById = async (req, res) => {
       }
     }
     
+    await enrichSenderMetadata(notification);
+
     res.json({ success: true, data: notification });
   } catch (error) {
     console.error('❌ Lỗi getNotificationById:', error);
@@ -248,23 +338,22 @@ exports.createNotification = async (req, res) => {
     let finalClassId = null;
     
     // ✅ Xác định quyền - ƯU TIÊN BGH và Admin TRƯỚC
-    // BGH (isLeader): Có thể gửi tất cả (all, role, class, user)
-    const isBGH = role === 'teacher' && req.user.teacherFlags?.isLeader;
-    
-    // Admin: Có thể gửi tất cả
+    const teacherFlags = req.user.teacherFlags || {};
+    const {
+      isTeacherRole,
+      isLeader,
+      isDepartmentHead,
+      isHomeroom,
+      isSubjectTeacher,
+    } = buildTeacherContext(role, teacherFlags);
     const isAdmin = role === 'admin';
-    
-    // GVCN (isHomeroom): Chỉ có thể gửi class (lớp CN) và user, KHÔNG được gửi all
-    // Lưu ý: BGH có thể có cả flag isHomeroom, nhưng vẫn được phép gửi all/role
-    const isGVCN = role === 'teacher' && req.user.teacherFlags?.isHomeroom && !isBGH;
-    
-    // GV bộ môn (không có flag đặc biệt): Chỉ có thể gửi class (lớp đang dạy) và user, KHÔNG được gửi all
-    // Lưu ý: BGH có thể có cả flag isDepartmentHead, nhưng vẫn được phép gửi all/role
-    const isGVBM = role === 'teacher' && !req.user.teacherFlags?.isHomeroom && !isBGH && !req.user.teacherFlags?.isDepartmentHead;
+    const canSendAll = isAdmin || (isTeacherRole && (isLeader || isDepartmentHead));
+    const isGVCN = isTeacherRole && isHomeroom && !canSendAll;
+    const isGVBM = isTeacherRole && isSubjectTeacher && !canSendAll;
     
     // ✅ Kiểm tra quyền gửi theo recipientType
     // BGH và Admin LUÔN được phép gửi all hoặc role, bỏ qua validation
-    if (isBGH || isAdmin) {
+    if (canSendAll) {
       // BGH và Admin được phép gửi tất cả, không cần kiểm tra thêm
       console.log('✅ [Backend] BGH/Admin được phép gửi thông báo');
     } else if (isGVCN || isGVBM) {
@@ -304,11 +393,17 @@ exports.createNotification = async (req, res) => {
         }
       } else if (isGVBM) {
         // GVBM: Chỉ được gửi cho lớp đang dạy
+        const teacher = await Teacher.findOne({ accountId: req.user.accountId })
+          .select('_id')
+          .lean();
+        if (!teacher) {
+          return res.status(403).json({ error: 'Không tìm thấy thông tin giáo viên' });
+        }
         // ✅ Lấy danh sách lớp đang dạy từ TeachingAssignment
         const TeachingAssignment = require('../../models/subject/teachingAssignment');
         const currentYear = await getCurrentSchoolYear();
         const assignments = await TeachingAssignment.find({
-          teacherId: req.user.accountId,
+          teacherId: teacher._id,
           classId: finalClassId,
           year: currentYear || new Date().getFullYear()
         }).lean();

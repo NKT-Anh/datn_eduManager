@@ -14,6 +14,47 @@ export interface Account {
   role: string;
 }
 
+export interface StudentTransferHistoryPerformedBy {
+  accountId: string | null;
+  role?: string | null;
+  email?: string | null;
+  name?: string | null;
+  uid?: string | null;
+}
+
+export interface StudentTransferHistoryRecord {
+  id: string;
+  studentId: string | null;
+  fromClassId: string | null;
+  fromClassName?: string | null;
+  fromGrade?: string | null;
+  fromYear?: string | null;
+  toClassId: string | null;
+  toClassName?: string | null;
+  toGrade?: string | null;
+  toYear: string | null;
+  effectiveDate: string;
+  reason?: string | null;
+  performedBy?: StudentTransferHistoryPerformedBy | null;
+  metadata?: {
+    keepOldYearRecords?: boolean;
+  } | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface StudentTransferHistoryPagination {
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+}
+
+export interface StudentTransferHistoryResponse {
+  data: StudentTransferHistoryRecord[];
+  pagination: StudentTransferHistoryPagination;
+}
+
 // // Học sinh theo backend
 // export interface Student {
 //   _id: string;

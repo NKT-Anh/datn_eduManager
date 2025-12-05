@@ -14,11 +14,21 @@ const {
   approveConduct,
   getPendingConducts,
   bulkApproveConducts,
-  updateYearNote
+  updateYearNote,
+  getConductClassStatistics,
+  approveAllConduct,
+  getConductBlockStatistics,  
 } = require('../../controllers/conduct/conductController');
 
 // Tất cả routes đều cần xác thực
 router.use(authMiddleware);
+// 📊 Thống kê hạnh kiểm các lớp
+router.get('/statistics', getConductClassStatistics);
+router.get('/class-statistics', getConductClassStatistics);
+
+// 📊 Thống kê theo khối
+router.get('/block-statistics', getConductBlockStatistics);
+
 
 // 📋 Lấy danh sách hạnh kiểm
 router.get(
@@ -46,7 +56,7 @@ router.post(
   checkPermission(PERMISSIONS.CONDUCT_VIEW, { checkContext: false }),
   auditLog({
     action: 'CREATE',
-    resource: 'CONDUCT',
+    resource: 'Hạnh kiểm',
     getDescription: async (req) => {
       const studentId = req.body?.studentId;
       const semester = req.body?.semester || 'N/A';
@@ -66,7 +76,7 @@ router.put(
   ], { checkContext: true }),
   auditLog({
     action: 'UPDATE',
-    resource: 'CONDUCT',
+    resource: 'Hạnh kiểm',
     getResourceId: (req) => req.params.id,
     getDescription: async (req) => {
       try {
@@ -103,7 +113,7 @@ router.post(
   checkPermission(PERMISSIONS.CONDUCT_VIEW, { checkContext: true }),
   auditLog({
     action: 'APPROVE_CONDUCT',
-    resource: 'CONDUCT',
+    resource: 'Hạnh kiểm',
     getResourceId: (req) => req.params.id,
     getDescription: async (req) => {
       const action = req.body?.action || 'approve';
@@ -124,7 +134,7 @@ router.post(
   checkPermission(PERMISSIONS.CONDUCT_VIEW, { checkContext: true }),
   auditLog({
     action: 'APPROVE_CONDUCT_BULK',
-    resource: 'CONDUCT',
+    resource: 'Hạnh kiểm',
     getDescription: async (req) => {
       const action = req.body?.action || 'approve';
       const year = req.body?.year || 'ALL';
@@ -166,6 +176,8 @@ router.put(
   updateYearNote
 );
 
+// ✔ Phê duyệt tất cả
+router.post('/approve-all', approveAllConduct);
 module.exports = router;
 
 

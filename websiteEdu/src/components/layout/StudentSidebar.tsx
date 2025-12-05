@@ -14,6 +14,7 @@ import {
   Home,
   Calendar,
   ClipboardList,
+  Bell,
   User
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -32,6 +33,7 @@ export function StudentSidebar() {
     { title: "Dashboard", url: `${prefix}`, icon: Home },
     { title: "Thời khóa biểu", url: `${prefix}/schedule`, icon: Calendar },
     { title: "Xem điểm", url: `${prefix}/grades`, icon: ClipboardList },
+    { title: "Thông báo", url: `${prefix}/notifications`, icon: Bell },
     { title: "Hồ sơ", url: `${prefix}/profile`, icon: User },
   ];
 

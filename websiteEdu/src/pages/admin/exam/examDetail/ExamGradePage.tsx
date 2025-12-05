@@ -97,6 +97,10 @@ export default function ExamGradePage({ examId, exam }: ExamGradePageProps) {
       // ✅ Xử lý grades
       const gradesData = Array.isArray(gradesRes) ? gradesRes : (gradesRes?.data || []);
       setGrades(gradesData);
+
+      // Debug log
+      console.log('[ExamGradePage] examStudents:', studentsData);
+      console.log('[ExamGradePage] grades:', gradesData);
     } catch (err) {
       console.error("Lỗi tải dữ liệu:", err);
       message.error("Không thể tải dữ liệu");
@@ -139,10 +143,10 @@ export default function ExamGradePage({ examId, exam }: ExamGradePageProps) {
     
     try {
       setUpdating(true);
-      // ✅ ExamGrade.student là ref đến ExamStudent._id
+      // ✅ Đúng key cho backend: examStudent
       await examGradeApi.addOrUpdate({
         exam: examId,
-        student: examStudentId, // Đây là ExamStudent._id
+        examStudent: examStudentId, // Đúng key cho backend
         subject: subjectId,
         gradeValue: Number(value),
       });
@@ -222,7 +226,7 @@ export default function ExamGradePage({ examId, exam }: ExamGradePageProps) {
         if (value === null || value === undefined) return Promise.resolve();
         return examGradeApi.addOrUpdate({
           exam: examId,
-          student: examStudentId, // ✅ ExamStudent._id
+          examStudent: examStudentId, // Đúng key cho backend
           subject: subject._id,
           gradeValue: Number(value),
         });
@@ -268,34 +272,46 @@ export default function ExamGradePage({ examId, exam }: ExamGradePageProps) {
   const groupedGrades = useMemo(() => {
     if (!Array.isArray(examStudents)) return [];
     
-    // Tạo map điểm theo examStudent._id và subject._id
+    // Tạo map điểm theo examStudent._id và subject._id (luôn ép kiểu string)
     const gradeMap = new Map<string, any>();
     grades.forEach((grade) => {
-      // ✅ ExamGrade.student là ref đến ExamStudent._id
       const examStudentId = grade.student?._id || grade.student;
       const subjectId = grade.subject?._id || grade.subject;
       if (examStudentId && subjectId) {
-        gradeMap.set(`${examStudentId}_${subjectId}`, grade);
+        gradeMap.set(`${String(examStudentId)}_${String(subjectId)}`, grade);
       }
     });
-    
+
+    // Debug: print mapping keys
+    console.log('[ExamGradePage] gradeMap keys:', Array.from(gradeMap.keys()));
+    console.log('[ExamGradePage] examStudents IDs:', examStudents.map(s => String(s._id)));
+
     // Map examStudents với điểm
     return examStudents.map((examStudent) => {
       const studentInfo = examStudent.student || {};
       const classInfo = studentInfo.classId || examStudent.class || {};
-      
+
       // Lấy điểm cho từng môn
       const scores: Record<string, any> = {};
       examSubjects.forEach((subject) => {
-        const grade = gradeMap.get(`${examStudent._id}_${subject._id}`);
+        const grade = gradeMap.get(`${String(examStudent._id)}_${String(subject._id)}`);
         if (grade) {
           scores[subject._id] = {
             gradeValue: grade.gradeValue,
             record: grade,
           };
+        } else if (Array.isArray(examStudent.subjects)) {
+          // Nếu chưa có điểm từ ExamGrade, lấy tạm từ examStudent.subjects[].score
+          const subjObj = examStudent.subjects.find(s => String(s.subject) === String(subject._id));
+          if (subjObj && typeof subjObj.score === 'number') {
+            scores[subject._id] = {
+              gradeValue: subjObj.score,
+              record: null,
+            };
+          }
         }
       });
-      
+
       return {
         examStudent,
         student: {
@@ -428,7 +444,10 @@ export default function ExamGradePage({ examId, exam }: ExamGradePageProps) {
           <Button
             type="text"
             icon={<EditOutlined />}
-            onClick={() => handleEdit(record)}
+            onClick={() => {
+              console.log('[ExamGradePage] Edit student record:', record);
+              handleEdit(record);
+            }}
           />
         );
       },

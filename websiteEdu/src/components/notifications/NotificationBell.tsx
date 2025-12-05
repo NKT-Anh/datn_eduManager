@@ -69,12 +69,27 @@ export const NotificationBell = () => {
 
   const fetchNotifications = async () => {
     if (!isOpen || !backendUser) return;
-    
     setLoading(true);
     try {
       const res = await axiosClient.get('/notifications');
-      // Lấy 10 thông báo mới nhất
-      const allNotifications = res.data.data || [];
+      let allNotifications = res.data.data || [];
+
+      // Lọc thông báo gửi đến học sinh nếu user là giáo viên
+      if (backendUser.role === 'teacher') {
+        allNotifications = allNotifications.filter((n: any) => {
+          // Nếu thông báo có trường recipientRole là 'student' và senderRole là 'admin' hoặc 'teacher' (BGH)
+          // thì loại bỏ khỏi danh sách cho giáo viên
+          if (n.recipientRole === 'student' && (n.senderRole === 'admin' || n.senderRole === 'teacher')) {
+            // Nếu sender là teacher, chỉ loại nếu là BGH
+            if (n.senderRole === 'teacher' && n.senderFlags?.isLeader !== true) {
+              return true; // Không phải BGH thì vẫn cho hiện
+            }
+            return false;
+          }
+          return true;
+        });
+      }
+
       setNotifications(allNotifications.slice(0, 10));
     } catch (error) {
       toast({
@@ -130,9 +145,9 @@ export const NotificationBell = () => {
       markAsRead(notification._id);
     }
     
-    // Điều hướng đến trang thông báo
+    // Điều hướng đến chi tiết thông báo
     const prefix = getUserRoutePrefix(backendUser);
-    navigate(`${prefix}/notifications`);
+    navigate(`${prefix}/notifications/${notification._id}`);
     setIsOpen(false);
   };
 

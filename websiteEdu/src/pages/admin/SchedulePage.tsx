@@ -38,6 +38,7 @@ import { ScheduleConfigForm } from "@/components/forms/ScheduleConfigForm";
 import DragDropSchedule from "@/components/schedule/DragDropSchedule";
 import ModernTimetable from "@/components/schedule/ModernTimetable";
 import CreateClassesDialog from "@/components/dialogs/CreateClassesDialog";
+import ScheduleHeader from "@/components/schedule/ScheduleHeader";
 import { autoScheduleApi } from "@/services/autoScheduleApi";
 import { constraintSolverApi } from "@/services/constraintSolverApi";
 
@@ -359,7 +360,10 @@ export default function SchedulePage() {
   // --- GIAO DIỆN ---
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold mb-4">📘 Quản lý Thời khóa biểu</h1>
+      <ScheduleHeader
+        title="📘 Quản lý Thời khóa biểu"
+        description="Theo dõi, cấu hình và tạo thời khóa biểu phù hợp cho từng lớp trong năm học."
+      />
 
       <Tabs defaultValue="classes" className="w-full">
         <TabsList className="grid w-full grid-cols-2">

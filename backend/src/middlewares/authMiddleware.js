@@ -66,8 +66,9 @@ try {
     phone: account.phone
   };
   
-  // ✅ Nếu là teacher, lấy teacherFlags
-  if (account.role === 'teacher') {
+  // ✅ Nếu là giáo viên (bao gồm các biến thể role), lấy teacherFlags
+  const teacherRoleVariants = ['teacher', 'gvcn', 'gvbm', 'qlbm', 'bgh'];
+  if (teacherRoleVariants.includes(account.role)) {
     const Teacher = require('../models/user/teacher');
     // Lấy cả yearRoles để ưu tiên nếu có năm hiện tại
     const teacher = await Teacher.findOne({ accountId: account._id })

@@ -2,7 +2,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import studentApi, {
   StudentCreatePayload,
   StudentUpdatePayload,
+  StudentTransferPayload,
+  StudentTransferHistoryParams,
 } from "@/services/studentApi";
+import type { StudentTransferHistoryResponse } from "@/types/student";
 
 /* =========================================================
    📘 Hook chính: useStudents()
@@ -42,6 +45,15 @@ export function useStudents(params?: Record<string, any>) {
     },
   }).mutateAsync;
 
+  const transfer = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: StudentTransferPayload }) =>
+      studentApi.transfer(id, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["students"] });
+      queryClient.invalidateQueries({ queryKey: ["student", variables.id] });
+    },
+  }).mutateAsync;
+
   // 🗑 Xóa học sinh
   const remove = useMutation({
     mutationFn: (id: string) => studentApi.remove(id),
@@ -64,6 +76,7 @@ const autoAssign = useMutation({
     refetch,
     create,
     update,
+    transfer,
     remove,
     autoAssign,
   };
@@ -78,5 +91,42 @@ export function useStudent(id?: string) {
     queryKey: ["student", id],
     queryFn: () => (id ? studentApi.getById(id) : null),
     enabled: !!id,
+  });
+}
+
+type TransferHistoryHookOptions = StudentTransferHistoryParams & {
+  enabled?: boolean;
+};
+
+export function useStudentTransferHistory(
+  studentId?: string,
+  options?: TransferHistoryHookOptions
+) {
+  const { enabled = true, page, limit } = options || {};
+
+  return useQuery({
+    queryKey: [
+      "student-transfer-history",
+      studentId,
+      page ?? 1,
+      limit ?? 20,
+    ],
+    queryFn: () => {
+      if (!studentId) {
+        const empty: StudentTransferHistoryResponse = {
+          data: [],
+          pagination: {
+            total: 0,
+            page: 1,
+            limit: 0,
+            pages: 1,
+          },
+        };
+        return Promise.resolve(empty);
+      }
+      return studentApi.getTransferHistory(studentId, { page, limit });
+    },
+    enabled: Boolean(studentId) && enabled,
+    staleTime: 60 * 1000,
   });
 }

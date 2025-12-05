@@ -11,6 +11,7 @@ import gradesApi from '@/services/gradesApi';
 import attendanceApi from '@/services/attendanceApi';
 import conductApi from '@/services/conductApi';
 import { useNavigate } from 'react-router-dom';
+import { studentExamApi } from '@/services/exams/studentExamApi';
 import { 
   Calendar, 
   Clock,
@@ -41,11 +42,11 @@ interface ScheduleItem {
 
 interface GradeItem {
   _id: string;
-  subjectId: {
+  subject?: {
     _id: string;
     name: string;
   };
-  average?: number;
+  average?: number | null;
   semester: string;
   schoolYear: string;
 }
@@ -65,6 +66,8 @@ const StudentDashboard = () => {
   const [attendanceRate, setAttendanceRate] = useState<number>(0);
   const [subjectCount, setSubjectCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
+  const [todayExams, setTodayExams] = useState<any[]>([]); // now used for upcoming exams
+  const [examLoading, setExamLoading] = useState(false);
 
   // Tính năm học hiện tại
   const currentYear = currentYearCode || (() => {
@@ -181,6 +184,93 @@ const StudentDashboard = () => {
     }
   }, [studentInfo, currentYear, semester]);
 
+  // Lấy lịch thi sắp tới
+  useEffect(() => {
+    const fetchUpcomingExams = async () => {
+      try {
+        setExamLoading(true);
+        if (!studentInfo) {
+          setTodayExams([]);
+          return;
+        }
+
+        const studentId = String(studentInfo._id || backendUser?.studentId || backendUser?._id || '');
+        if (!studentId) {
+          setTodayExams([]);
+          return;
+        }
+
+        // Lấy danh sách kỳ thi học sinh tham gia (đã công bố) và lịch thi từng kỳ
+        const exams = await studentExamApi.getExams(studentId);
+        const publishedExams = (exams || []).filter((e: any) => e.status === 'published' || !e.status);
+
+        const schedulesByExam = await Promise.all(
+          publishedExams.map(async (ex: any) => {
+            try {
+              const list = await studentExamApi.getSchedules(ex._id, studentId);
+              return Array.isArray(list) ? list.map((s: any) => ({ ...s, _exam: ex })) : [];
+            } catch {
+              return [] as any[];
+            }
+          })
+        );
+
+        const allSchedules = schedulesByExam.flat();
+        if (!allSchedules.length) {
+          setTodayExams([]);
+          return;
+        }
+
+        // Lọc các lịch thi sắp tới (>= thời điểm hiện tại)
+        const now = new Date();
+        const upcoming = allSchedules
+          .map((s: any) => {
+            if (!s.date) return null;
+            const d = new Date(s.date);
+            if (s.startTime) {
+              const [sh, sm] = String(s.startTime).split(':').map(Number);
+              d.setHours(sh || 0, sm || 0, 0, 0);
+            } else {
+              d.setHours(0, 0, 0, 0);
+            }
+            return { ...s, __dateTime: d };
+          })
+          .filter(Boolean)
+          .filter((s: any) => s.__dateTime >= now)
+          .sort((a: any, b: any) => a.__dateTime.getTime() - b.__dateTime.getTime());
+
+        // Chuẩn hóa dữ liệu hiển thị
+        const normalized = upcoming
+          .map((s: any) => {
+            // Tính thời lượng nếu có startTime/endTime
+            let durationMin = 0;
+            if (s.startTime && s.endTime) {
+              const [sh, sm] = String(s.startTime).split(':').map(Number);
+              const [eh, em] = String(s.endTime).split(':').map(Number);
+              durationMin = (eh * 60 + em) - (sh * 60 + sm);
+              if (durationMin < 0) durationMin = 0;
+            }
+            return {
+              id: s._id || `${s.date}_${s.startTime}_${s.subject?.name || s.subject}`,
+              subject: s.subject?.name || s.subject || 'Môn thi',
+              room: s.room?.roomCode || s.room?.code || s.fixedRoomCode || '',
+              startTime: s.startTime || '',
+              duration: durationMin,
+              examName: s._exam?.name || '',
+              date: s.date,
+            };
+          })
+          .slice(0, 5); // chỉ lấy 5 lịch thi sắp tới gần nhất
+
+        setTodayExams(normalized);
+      } finally {
+        setExamLoading(false);
+      }
+    };
+
+    fetchUpcomingExams();
+  }, [studentInfo]);
+
   // Lấy điểm số gần đây
   useEffect(() => {
     const fetchGrades = async () => {
@@ -257,6 +347,13 @@ const StudentDashboard = () => {
     // JavaScript getDay(): 0=Chủ nhật, 1=Thứ 2, 2=Thứ 3, 3=Thứ 4, 4=Thứ 5, 5=Thứ 6, 6=Thứ 7
     const days = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
     return days[dayOfWeek] || 'Chủ nhật';
+  };
+
+  const formatShortDate = (iso?: string) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
   };
 
   const today = new Date();
@@ -344,7 +441,7 @@ const StudentDashboard = () => {
         </Card>
       </div>
 
-      {/* Today's Schedule and Recent Grades */}
+      {/* Today's Schedule, Today's Exams and Recent Grades */}
       <div className={`grid grid-cols-1 ${recentGrades.length > 0 && !loading ? 'lg:grid-cols-2' : ''} gap-6`}>
         <Card className="shadow-card border-border">
           <CardHeader>
@@ -396,6 +493,56 @@ const StudentDashboard = () => {
           </CardContent>
         </Card>
 
+        <Card className="shadow-card border-border">
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Calendar className="h-5 w-5 mr-2" />
+              Lịch thi sắp tới
+            </CardTitle>
+            <CardDescription>Các ca thi sắp diễn ra</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {examLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : todayExams.length > 0 ? (
+              todayExams.map((ex) => (
+                <div key={ex.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <div className="flex items-center justify-center w-12 h-12 bg-primary/10 rounded-lg">
+                      <Clock className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="font-medium">{ex.subject}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {ex.examName ? `${ex.examName} • ` : ''}
+                        {ex.room ? `Phòng ${ex.room}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant="outline">{formatShortDate(ex.date)}{ex.startTime ? ` • ${ex.startTime}` : ''}{ex.duration ? ` • ${ex.duration}’` : ''}</Badge>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-8">
+                <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">Không có lịch thi sắp tới</p>
+              </div>
+            )}
+            {todayExams.length > 0 && (
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => navigate('/student/exams/student-schedule')}
+              >
+                Xem lịch thi chi tiết
+                <ArrowRight className="h-4 w-4 ml-2" />
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+
         {recentGrades.length > 0 && !loading && (
           <Card className="shadow-card border-border">
             <CardHeader>
@@ -413,7 +560,7 @@ const StudentDashboard = () => {
                       <BookOpen className="h-5 w-5 text-success" />
                     </div>
                     <div>
-                      <p className="font-medium">{grade.subjectId?.name || 'N/A'}</p>
+                      <p className="font-medium">{grade.subject?.name || 'N/A'}</p>
                       <p className="text-sm text-muted-foreground">
                         Học kỳ {grade.semester} - {grade.schoolYear}
                       </p>
@@ -421,14 +568,16 @@ const StudentDashboard = () => {
                   </div>
                   <Badge
                     variant={
-                      grade.average && grade.average >= 8
-                        ? 'default'
-                        : grade.average && grade.average >= 6.5
-                        ? 'secondary'
-                        : 'destructive'
+                      grade.average != null
+                        ? grade.average >= 8
+                          ? 'default'
+                          : grade.average >= 6.5
+                          ? 'secondary'
+                          : 'destructive'
+                        : 'secondary'
                     }
                   >
-                    {grade.average?.toFixed(1) || 'Chưa có'}
+                    {grade.average != null ? grade.average.toFixed(1) : 'Chưa có'}
                   </Badge>
                 </div>
               ))}

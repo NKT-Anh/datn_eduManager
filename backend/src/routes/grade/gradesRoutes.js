@@ -8,6 +8,8 @@ const { PERMISSIONS } = require('../../config/permissions');
 const checkGradeEntryPeriod = require('../../middlewares/checkGradeEntryPeriod');
 const { auditLog } = require('../../middlewares/auditLogMiddleware');
 const { getStudentName, getSubjectName, getClassName, getComponentLabel } = require('../../utils/auditLogHelpers');
+const Schedule = require('../../models/subject/schedule');
+const TeacherModel = require('../../models/user/teacher');
 
 // ✅ Thêm hoặc cập nhật điểm (1 học sinh, 1 cột điểm) - GVBM (môn mình dạy) hoặc Admin
 // ✅ Không check context ở middleware, để controller tự kiểm tra TeachingAssignment
@@ -111,6 +113,19 @@ router.get('/summary',
   gradeController.getClassSubjectSummary
 );
 
+// ✅ Điểm TB học kỳ theo học sinh của lớp (cho GVBM/GVCN/Admin)
+router.get('/class/semester-gpa',
+  authMiddleware,
+  checkPermission([
+    PERMISSIONS.GRADE_VIEW,
+    PERMISSIONS.GRADE_VIEW_ALL,
+    PERMISSIONS.GRADE_VIEW_DEPARTMENT,
+    PERMISSIONS.GRADE_VIEW_HOMEROOM,
+    PERMISSIONS.GRADE_VIEW_TEACHING,
+  ], { checkContext: false }),
+  gradeController.getClassSemesterGPA
+);
+
 // ✅ Tính lại điểm tổng hợp - Chỉ Admin
 router.post('/recompute', 
   authMiddleware, 
@@ -162,6 +177,41 @@ router.post('/save',
     },
   }),
   gradeController.saveScores
+);
+
+// ✅ GVBM công bố điểm môn học cho lớp/học kỳ (hoặc Admin)
+router.post('/publish',
+  authMiddleware,
+  checkPermission([PERMISSIONS.GRADE_ENTER, PERMISSIONS.GRADE_VIEW], { checkContext: false }),
+  auditLog({
+    action: 'UPDATE',
+    resource: 'GRADE_PUBLISH',
+    getDescription: async (req) => {
+      const { classId, subjectId, schoolYear, semester } = req.body || {};
+      const [subjectName, className] = await Promise.all([
+        getSubjectName(subjectId),
+        getClassName(classId),
+      ]);
+      return `Công bố điểm: Môn ${subjectName}, Lớp ${className}, ${schoolYear} - HK${semester}`;
+    }
+  }),
+  gradeController.publishSubject
+);
+
+// ✅ GVCN/Admin: Xét học lực lớp chủ nhiệm theo học kỳ/năm
+router.post('/homeroom/evaluate-academic',
+  authMiddleware,
+  checkPermission([PERMISSIONS.GRADE_VIEW_HOMEROOM, PERMISSIONS.GRADE_VIEW_ALL], { checkContext: true }),
+  auditLog({
+    action: 'UPDATE',
+    resource: 'ACADEMIC_EVALUATION',
+    getDescription: async (req) => {
+      const { classId, schoolYear, semester } = req.body || {};
+      const className = await getClassName(classId);
+      return `Xét học lực: Lớp ${className}, ${schoolYear} - ${semester === 'CN' ? 'Cả năm' : 'HK' + semester}`;
+    }
+  }),
+  gradeController.evaluateHomeroomAcademicLevel
 );
 
 // ✅ Học sinh xem điểm của bản thân, GVCN xem điểm học sinh lớp chủ nhiệm
@@ -319,6 +369,52 @@ router.get('/homeroom/classification',
   authMiddleware, 
   checkPermission([PERMISSIONS.GRADE_VIEW_HOMEROOM, PERMISSIONS.CONDUCT_VIEW, PERMISSIONS.GRADE_VIEW_ALL], { checkContext: true }), 
   gradeController.getHomeroomClassClassification
+);
+
+// ✅ GVCN tải phiếu kết quả học tập dạng PDF cho học sinh
+router.get('/homeroom/report-card/:studentId/pdf',
+  authMiddleware,
+  checkPermission([PERMISSIONS.GRADE_VIEW_HOMEROOM, PERMISSIONS.GRADE_VIEW_ALL], { checkContext: true }),
+  auditLog({
+    action: 'EXPORT',
+    resource: 'REPORT_CARD',
+    getResourceId: (req) => req.params.studentId,
+    getDescription: async (req) => {
+      const { studentId } = req.params;
+      const { classId, schoolYear, semester } = req.query || {};
+      const [studentName, className] = await Promise.all([
+        getStudentName(studentId),
+        getClassName(classId),
+      ]);
+      const semesterLabel = semester === 'CN' ? 'Cả năm' : `HK${semester || '1'}`;
+      return `Tải phiếu kết quả học tập: HS ${studentName}, Lớp ${className}, ${schoolYear} - ${semesterLabel}`;
+    }
+  }),
+  gradeController.exportStudentReportCard
+);
+
+// ✅ GVCN tải phiếu kết quả học tập của cả lớp (ZIP)
+router.get('/homeroom/report-card/bulk/pdf',
+  authMiddleware,
+  checkPermission([PERMISSIONS.GRADE_VIEW_HOMEROOM, PERMISSIONS.GRADE_VIEW_ALL], { checkContext: true }),
+  auditLog({
+    action: 'EXPORT',
+    resource: 'REPORT_CARD_BULK',
+    getDescription: async (req) => {
+      const { classId, schoolYear, semester } = req.query || {};
+      const className = await getClassName(classId);
+      const semesterLabel = semester === 'CN' ? 'Cả năm' : `HK${semester || '1'}`;
+      return `Tải ZIP phiếu kết quả: Lớp ${className}, ${schoolYear} - ${semesterLabel}`;
+    }
+  }),
+  gradeController.exportClassReportCards
+);
+
+// ✅ GVBM: Lịch dạy hôm nay (và ngày mai nếu days=2)
+router.get('/gvbm/schedule/today',
+  authMiddleware,
+  checkPermission([PERMISSIONS.GRADE_VIEW_TEACHING, PERMISSIONS.GRADE_VIEW], { checkContext: false }),
+  gradeController.getTeacherTodaySchedule
 );
 
 module.exports = router;

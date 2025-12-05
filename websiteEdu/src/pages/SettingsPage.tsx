@@ -1,5 +1,8 @@
 // src/pages/SettingsPage.tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import type { ChangeEvent } from 'react';
+import { format } from 'date-fns';
+import { vi } from 'date-fns/locale';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,6 +10,9 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAuth } from '@/contexts/AuthContext';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 import {
   Settings,
   Bell,
@@ -17,21 +23,69 @@ import {
   RefreshCw,
   Download,
   BookOpen,
+  CalendarIcon,
+  Info,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import settingApi from '@/services/settingApi';
 import backupApi from '@/services/backupApi';
 import { useSchoolYears } from '@/hooks';
-import { Info } from 'lucide-react';
+import { uploadFileToCloudinary } from '@/services/cloudinary/cloudinaryFileUpload';
+import { invalidatePublicSchoolInfoCache, prefetchPublicSchoolInfo } from '@/hooks';
+
+interface DateFieldProps {
+  value?: string | null;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}
+
+const DateField = ({ value, onChange, placeholder = 'Chọn ngày' }: DateFieldProps) => {
+  const parsed = value ? new Date(value) : undefined;
+  const dateValue = parsed && !Number.isNaN(parsed.getTime()) ? parsed : undefined;
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          className={cn(
+            'w-full justify-start text-left font-normal',
+            !dateValue && 'text-muted-foreground'
+          )}
+        >
+          <CalendarIcon className="mr-2 h-4 w-4" />
+          {dateValue ? format(dateValue, 'dd/MM/yyyy', { locale: vi }) : <span>{placeholder}</span>}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <Calendar
+          mode="single"
+          selected={dateValue}
+          onSelect={(selectedDate) => {
+            onChange(selectedDate ? format(selectedDate, 'yyyy-MM-dd') : '');
+          }}
+          initialFocus
+          locale={vi}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+};
 
 const SettingsPage = () => {
   const { backendUser } = useAuth();
   const { toast } = useToast();
-  const { schoolYears, currentYearData } = useSchoolYears();
+  const { currentYearData } = useSchoolYears();
   const [loading, setLoading] = useState(false);
   const [backupLoading, setBackupLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [uploadToDrive, setUploadToDrive] = useState(false); // Tùy chọn upload lên Google Drive
+  const [logoUploading, setLogoUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const defaultLogoState = { url: '', publicId: '', format: 'png' } as const;
 
   // settings state
   const [settings, setSettings] = useState<any>({
@@ -61,7 +115,8 @@ const SettingsPage = () => {
       secure: false
     },
     studentEmailDomain: '',
-    teacherEmailDomain: ''
+    teacherEmailDomain: '',
+    schoolLogo: { ...defaultLogoState }
   });
 
   // load settings
@@ -70,7 +125,15 @@ const SettingsPage = () => {
     settingApi.getSettings()
       .then((data) => {
         if (data) {
-          setSettings((s: any) => ({ ...s, ...data }));
+          setSettings((s: any) => ({
+            ...s,
+            ...data,
+            schoolLogo: data?.schoolLogo
+              ? { ...defaultLogoState, ...data.schoolLogo }
+              : s.schoolLogo
+                ? { ...s.schoolLogo }
+                : { ...defaultLogoState }
+          }));
           // Load giá trị autoUploadToDrive từ settings
           setUploadToDrive(data.autoUploadToDrive || false);
         }
@@ -103,11 +166,76 @@ const SettingsPage = () => {
       if (path.startsWith('smtp.')) {
         const key = path.replace('smtp.', '');
         copy.smtp = { ...(copy.smtp || {}), [key]: value };
+      } else if (path.startsWith('schoolLogo.')) {
+        const key = path.replace('schoolLogo.', '');
+        copy.schoolLogo = { ...(copy.schoolLogo || defaultLogoState), [key]: value };
       } else {
         copy[path] = value;
       }
       return copy;
     });
+  };
+
+  const handleSelectLogo = () => {
+    fileInputRef.current?.click();
+  };
+
+  const extractFormatFromFile = (file: File) => {
+    if (file.type && file.type.includes('/')) {
+      const [, subtype] = file.type.split('/');
+      if (subtype) return subtype;
+    }
+    const ext = file.name.split('.').pop();
+    return ext || 'png';
+  };
+
+  const handleLogoFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const MAX_SIZE = 2 * 1024 * 1024; // 2MB
+    if (file.size > MAX_SIZE) {
+      toast({
+        title: 'Logo quá lớn',
+        description: 'Vui lòng chọn ảnh dưới 2MB (PNG/JPG/SVG hoặc WEBP).',
+        variant: 'destructive'
+      });
+      event.target.value = '';
+      return;
+    }
+
+    try {
+      setLogoUploading(true);
+      const uploaded = await uploadFileToCloudinary(file);
+      const format = uploaded.format || extractFormatFromFile(file);
+      setSettings((prev: any) => ({
+        ...prev,
+        schoolLogo: {
+          url: uploaded.url,
+          publicId: uploaded.publicId,
+          format
+        }
+      }));
+      toast({ title: 'Đã cập nhật logo', description: 'Nhớ lưu lại cấu hình để áp dụng.' });
+    } catch (err: any) {
+      console.error('Upload logo error:', err);
+      toast({
+        title: 'Không tải được logo',
+        description: err?.message || 'Vui lòng thử lại sau.',
+        variant: 'destructive'
+      });
+    } finally {
+      setLogoUploading(false);
+      event.target.value = '';
+    }
+  };
+
+  const handleRemoveLogo = () => {
+    setSettings((prev: any) => ({
+      ...prev,
+      schoolLogo: { ...defaultLogoState }
+    }));
+    toast({ title: 'Đã xoá logo', description: 'Logo mặc định sẽ được sử dụng nếu không tải lên logo mới.' });
   };
 
   // ✅ Tự động lưu autoUploadToDrive khi thay đổi
@@ -146,6 +274,8 @@ const SettingsPage = () => {
       settingsToSave.autoUploadToDrive = uploadToDrive;
       
       await settingApi.updateSettings(settingsToSave);
+      invalidatePublicSchoolInfoCache();
+      prefetchPublicSchoolInfo();
       toast({ title: 'Lưu thành công', description: 'Cấu hình đã được cập nhật.' });
     } catch (err: any) {
       console.error(err);
@@ -163,7 +293,15 @@ const SettingsPage = () => {
     try {
       setLoading(true);
       const res = await settingApi.resetSettings();
-      setSettings(res);
+      setSettings({
+        ...res,
+        schoolLogo: res?.schoolLogo
+          ? { ...defaultLogoState, ...res.schoolLogo }
+          : { ...defaultLogoState }
+      });
+      setUploadToDrive(res?.autoUploadToDrive || false);
+      invalidatePublicSchoolInfoCache();
+      prefetchPublicSchoolInfo();
       toast({ title: 'Đặt lại cấu hình', description: 'Đã đặt lại về mặc định.' });
     } catch (err) {
       console.error(err);
@@ -344,6 +482,48 @@ const SettingsPage = () => {
                   <Label htmlFor="website">Website</Label>
                   <Input id="website" value={settings.website} onChange={(e) => handleChange('website', e.target.value)} />
                 </div>
+              </div>
+
+              <div className="border border-border rounded-lg bg-muted/30 p-4 flex flex-col lg:flex-row lg:items-center gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-24 w-24 rounded-md border border-dashed border-muted-foreground/40 bg-background flex items-center justify-center overflow-hidden">
+                    {settings.schoolLogo?.url ? (
+                      <img
+                        src={settings.schoolLogo.url}
+                        alt="Logo trường"
+                        className="h-full w-full object-contain"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center text-xs text-muted-foreground">
+                        <ImageIcon className="h-8 w-8 mb-1" />
+                        <span>No logo</span>
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <Label className="font-medium">Logo trường</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Logo sẽ hiển thị trên phiếu kết quả và các mẫu in. Hỗ trợ PNG, JPG, SVG, WEBP (≤ 2MB).
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" onClick={handleSelectLogo} disabled={logoUploading}>
+                    {logoUploading ? 'Đang tải...' : 'Tải logo lên'}
+                  </Button>
+                  {settings.schoolLogo?.url ? (
+                    <Button type="button" variant="ghost" className="text-destructive" onClick={handleRemoveLogo} disabled={logoUploading}>
+                      Xoá logo
+                    </Button>
+                  ) : null}
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
+                  className="hidden"
+                  onChange={handleLogoFileChange}
+                />
               </div>
 
               {/* ✅ Thông tin năm học và học kỳ (chỉ đọc, lấy từ năm học active) */}
@@ -711,34 +891,30 @@ const SettingsPage = () => {
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       <div>
         <Label>Ngày bắt đầu HK1</Label>
-        <Input
-          type="date"
-          value={settings.gradeEntryStartHK1 || ''}
-          onChange={(e) => handleChange('gradeEntryStartHK1', e.target.value)}
+        <DateField
+          value={settings.gradeEntryStartHK1}
+          onChange={(val) => handleChange('gradeEntryStartHK1', val)}
         />
       </div>
       <div>
         <Label>Ngày kết thúc HK1</Label>
-        <Input
-          type="date"
-          value={settings.gradeEntryEndHK1 || ''}
-          onChange={(e) => handleChange('gradeEntryEndHK1', e.target.value)}
+        <DateField
+          value={settings.gradeEntryEndHK1}
+          onChange={(val) => handleChange('gradeEntryEndHK1', val)}
         />
       </div>
       <div>
         <Label>Ngày bắt đầu HK2</Label>
-        <Input
-          type="date"
-          value={settings.gradeEntryStartHK2 || ''}
-          onChange={(e) => handleChange('gradeEntryStartHK2', e.target.value)}
+        <DateField
+          value={settings.gradeEntryStartHK2}
+          onChange={(val) => handleChange('gradeEntryStartHK2', val)}
         />
       </div>
       <div>
         <Label>Ngày kết thúc HK2</Label>
-        <Input
-          type="date"
-          value={settings.gradeEntryEndHK2 || ''}
-          onChange={(e) => handleChange('gradeEntryEndHK2', e.target.value)}
+        <DateField
+          value={settings.gradeEntryEndHK2}
+          onChange={(val) => handleChange('gradeEntryEndHK2', val)}
         />
       </div>
     </div>
@@ -772,34 +948,30 @@ const SettingsPage = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <Label>Ngày bắt đầu HK1</Label>
-                <Input
-                  type="date"
-                  value={settings.conductEntryStartHK1 || ''}
-                  onChange={(e) => handleChange('conductEntryStartHK1', e.target.value)}
+                <DateField
+                  value={settings.conductEntryStartHK1}
+                  onChange={(val) => handleChange('conductEntryStartHK1', val)}
                 />
               </div>
               <div>
                 <Label>Ngày kết thúc HK1</Label>
-                <Input
-                  type="date"
-                  value={settings.conductEntryEndHK1 || ''}
-                  onChange={(e) => handleChange('conductEntryEndHK1', e.target.value)}
+                <DateField
+                  value={settings.conductEntryEndHK1}
+                  onChange={(val) => handleChange('conductEntryEndHK1', val)}
                 />
               </div>
               <div>
                 <Label>Ngày bắt đầu HK2</Label>
-                <Input
-                  type="date"
-                  value={settings.conductEntryStartHK2 || ''}
-                  onChange={(e) => handleChange('conductEntryStartHK2', e.target.value)}
+                <DateField
+                  value={settings.conductEntryStartHK2}
+                  onChange={(val) => handleChange('conductEntryStartHK2', val)}
                 />
               </div>
               <div>
                 <Label>Ngày kết thúc HK2</Label>
-                <Input
-                  type="date"
-                  value={settings.conductEntryEndHK2 || ''}
-                  onChange={(e) => handleChange('conductEntryEndHK2', e.target.value)}
+                <DateField
+                  value={settings.conductEntryEndHK2}
+                  onChange={(val) => handleChange('conductEntryEndHK2', val)}
                 />
               </div>
             </div>

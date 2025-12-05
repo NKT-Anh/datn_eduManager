@@ -24,6 +24,12 @@ export interface StudentExamSchedule {
   date: string;
   startTime: string;
   endTime: string;
+  // ✅ Số báo danh của học sinh trong kỳ thi (trả về trực tiếp từ student-exams)
+  sbd?: string;
+  // ✅ Một số API có thể trả lẫn examStudent/student chứa sbd; để tránh lỗi TS khi truy cập tùy chọn
+  examStudent?: { sbd?: string } | any;
+  studentExam?: { sbd?: string } | any;
+  student?: { sbd?: string } | any;
   room?: {
     _id: string;
     roomCode: string;

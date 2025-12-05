@@ -501,7 +501,7 @@ const handleDeleteAccounts = async () => {
             if (activeTab !== 'departmentHead') flagData.isDepartmentHead = currentFlags.isDepartmentHead;
             if (activeTab !== 'leader') flagData.isLeader = currentFlags.isLeader;
             
-            await api.put(`/accounts/teacher/${teacher._id}/flags`, flagData);
+            await userApi.updateTeacherFlags(teacher._id, flagData);
             flagUpdates.push({ teacherId: teacher._id, success: true });
           } catch (err: any) {
             console.error(`Lỗi cập nhật flags cho ${teacher._id}:`, err);
@@ -637,7 +637,7 @@ const handleDeleteAccounts = async () => {
           isLeader: formRole === 'leader',
         };
         
-        await api.put(`/accounts/teacher/${selectedUserForAccount._id}/flags`, flagData);
+        await userApi.updateTeacherFlags(selectedUserForAccount._id, flagData);
       }
 
       toast({
@@ -744,7 +744,7 @@ const handleDeleteAccounts = async () => {
           isLeader: formRole === 'leader',
         };
         
-        await api.put(`/accounts/teacher/${newTeacher._id}/flags`, flagData);
+        await userApi.updateTeacherFlags(newTeacher._id, flagData);
       }
 
       toast({

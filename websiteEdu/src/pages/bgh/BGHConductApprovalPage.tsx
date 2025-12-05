@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
+import { isAdminOrBGH } from '@/utils/permissions';
 
 interface ConductRecord {
   _id: string;
@@ -73,6 +74,8 @@ export default function BGHConductApprovalPage() {
   const [selectedRecord, setSelectedRecord] = useState<ConductRecord | null>(null);
   const [approvalAction, setApprovalAction] = useState<'approve' | 'reject' | 'lock'>('approve');
   const [approvalComment, setApprovalComment] = useState('');
+
+  const canApprove = isAdminOrBGH(backendUser);
 
   // ✅ Set năm học hiện tại khi có dữ liệu
   useEffect(() => {
@@ -158,7 +161,6 @@ export default function BGHConductApprovalPage() {
 
   const handleApproveAll = async () => {
     if (!selectedYear || conducts.length === 0 || statusFilter !== 'pending') return;
-
     try {
       setProcessing(true);
       await conductApi.bulkApproveConducts({
@@ -166,12 +168,31 @@ export default function BGHConductApprovalPage() {
         year: selectedYear,
         semester: selectedSemester === 'ALL' ? undefined : selectedSemester,
       });
-
       toast.success('Đã phê duyệt tất cả hạnh kiểm đang chờ phê duyệt');
       fetchConducts();
     } catch (error: any) {
       console.error('Error bulk approving conducts:', error);
       toast.error(error.response?.data?.error || 'Không thể phê duyệt tất cả hạnh kiểm');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // Chốt tất cả hạnh kiểm đã phê duyệt
+  const handleLockAll = async () => {
+    if (!selectedYear || conducts.length === 0 || statusFilter !== 'approved') return;
+    try {
+      setProcessing(true);
+      await conductApi.bulkApproveConducts({
+        action: 'lock',
+        year: selectedYear,
+        semester: selectedSemester === 'ALL' ? undefined : selectedSemester,
+      });
+      toast.success('Đã chốt tất cả hạnh kiểm đã phê duyệt');
+      fetchConducts();
+    } catch (error: any) {
+      console.error('Error bulk locking conducts:', error);
+      toast.error(error.response?.data?.error || 'Không thể chốt tất cả hạnh kiểm');
     } finally {
       setProcessing(false);
     }
@@ -346,7 +367,7 @@ export default function BGHConductApprovalPage() {
               <Button
                 variant="outline"
                 onClick={handleApproveAll}
-                disabled={processing || !selectedYear}
+                disabled={!canApprove || statusFilter !== 'pending'}
               >
                 <CheckCircle2 className="h-4 w-4 mr-2" />
                 Phê duyệt tất cả
@@ -358,6 +379,18 @@ export default function BGHConductApprovalPage() {
               >
                 <CheckCircle2 className="h-4 w-4 mr-2" />
                 Phê duyệt đã chọn
+              </Button>
+            </div>
+          )}
+          {statusFilter === 'approved' && conducts.length > 0 && (
+            <div className="flex gap-2">
+              <Button
+                variant="destructive"
+                onClick={handleLockAll}
+                disabled={processing}
+              >
+                <Lock className="h-4 w-4 mr-2" />
+                Chốt tất cả
               </Button>
             </div>
           )}
@@ -434,7 +467,7 @@ export default function BGHConductApprovalPage() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => openApprovalDialog(record, 'approve')}
-                                disabled={processing}
+                                disabled={!canApprove || processing}
                                 className="text-green-600 hover:text-green-700"
                               >
                                 <CheckCircle2 className="h-4 w-4" />

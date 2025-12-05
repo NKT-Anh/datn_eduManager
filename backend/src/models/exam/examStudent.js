@@ -36,6 +36,8 @@ examStudentSchema.index({ exam: 1, student: 1 }, { unique: true, sparse: true })
 examStudentSchema.index({ exam: 1, sbd: 1 }, { unique: true, sparse: true });
 // ✅ Index để tìm kiếm theo phòng thi
 examStudentSchema.index({ room: 1 });
+// ✅ Index để tối ưu cập nhật/truy vấn theo môn trong mảng subjects
+examStudentSchema.index({ exam: 1, grade: 1, "subjects.subject": 1 });
 
 module.exports = mongoose.model("ExamStudent", examStudentSchema);
 

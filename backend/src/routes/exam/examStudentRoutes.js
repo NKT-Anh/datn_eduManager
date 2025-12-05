@@ -135,4 +135,11 @@ router.post("/export-by-fixed-rooms",
   ctrl.exportStudentsByFixedRooms
 );
 
+// ✅ Backfill subjects cho toàn bộ kỳ thi - Chỉ Admin
+router.post("/exam/:examId/backfill-subjects",
+  auth,
+  checkPermission(PERMISSIONS.EXAM_UPDATE),
+  ctrl.backfillSubjectsForExam
+);
+
 module.exports = router;

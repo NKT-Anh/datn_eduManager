@@ -69,6 +69,7 @@ interface GradeConfig {
   weights: GradeWeights;
   columnCounts?: ColumnCounts; // ✅ Số cột điểm cho mỗi component
   rounding: 'half-up' | 'none';
+  completionPolicy?: 'at-least-one' | 'require-counts';
   classification?: ClassificationConfig;
   requiredSubjects?: RequiredSubject[]; // Môn bắt buộc phải đạt điểm tối thiểu
   schoolYear?: string;
@@ -166,6 +167,7 @@ export default function GradeConfigPage() {
   const [config, setConfig] = useState<GradeConfig>({
     weights: { ...DEFAULT_WEIGHTS },
     rounding: 'half-up',
+    completionPolicy: 'at-least-one',
     classification: { ...DEFAULT_CLASSIFICATION },
     requiredSubjects: [],
   });
@@ -195,25 +197,26 @@ export default function GradeConfigPage() {
     }
   }, [allSchoolYears, currentYearData, currentYear]);
 
-  // Lấy cấu hình hiện tại (ưu tiên học kỳ 1, nếu không có thì lấy học kỳ 2)
+  // Lấy cấu hình hiện tại (ưu tiên học kỳ theo thứ tự 1 rồi 2)
   const fetchConfig = async () => {
     if (!schoolYear || selectedSemesters.length === 0) return;
     try {
       setLoadingConfig(true);
-      // ✅ Ưu tiên lấy cấu hình từ học kỳ 1, nếu không có thì lấy từ học kỳ 2
+      // ✅ Ưu tiên lấy cấu hình theo thứ tự học kỳ ổn định ['1','2']
       let res = null;
-      let semesterToLoad = selectedSemesters[0]; // Ưu tiên học kỳ đầu tiên được chọn
+      const orderedSemesters = Array.from(new Set(selectedSemesters)).sort();
+      let semesterToLoad = orderedSemesters[0];
       
       try {
         res = await gradeConfigApi.getConfig({ schoolYear, semester: semesterToLoad });
       } catch (err: any) {
-        // Nếu học kỳ 1 không có, thử học kỳ 2
-        if (selectedSemesters.length > 1 && selectedSemesters[1] !== semesterToLoad) {
+        // Nếu không có, thử học kỳ còn lại
+        const fallback = orderedSemesters.find(s => s !== semesterToLoad);
+        if (fallback) {
           try {
-            res = await gradeConfigApi.getConfig({ schoolYear, semester: selectedSemesters[1] });
-            semesterToLoad = selectedSemesters[1];
+            res = await gradeConfigApi.getConfig({ schoolYear, semester: fallback });
+            semesterToLoad = fallback;
           } catch (err2) {
-            // Cả 2 học kỳ đều không có config
             res = null;
           }
         }
@@ -233,6 +236,7 @@ export default function GradeConfigPage() {
           weights: res.weights,
           columnCounts: res.columnCounts || defaultColumnCounts,
           rounding: res.rounding,
+          completionPolicy: res.completionPolicy || 'at-least-one',
           classification: res.classification || { ...DEFAULT_CLASSIFICATION },
           requiredSubjects: res.requiredSubjects || [],
           schoolYear: res.schoolYear || schoolYear,
@@ -243,6 +247,7 @@ export default function GradeConfigPage() {
           weights: res.data.weights || { ...DEFAULT_WEIGHTS },
           columnCounts: res.data.columnCounts || defaultColumnCounts,
           rounding: res.data.rounding || 'half-up',
+          completionPolicy: res.data.completionPolicy || 'at-least-one',
           classification: res.data.classification || { ...DEFAULT_CLASSIFICATION },
           requiredSubjects: res.data.requiredSubjects || [],
           schoolYear: res.data.schoolYear || schoolYear,
@@ -254,6 +259,7 @@ export default function GradeConfigPage() {
           weights: { ...DEFAULT_WEIGHTS },
           columnCounts: defaultColumnCounts,
           rounding: 'half-up',
+          completionPolicy: 'at-least-one',
           classification: { ...DEFAULT_CLASSIFICATION },
           requiredSubjects: [],
           schoolYear,
@@ -273,6 +279,7 @@ export default function GradeConfigPage() {
       setConfig({
         weights: { ...DEFAULT_WEIGHTS },
         rounding: 'half-up',
+        completionPolicy: 'at-least-one',
         classification: { ...DEFAULT_CLASSIFICATION },
         requiredSubjects: [],
         schoolYear,
@@ -360,22 +367,39 @@ export default function GradeConfigPage() {
 
     try {
       setLoading(true);
-      // ✅ Lưu cấu hình cho cả 2 học kỳ được chọn
-      const savePromises = selectedSemesters.map(semester => 
-        gradeConfigApi.updateConfig({
-          ...config,
-          schoolYear,
-          semester,
-        })
-      );
-      
-      await Promise.all(savePromises);
-      
-      toast({
-        title: 'Thành công',
-        description: `Đã lưu cấu hình điểm số cho ${selectedSemesters.length} học kỳ (${selectedSemesters.map(s => `HK${s}`).join(', ')}) thành công.`,
-      });
-      fetchConfig();
+      // ✅ Lưu cấu hình theo từng học kỳ, đảm bảo duy nhất và có thứ tự ổn định
+      const semestersToSave = Array.from(new Set(selectedSemesters)).sort();
+      const results: { semester: string; success: boolean; error?: any }[] = [];
+      for (const semester of semestersToSave) {
+        try {
+          await gradeConfigApi.updateConfig({
+            ...config,
+            schoolYear,
+            semester,
+          });
+          results.push({ semester, success: true });
+        } catch (e) {
+          results.push({ semester, success: false, error: e });
+        }
+      }
+
+      const failed = results.filter(r => !r.success);
+      if (failed.length === 0) {
+        toast({
+          title: 'Thành công',
+          description: `Đã lưu cấu hình cho ${semestersToSave.map(s => `HK${s}`).join(', ')}.`,
+        });
+      } else if (failed.length < semestersToSave.length) {
+        toast({
+          title: 'Một phần thành công',
+          description: `Lưu thành công: ${results.filter(r => r.success).map(r => `HK${r.semester}`).join(', ')}. Lỗi: ${failed.map(r => `HK${r.semester}`).join(', ')}.`,
+          variant: 'destructive',
+        });
+      } else {
+        throw failed[0].error;
+      }
+
+      await fetchConfig();
     } catch (err: any) {
       console.error('Error saving config:', err);
       toast({
@@ -617,11 +641,13 @@ export default function GradeConfigPage() {
                     id="semester1"
                     checked={selectedSemesters.includes('1')}
                     onCheckedChange={(checked) => {
+                      const next = new Set(selectedSemesters);
                       if (checked) {
-                        setSelectedSemesters([...selectedSemesters.filter(s => s !== '1'), '1']);
+                        next.add('1');
                       } else {
-                        setSelectedSemesters(selectedSemesters.filter(s => s !== '1'));
+                        next.delete('1');
                       }
+                      setSelectedSemesters(Array.from(next).sort());
                     }}
                     disabled={loading || loadingConfig}
                   />
@@ -632,11 +658,13 @@ export default function GradeConfigPage() {
                     id="semester2"
                     checked={selectedSemesters.includes('2')}
                     onCheckedChange={(checked) => {
+                      const next = new Set(selectedSemesters);
                       if (checked) {
-                        setSelectedSemesters([...selectedSemesters.filter(s => s !== '2'), '2']);
+                        next.add('2');
                       } else {
-                        setSelectedSemesters(selectedSemesters.filter(s => s !== '2'));
+                        next.delete('2');
                       }
+                      setSelectedSemesters(Array.from(next).sort());
                     }}
                     disabled={loading || loadingConfig}
                   />
@@ -845,6 +873,50 @@ export default function GradeConfigPage() {
                     );
                   })}
                 </div>
+              </div>
+
+              {/* ✅ Chính sách hoàn tất điểm trung bình môn */}
+              <div className="pt-4 border-t">
+                <Label className="text-base font-semibold mb-4 block">Chính sách chốt điểm trung bình môn</Label>
+                <RadioGroup
+                  value={config.completionPolicy || 'at-least-one'}
+                  onValueChange={(v) => setConfig({ ...config, completionPolicy: v as 'at-least-one' | 'require-counts' })}
+                  disabled={loading}
+                  className="space-y-3"
+                >
+                  <div
+                    onClick={() => !loading && setConfig({ ...config, completionPolicy: 'at-least-one' })}
+                    className={`flex items-start space-x-3 space-y-0 rounded-lg border p-4 transition-all cursor-pointer ${
+                      (config.completionPolicy || 'at-least-one') === 'at-least-one'
+                        ? 'border-primary bg-primary/5 shadow-sm'
+                        : 'hover:bg-accent hover:border-accent-foreground/20'
+                    } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <RadioGroupItem value="at-least-one" id="policy-atleastone" className="mt-0.5" />
+                    <div className="flex-1 space-y-1">
+                      <Label htmlFor="policy-atleastone" className="font-medium cursor-pointer">Chỉ cần mỗi thành phần có ≥ 1 cột</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Điểm TB môn được chốt khi các thành phần đang bật (có trọng số &gt; 0) đều có ít nhất 1 cột điểm.
+                      </p>
+                    </div>
+                  </div>
+                  <div
+                    onClick={() => !loading && setConfig({ ...config, completionPolicy: 'require-counts' })}
+                    className={`flex items-start space-x-3 space-y-0 rounded-lg border p-4 transition-all cursor-pointer ${
+                      (config.completionPolicy || 'at-least-one') === 'require-counts'
+                        ? 'border-primary bg-primary/5 shadow-sm'
+                        : 'hover:bg-accent hover:border-accent-foreground/20'
+                    } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <RadioGroupItem value="require-counts" id="policy-requirecounts" className="mt-0.5" />
+                    <div className="flex-1 space-y-1">
+                      <Label htmlFor="policy-requirecounts" className="font-medium cursor-pointer">Phải đủ số cột theo cấu hình</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Điểm TB môn chỉ được chốt khi số cột thực tế ≥ số cột đã cấu hình cho từng thành phần (ví dụ: Miệng = 3, 15 phút = 3).
+                      </p>
+                    </div>
+                  </div>
+                </RadioGroup>
               </div>
 
               <div className="pt-4 border-t">

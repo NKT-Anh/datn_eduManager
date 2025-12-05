@@ -23,7 +23,8 @@ import { toast } from 'sonner';
 import { Search, Download, Edit, Trash2, RefreshCw, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import gradesApi from '@/services/gradesApi';
 import schoolConfigApi from '@/services/schoolConfigApi';
-import api from '@/services/axiosInstance';
+import { useClasses } from '@/hooks/classes/useClasses';
+import { useSubjects } from '@/hooks/subjects/useSubjects';
 import { useSchoolYears } from '@/hooks';
 import { useAuth } from '@/contexts/AuthContext';
 import dayjs from 'dayjs';
@@ -53,8 +54,8 @@ const AdminGradesPage: React.FC = () => {
 
   // Options
   const [semesters, setSemesters] = useState<any[]>([]);
-  const [classes, setClasses] = useState<any[]>([]);
-  const [subjects, setSubjects] = useState<any[]>([]);
+  const { classes } = useClasses();
+  const { subjects } = useSubjects();
   const [grades, setGrades] = useState<any[]>([]);
 
   // ✅ Set default filters
@@ -65,19 +66,20 @@ const AdminGradesPage: React.FC = () => {
     }
   }, [allSchoolYears, currentYearData, currentYear]);
 
-  // ✅ Load semesters, classes, subjects, grades
+  // ✅ Reset dependent filters when schoolYear changes
+  useEffect(() => {
+    setFilters(prev => ({ ...prev, grade: '', classId: '', subjectId: '' }));
+  }, [filters.schoolYear]);
+
+  // ✅ Load semesters, grades (classes & subjects via hooks)
   useEffect(() => {
     const fetchBaseData = async () => {
       try {
-        const [semRes, classRes, subjectRes, gradeRes] = await Promise.all([
+        const [semRes, gradeRes] = await Promise.all([
           schoolConfigApi.getSemesters(),
-          api.get('/class'),
-          api.get('/subjects'),
           schoolConfigApi.getGrades(),
         ]);
         setSemesters(semRes.data || []);
-        setClasses(classRes.data || []);
-        setSubjects(subjectRes.data || []);
         setGrades(gradeRes.data || gradeRes || []);
       } catch (err) {
         console.error('Load base data failed:', err);
@@ -87,14 +89,19 @@ const AdminGradesPage: React.FC = () => {
   }, []);
 
   // ✅ Load students grades
-  const fetchStudentsGrades = async () => {
-    if (!filters.schoolYear || !filters.semester) {
-      toast.error('Vui lòng chọn năm học và học kỳ');
+  const fetchStudentsGrades = async (opts?: { overview?: boolean }) => {
+    if (!filters.schoolYear) {
+      toast.error('Vui lòng chọn năm học');
       return;
     }
     setLoading(true);
     try {
-      const res = await gradesApi.getAllStudentsGradesWithTrend(filters);
+      const payload = {
+        ...filters,
+        // Overview: xem cả năm, bỏ lọc học kỳ
+        semester: opts?.overview ? undefined : filters.semester,
+      };
+      const res = await gradesApi.getAllStudentsGradesWithTrend(payload);
       setStudentsGrades(res.data || []);
     } catch (err: any) {
       console.error('Load grades failed:', err);
@@ -149,7 +156,10 @@ const AdminGradesPage: React.FC = () => {
 
   // ✅ Load data when tab changes
   useEffect(() => {
-    if (activeTab === 'overview' || activeTab === 'details') {
+    if (activeTab === 'overview') {
+      // Overview không phụ thuộc học kỳ, xem dữ liệu cả năm
+      fetchStudentsGrades({ overview: true });
+    } else if (activeTab === 'details') {
       fetchStudentsGrades();
     } else if (activeTab === 'statistics') {
       fetchStatistics();
@@ -264,6 +274,10 @@ const AdminGradesPage: React.FC = () => {
               <SelectContent>
                 <SelectItem value="all">Tất cả lớp</SelectItem>
                 {classes
+                  .filter(c => {
+                    const classYearCode = c.year;
+                    return (!filters.schoolYear || String(classYearCode) === String(filters.schoolYear));
+                  })
                   .filter(c => !filters.grade || String(c.grade) === String(filters.grade))
                   .map((c) => (
                     <SelectItem key={c._id} value={c._id}>
@@ -315,7 +329,7 @@ const AdminGradesPage: React.FC = () => {
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <h3 className="text-lg font-semibold">Tổng quan điểm học sinh</h3>
-                  <Button onClick={fetchStudentsGrades} disabled={loading}>
+                  <Button onClick={() => fetchStudentsGrades()} disabled={loading}>
                     <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                     Làm mới
                   </Button>
@@ -333,8 +347,9 @@ const AdminGradesPage: React.FC = () => {
                           <TableHead>Họ tên</TableHead>
                           <TableHead>Mã HS</TableHead>
                           <TableHead>Lớp</TableHead>
-                          <TableHead>ĐTB HK</TableHead>
-                          <TableHead>ĐTB CN</TableHead>
+                          <TableHead>ĐTB HK1</TableHead>
+                          <TableHead>ĐTB HK2</TableHead>
+                          <TableHead>ĐTB Cả năm</TableHead>
                           <TableHead>Học lực</TableHead>
                           <TableHead>Hạnh kiểm</TableHead>
                           <TableHead>Xếp hạng (Lớp/Khối)</TableHead>
@@ -353,12 +368,33 @@ const AdminGradesPage: React.FC = () => {
                               <TableCell className="font-medium">{student.name || '-'}</TableCell>
                               <TableCell>{student.studentCode || '-'}</TableCell>
                               <TableCell>{student.class?.className || '-'}</TableCell>
-                              <TableCell className={getAverageColor(student.gpa)}>
-                                {student.gpa?.toFixed(1) || '-'}
-                              </TableCell>
-                              <TableCell className={getAverageColor(student.semesterAverage)}>
-                                {student.semesterAverage?.toFixed(1) || '-'}
-                              </TableCell>
+                              {/* HK1 */}
+                              {(() => {
+                                const val = student.hk1Average ?? student.semester1Average ?? null;
+                                return (
+                                  <TableCell className={getAverageColor(val)}>
+                                    {typeof val === 'number' ? val.toFixed(1) : '-'}
+                                  </TableCell>
+                                );
+                              })()}
+                              {/* HK2 */}
+                              {(() => {
+                                const val = student.hk2Average ?? student.semester2Average ?? null;
+                                return (
+                                  <TableCell className={getAverageColor(val)}>
+                                    {typeof val === 'number' ? val.toFixed(1) : '-'}
+                                  </TableCell>
+                                );
+                              })()}
+                              {/* Cả năm */}
+                              {(() => {
+                                const val = student.yearAverage ?? student.gpa ?? null;
+                                return (
+                                  <TableCell className={getAverageColor(val)}>
+                                    {typeof val === 'number' ? val.toFixed(1) : '-'}
+                                  </TableCell>
+                                );
+                              })()}
                               <TableCell>{getAcademicLevelBadge(student.academicLevel)}</TableCell>
                               <TableCell>
                                 <Badge variant="outline">{student.conduct || '-'}</Badge>
@@ -382,7 +418,7 @@ const AdminGradesPage: React.FC = () => {
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <h3 className="text-lg font-semibold">Chi tiết điểm từng môn</h3>
-                  <Button onClick={fetchStudentsGrades} disabled={loading}>
+                  <Button onClick={() => fetchStudentsGrades()} disabled={loading}>
                     <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                     Làm mới
                   </Button>
@@ -691,7 +727,15 @@ const AdminGradesPage: React.FC = () => {
                                log.component === 'final' ? 'Cuối kỳ' : log.component}
                             </TableCell>
                             <TableCell className="font-semibold">{log.score}</TableCell>
-                            <TableCell>{log.teacher?.name || '-'}</TableCell>
+                            <TableCell>
+                              {(() => {
+                                const actor = log.performedBy || log.user || log.teacher || null;
+                                const name = actor?.name || actor?.fullName || actor?.email || '-';
+                                const role = actor?.role ? ` (${actor.role})` : '';
+                                const code = actor?.teacherCode ? ` - ${actor.teacherCode}` : '';
+                                return `${name}${role}${code}`;
+                              })()}
+                            </TableCell>
                             <TableCell>
                               <Button
                                 size="sm"

@@ -166,7 +166,6 @@ module.exports = (requiredPermissions, options = {}) => {
               PERMISSIONS.CLASS_VIEW_HOMEROOM,
               PERMISSIONS.CLASS_UPDATE,
               PERMISSIONS.STUDENT_VIEW_HOMEROOM,
-              PERMISSIONS.STUDENT_UPDATE,
               PERMISSIONS.SCHEDULE_VIEW_HOMEROOM,
               PERMISSIONS.GRADE_VIEW_HOMEROOM,
               PERMISSIONS.CONDUCT_ENTER,

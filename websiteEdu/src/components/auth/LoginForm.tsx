@@ -7,10 +7,11 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAuth } from '@/contexts/AuthContext';
 import { User, Lock, Eye, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import logoSchool from '@/assets/logo_school.png';
 import { Chrome } from 'lucide-react';
 import OTPLoginForm from './OTPLoginForm';
 import axios from 'axios';
+import logoSchool from '@/assets/logo_school.png';
+import { usePublicSchoolInfo } from '@/hooks/usePublicSchoolInfo';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
@@ -24,6 +25,7 @@ const LoginForm = () => {
   const [sendingOTP, setSendingOTP] = useState(false);
   const { login, loginWithGoogle, backendUser } = useAuth();
   const navigate = useNavigate();
+  const { info: schoolInfo } = usePublicSchoolInfo();
 
   // Điều hướng khi backendUser được cập nhật
   useEffect(() => {
@@ -136,15 +138,15 @@ const LoginForm = () => {
         {/* Header */}
         <div className="text-center space-y-4">
           <div className="flex justify-center">
-            <img 
-              src={logoSchool} 
-              alt="Logo trường học" 
+            <img
+              src={schoolInfo.logoUrl || logoSchool}
+              alt="Logo trường học"
               className="w-16 h-16 object-contain rounded-lg"
             />
           </div>
           <div className="space-y-1">
             <h1 className="text-2xl font-bold text-gray-900">
-              Hệ thống quản lý trường học
+              {schoolInfo.name || 'Hệ thống quản lý trường học'}
             </h1>
             <p className="text-sm text-gray-500">Đăng nhập để tiếp tục</p>
           </div>

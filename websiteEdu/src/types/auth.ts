@@ -21,7 +21,7 @@ export interface Student {
   gender?: "male" | "female" | "other";
   address?: string;
   phone?: string;
-    classId?: {
+  classId?: {
     _id: string;
     className: string;
     grade: string;
@@ -31,7 +31,7 @@ export interface Student {
   status?: "active" | "inactive" | "graduated" | "suspended" | "transferred";
   parents?: ParentInfo[];
   accountId?: Account | null; // populated từ backend
-    // 🆕 Thông tin cá nhân mở rộng
+  // 🆕 Thông tin cá nhân mở rộng
   ethnic?: string; // Dân tộc
   religion?: string; // Tôn giáo
   idNumber?: string; // CCCD / CMND
@@ -39,9 +39,8 @@ export interface Student {
   hometown?: string; // Quê quán
   avatarUrl?: string; // Ảnh đại diện
   note?: string; // Ghi chú thêm
-    currentYear?: string; // ví dụ: "2025-2026"
-
-  
+  currentYear?: string; // ví dụ: "2025-2026"
+  isDeleted?: boolean; // 👈 bổ sung để khớp dữ liệu backend
   createdAt?: string;
   updatedAt?: string;
 }

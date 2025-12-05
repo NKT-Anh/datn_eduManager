@@ -6,6 +6,7 @@ import React from 'react';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {useAuth} from '../context/AuthContext';
+import {colors} from '../theme';
 import HomeScreen from '../screens/HomeScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import SettingsScreen from '../screens/SettingsScreen';
@@ -14,11 +15,14 @@ import StudentDashboardScreen from '../screens/student/StudentDashboardScreen';
 import StudentScheduleScreen from '../screens/student/StudentScheduleScreen';
 import StudentGradesScreen from '../screens/student/StudentGradesScreen';
 import StudentExamsScreen from '../screens/student/StudentExamsScreen';
+import StudentExamGradesScreen from '../screens/student/StudentExamGradesScreen';
 // Teacher screens
 import TeacherDashboardScreen from '../screens/teacher/TeacherDashboardScreen';
 import TeacherScheduleScreen from '../screens/teacher/TeacherScheduleScreen';
 import TeacherExamScheduleScreen from '../screens/teacher/TeacherExamScheduleScreen';
 import TeacherExamRoomsScreen from '../screens/teacher/TeacherExamRoomsScreen';
+import StudentNotificationsScreen from '../screens/student/StudentNotificationsScreen';
+import StudentNotificationDetailScreen from '../screens/student/StudentNotificationDetailScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -28,9 +32,16 @@ const MainNavigator: React.FC = () => {
   const isStudent = user?.role === 'student';
   const isTeacher = user?.role === 'teacher';
 
+  const commonScreenOptions = {
+    headerStyle: { backgroundColor: colors.surface },
+    headerShadowVisible: false as const,
+    headerTitleStyle: { color: colors.textPrimary, fontWeight: '700' as const },
+    headerTintColor: colors.textPrimary,
+  };
+
   if (isStudent) {
     return (
-      <Stack.Navigator>
+      <Stack.Navigator screenOptions={commonScreenOptions}>
         <Stack.Screen
           name="StudentDashboard"
           component={StudentDashboardScreen}
@@ -52,6 +63,11 @@ const MainNavigator: React.FC = () => {
           options={{title: 'Lịch thi'}}
         />
         <Stack.Screen
+          name="StudentExamGrades"
+          component={StudentExamGradesScreen}
+          options={{title: 'Điểm thi'}}
+        />
+        <Stack.Screen
           name="Profile"
           component={ProfileScreen}
           options={{title: 'Hồ sơ'}}
@@ -61,13 +77,23 @@ const MainNavigator: React.FC = () => {
           component={SettingsScreen}
           options={{title: 'Cài đặt'}}
         />
+        <Stack.Screen
+          name="StudentNotifications"
+          component={StudentNotificationsScreen}
+          options={{title: 'Thông báo'}}
+        />
+        <Stack.Screen
+          name="StudentNotificationDetail"
+          component={StudentNotificationDetailScreen}
+          options={{title: 'Chi tiết thông báo'}}
+        />
       </Stack.Navigator>
     );
   }
 
   if (isTeacher) {
     return (
-      <Stack.Navigator>
+      <Stack.Navigator screenOptions={commonScreenOptions}>
         <Stack.Screen
           name="TeacherDashboard"
           component={TeacherDashboardScreen}

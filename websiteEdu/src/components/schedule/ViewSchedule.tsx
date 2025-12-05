@@ -115,8 +115,8 @@ export const ViewSchedule = ({
                 Tiết 1 - {morningPeriods}
               </Badge>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
+            <div className="overflow-x-auto -mx-2 px-2 md:mx-0 md:px-0 scroll-smooth snap-x">
+              <table className="w-full border-collapse min-w-[920px]">
                 <thead>
                   <tr>
                     <th className="border p-2 text-center bg-muted font-semibold">Tiết</th>
@@ -178,8 +178,8 @@ export const ViewSchedule = ({
                 Tiết {morningPeriods + 1} - {totalPeriods}
               </Badge>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
+            <div className="overflow-x-auto -mx-2 px-2 md:mx-0 md:px-0 scroll-smooth snap-x">
+              <table className="w-full border-collapse min-w-[920px]">
                 <thead>
                   <tr>
                     <th className="border p-2 text-center bg-muted font-semibold">Tiết</th>

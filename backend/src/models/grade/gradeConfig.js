@@ -21,6 +21,14 @@ const GradeConfigSchema = new mongoose.Schema(
       final: { type: Number, default: 1, min: 1, max: 10 },
     },
     rounding: { type: String, enum: ['half-up', 'none'], default: 'half-up' },
+    // ✅ Chính sách hoàn tất điểm TB môn
+    // - 'at-least-one': Chỉ cần mỗi thành phần có >= 1 điểm
+    // - 'require-counts': Phải đủ số cột theo columnCounts (vd. 3 miệng, 3 x 15p)
+    completionPolicy: {
+      type: String,
+      enum: ['at-least-one', 'require-counts'],
+      default: 'at-least-one',
+    },
     // ✅ Cấu hình xếp loại học tập
     classification: {
       excellent: {
@@ -48,6 +56,8 @@ const GradeConfigSchema = new mongoose.Schema(
       requireAll: { type: Boolean, default: false }, // true: tất cả môn trong nhóm phải đạt, false: chỉ cần 1 trong nhóm
       classificationType: { type: String, enum: ['excellent', 'good', 'average', 'weak'], default: 'excellent' }, // Loại xếp loại áp dụng điều kiện này
     }],
+    // ✅ Ngưỡng mặc định dùng khi thêm môn mới vào nhóm yêu cầu tối thiểu
+    defaultMinRequiredScore: { type: Number, default: 8.0, min: 0, max: 10 },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true }

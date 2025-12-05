@@ -55,6 +55,9 @@ const StudentDetail = () => {
   const [yearDetail, setYearDetail] = useState<any>(null);
   const [loadingYearDetail, setLoadingYearDetail] = useState(false);
   const [availableYears, setAvailableYears] = useState<string[]>([]); // Danh sách năm học GVCN có thể xem
+  // Cấu hình bảng điểm theo học kỳ
+  const [gradeConfigHK1, setGradeConfigHK1] = useState<any>(null);
+  const [gradeConfigHK2, setGradeConfigHK2] = useState<any>(null);
 
   // 🧩 Lấy niên khóa hiện tại và danh sách năm học GVCN có thể xem
   useEffect(() => {
@@ -74,16 +77,16 @@ const StudentDetail = () => {
               const years = res.data.data
                 .map((item: any) => item.schoolYear || item.year)
                 .filter(Boolean);
-              const uniqueYears = Array.from(new Set(years)).sort().reverse();
+              const uniqueYears = (Array.from(new Set(years)) as string[]).sort().reverse();
               console.log('📅 Danh sách năm học GVCN:', uniqueYears);
-              setAvailableYears(uniqueYears);
+              setAvailableYears(uniqueYears as string[]);
 
               // Nếu năm hiện tại có trong danh sách, chọn nó
-              if (uniqueYears.includes(currentYearValue)) {
-                setSelectedYear(currentYearValue);
+              if (uniqueYears.includes(currentYearValue as string)) {
+                setSelectedYear(currentYearValue as string);
               } else if (uniqueYears.length > 0) {
                 // Nếu không, chọn năm đầu tiên trong danh sách
-                setSelectedYear(uniqueYears[0]);
+                setSelectedYear(uniqueYears[0] as string);
               }
             } else {
               console.warn('⚠️ Không có dữ liệu lớp chủ nhiệm:', res.data);
@@ -164,6 +167,42 @@ const StudentDetail = () => {
     };
     fetchYearDetail();
   }, [id, selectedYear]);
+
+  // ✅ Lấy cấu hình điểm theo năm học cho HK1 và HK2 để render đúng theo setting bảng điểm
+  useEffect(() => {
+    const loadConfigs = async () => {
+      if (!selectedYear) {
+        setGradeConfigHK1(null);
+        setGradeConfigHK2(null);
+        return;
+      }
+      try {
+        const [cfg1Res, cfg2Res] = await Promise.all([
+          gradeConfigApi.getConfig({ schoolYear: selectedYear, semester: '1' }),
+          gradeConfigApi.getConfig({ schoolYear: selectedYear, semester: '2' }),
+        ]);
+        const def = { weights: { oral: 1, quiz15: 1, quiz45: 2, midterm: 2, final: 3 }, rounding: 'half-up' };
+        const norm = (res: any) => (res?.data ? res.data : res) || {};
+        const c1 = norm(cfg1Res); const c2 = norm(cfg2Res);
+        setGradeConfigHK1({
+          weights: c1.weights || def.weights,
+          columnCounts: c1.columnCounts || {},
+          rounding: c1.rounding || def.rounding,
+        });
+        setGradeConfigHK2({
+          weights: c2.weights || def.weights,
+          columnCounts: c2.columnCounts || {},
+          rounding: c2.rounding || def.rounding,
+        });
+      } catch (e) {
+        // Fallback cấu hình mặc định
+        const def = { weights: { oral: 1, quiz15: 1, quiz45: 2, midterm: 2, final: 3 }, rounding: 'half-up' };
+        setGradeConfigHK1(def);
+        setGradeConfigHK2(def);
+      }
+    };
+    loadConfigs();
+  }, [selectedYear]);
 
   // ✅ Lấy cấu hình xếp loại từ backend
   useEffect(() => {
@@ -466,18 +505,45 @@ const StudentDetail = () => {
                           data: hk === "hk1" ? g.hk1 : g.hk2
                         }));
 
+                        const gradeCfg = hk === 'hk1' ? gradeConfigHK1 : gradeConfigHK2;
+                        const componentLabels: Record<string, string> = {
+                          oral: 'Miệng',
+                          quiz15: '15 phút',
+                          quiz45: '45 phút',
+                          midterm: 'Giữa kỳ',
+                          final: 'Cuối kỳ',
+                        };
+                        const w = gradeCfg?.weights || {};
+                        const showOral = Number(w.oral ?? 0) > 0;
+                        const showQuiz15 = Number(w.quiz15 ?? 0) > 0;
+                        const showC2 = Number(w.quiz45 ?? 0) > 0;
+                        const showMid = Number(w.midterm ?? 0) > 0;
+                        const showFinal = Number(w.final ?? 0) > 0;
+
                         return (
                           <TabsContent key={hk} value={hk} className="mt-4">
+                            {/* Hiển thị giống bảng điểm học sinh: chỉ hiện các cột đang bật, không có cột "Trọng số" */}
                             <div className="overflow-x-auto">
                               <Table>
                                 <TableHeader>
                                   <TableRow>
                                     <TableHead className="w-[50px]">STT</TableHead>
                                     <TableHead>Môn học</TableHead>
-                                    <TableHead className="text-center">Hệ số 1<br/>(Miệng, 15 phút)</TableHead>
-                                    <TableHead className="text-center">Hệ số 2<br/>(45 phút)</TableHead>
-                                    <TableHead className="text-center">Giữa kỳ</TableHead>
-                                    <TableHead className="text-center">Cuối kỳ</TableHead>
+                                    {showOral && (
+                                      <TableHead className="text-center">Miệng</TableHead>
+                                    )}
+                                    {showQuiz15 && (
+                                      <TableHead className="text-center">15 phút</TableHead>
+                                    )}
+                                    {showC2 && (
+                                      <TableHead className="text-center">Hệ số 2<br/>(45 phút)</TableHead>
+                                    )}
+                                    {showMid && (
+                                      <TableHead className="text-center">Giữa kỳ</TableHead>
+                                    )}
+                                    {showFinal && (
+                                      <TableHead className="text-center">Cuối kỳ</TableHead>
+                                    )}
                                     <TableHead className="text-center">ĐTB môn</TableHead>
                                   </TableRow>
                                 </TableHeader>
@@ -492,28 +558,39 @@ const StudentDetail = () => {
                                       <TableRow key={item.subject._id}>
                                         <TableCell>{idx + 1}</TableCell>
                                         <TableCell className="font-medium">{item.subject.name}</TableCell>
-                                        <TableCell className="text-center">
-                                          <div className="space-y-1">
-                                            {item.data.coefficient1.oral.length > 0 && (
-                                              <div className="text-xs">Miệng: {formatScores(item.data.coefficient1.oral)}</div>
-                                            )}
-                                            {item.data.coefficient1.quiz15.length > 0 && (
-                                              <div className="text-xs">15': {formatScores(item.data.coefficient1.quiz15)}</div>
-                                            )}
-                                            {item.data.coefficient1.oral.length === 0 && item.data.coefficient1.quiz15.length === 0 && "-"}
-                                          </div>
-                                        </TableCell>
-                                        <TableCell className="text-center">
-                                          {formatScores(item.data.coefficient2.quiz45)}
-                                        </TableCell>
-                                        <TableCell className="text-center">
-                                          {formatScores(item.data.midterm)}
-                                        </TableCell>
-                                        <TableCell className="text-center">
-                                          {formatScores(item.data.final)}
-                                        </TableCell>
+                                        {showOral && (
+                                          <TableCell className="text-center">
+                                            {item.data.coefficient1.oral.length > 0 
+                                              ? <span className="text-xs">{formatScores(item.data.coefficient1.oral)}</span>
+                                              : "-"}
+                                          </TableCell>
+                                        )}
+                                        {showQuiz15 && (
+                                          <TableCell className="text-center">
+                                            {item.data.coefficient1.quiz15.length > 0 
+                                              ? <span className="text-xs">{formatScores(item.data.coefficient1.quiz15)}</span>
+                                              : "-"}
+                                          </TableCell>
+                                        )}
+                                        {showC2 && (
+                                          <TableCell className="text-center">
+                                            {formatScores(item.data.coefficient2.quiz45)}
+                                          </TableCell>
+                                        )}
+                                        {showMid && (
+                                          <TableCell className="text-center">
+                                            {formatScores(item.data.midterm)}
+                                          </TableCell>
+                                        )}
+                                        {showFinal && (
+                                          <TableCell className="text-center">
+                                            {formatScores(item.data.final)}
+                                          </TableCell>
+                                        )}
                                         <TableCell className="text-center font-semibold">
-                                          {item.data.average ? item.data.average.toFixed(1) : "-"}
+                                          {item.subject?.includeInAverage !== false && item.data?.isOfficial && item.data?.average != null
+                                            ? item.data.average.toFixed(1)
+                                            : "-"}
                                         </TableCell>
                                       </TableRow>
                                     );
@@ -541,21 +618,28 @@ const StudentDetail = () => {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {yearDetail.grades.map((g: any, idx: number) => (
-                              <TableRow key={g.subject._id}>
-                                <TableCell>{idx + 1}</TableCell>
-                                <TableCell className="font-medium">{g.subject.name}</TableCell>
-                                <TableCell className="text-center">
-                                  {g.hk1.average ? g.hk1.average.toFixed(1) : "-"}
-                                </TableCell>
-                                <TableCell className="text-center">
-                                  {g.hk2.average ? g.hk2.average.toFixed(1) : "-"}
-                                </TableCell>
-                                <TableCell className="text-center font-semibold">
-                                  {g.yearAverage || "-"}
-                                </TableCell>
-                              </TableRow>
-                            ))}
+                            {yearDetail.grades.map((g: any, idx: number) => {
+                              const hk1Official = g?.hk1?.isOfficial === true;
+                              const hk2Official = g?.hk2?.isOfficial === true;
+                              const showHK1 = g.subject?.includeInAverage !== false && g?.hk1?.average != null && hk1Official;
+                              const showHK2 = g.subject?.includeInAverage !== false && g?.hk2?.average != null && hk2Official;
+                              const showYear = g.subject?.includeInAverage !== false && g?.yearAverage != null && (hk1Official && hk2Official);
+                              return (
+                                <TableRow key={g.subject._id}>
+                                  <TableCell>{idx + 1}</TableCell>
+                                  <TableCell className="font-medium">{g.subject.name}</TableCell>
+                                  <TableCell className="text-center">
+                                    {showHK1 ? g.hk1.average.toFixed(1) : "-"}
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    {showHK2 ? g.hk2.average.toFixed(1) : "-"}
+                                  </TableCell>
+                                  <TableCell className="text-center font-semibold">
+                                    {showYear ? g.yearAverage : "-"}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
                           </TableBody>
                         </Table>
                       </div>
@@ -715,53 +799,45 @@ const StudentDetail = () => {
 
               {/* Tổng kết chung */}
               {yearDetail.summary && (
-                <Card className="border-2">
+                <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Award className="h-5 w-5" /> Tổng kết chung năm {selectedYear}
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Điểm trung bình chung</p>
+                      <Badge variant="outline" className="text-lg px-3 py-1">
+                        {yearDetail.summary.overallGPA ?? '—'}
+                      </Badge>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Xếp loại chung</p>
+                      <Badge variant="default" className="text-lg px-3 py-1">
+                        {yearDetail.summary.overallRank || '—'}
+                      </Badge>
+                    </div>
+                    {yearDetail.summary.title && (
                       <div>
-                        <p className="text-sm text-muted-foreground">Điểm trung bình chung</p>
-                        <p className="text-3xl font-bold">{yearDetail.summary.overallGPA || "—"}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Xếp loại chung</p>
-                        <Badge variant="default" className="text-lg px-3 py-1">
-                          {yearDetail.summary.overallRank || "—"}
+                        <p className="text-sm text-muted-foreground">Danh hiệu</p>
+                        <Badge variant="default" className="text-lg px-3 py-1 bg-yellow-500">
+                          {yearDetail.summary.title}
                         </Badge>
                       </div>
-                      {yearDetail.summary.title && (
-                        <div>
-                          <p className="text-sm text-muted-foreground">Danh hiệu</p>
-                          <Badge variant="default" className="text-lg px-3 py-1 bg-yellow-500">
-                            {yearDetail.summary.title}
-                          </Badge>
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </CardContent>
                 </Card>
               )}
             </>
           ) : (
-            <Card>
-              <CardContent className="py-8">
-                <p className="text-center text-muted-foreground">Không có dữ liệu cho niên khóa {selectedYear}</p>
-              </CardContent>
-            </Card>
+            <></>
           )}
         </>
       )}
     </div>
   );
 };
-
-/* =========================================================
-   🔹 Component con hiển thị info
-========================================================= */
 const Info = ({
   label,
   value,

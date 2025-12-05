@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, Table, Tag, Space, Typography, Spin, message } from 'antd';
 import { CalendarOutlined, ClockCircleOutlined, BookOutlined, DownOutlined } from '@ant-design/icons';
 import { useAuth } from '@/contexts/AuthContext';
-import { studentExamApi, StudentExam, StudentExamSchedule } from '@/services/exams/studentExamApi';
+import { studentExamApi, StudentExam, StudentExamSchedule, StudentExamRoom } from '@/services/exams/studentExamApi';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
@@ -16,6 +16,7 @@ const StudentSchedule: React.FC = () => {
   const { backendUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [exams, setExams] = useState<ExamWithSchedules[]>([]);
+  const [roomInfo, setRoomInfo] = useState<Record<string, Record<string, StudentExamRoom | any>>>({});
 
   useEffect(() => {
     if (backendUser?.studentId || backendUser?._id) {
@@ -83,6 +84,18 @@ const StudentSchedule: React.FC = () => {
           ? { ...exam, schedules: sortedSchedules, schedulesLoading: false }
           : exam
       ));
+
+      // ✅ Tải thông tin phòng thi để lấy SBD & seatNumber cho từng lịch
+      const map: Record<string, StudentExamRoom | any> = {};
+      for (const s of sortedSchedules) {
+        try {
+          const r = await studentExamApi.getRoom(s._id, String(studentId));
+          map[s._id] = r as any;
+        } catch {
+          // ignore when not assigned yet
+        }
+      }
+      setRoomInfo(prev => ({ ...prev, [examId]: map }));
     } catch (err: any) {
       console.error(`Lỗi khi tải lịch thi cho kỳ thi ${examId}:`, err);
       setExams(prev => prev.map(exam => 
@@ -195,8 +208,8 @@ const StudentSchedule: React.FC = () => {
     },
   ];
 
-  // ✅ Columns cho table lịch thi
-  const scheduleColumns = [
+  // ✅ Columns cho table lịch thi (build theo examId để truy cập roomInfo tương ứng)
+  const buildScheduleColumns = (examId: string) => [
     {
       title: 'STT',
       key: 'stt',
@@ -220,7 +233,7 @@ const StudentSchedule: React.FC = () => {
       title: 'Ngày thi',
       dataIndex: 'date',
       key: 'date',
-      width: 120,
+      width: 160,
       render: (date: string) => (
         <Space>
           <CalendarOutlined />
@@ -257,17 +270,29 @@ const StudentSchedule: React.FC = () => {
     },
     {
       title: 'Phòng thi',
-      dataIndex: 'room',
       key: 'room',
       width: 120,
       align: 'center' as const,
-      render: (room: StudentExamSchedule['room']) => (
-        room?.roomCode ? (
-          <Tag color="blue">{room.roomCode}</Tag>
-        ) : (
-          <Text type="secondary">Chưa xếp phòng</Text>
-        )
-      ),
+      render: (_: any, record: StudentExamSchedule) => {
+        const r = roomInfo[examId]?.[record._id] as any;
+        const roomLabel = r?.room || r?.roomCode || record.room?.roomCode;
+        return roomLabel ? <Tag color="blue">{roomLabel}</Tag> : <Text type="secondary">Chưa xếp phòng</Text>;
+      },
+    },
+    {
+      title: 'SBD',
+      key: 'sbd',
+      width: 100,
+      align: 'center' as const,
+      render: (_: any, record: StudentExamSchedule) => {
+        const sbd = (record as any)?.sbd
+          ?? (record as any)?.examStudent?.sbd
+          ?? (record as any)?.studentExam?.sbd
+          ?? (record as any)?.student?.sbd;
+        if (sbd) return <Tag color="purple">{sbd}</Tag>;
+        const r = roomInfo[examId]?.[record._id] as any;
+        return r?.sbd ? <Tag color="purple">{r.sbd}</Tag> : <Text type="secondary">-</Text>;
+      },
     },
     {
       title: 'Số thứ tự',
@@ -275,9 +300,11 @@ const StudentSchedule: React.FC = () => {
       key: 'seatNumber',
       width: 100,
       align: 'center' as const,
-      render: (seatNumber: number) => (
-        seatNumber ? <Tag color="cyan">{seatNumber}</Tag> : <Text type="secondary">-</Text>
-      ),
+      render: (seatNumber: number, record: StudentExamSchedule) => {
+        const r = roomInfo[examId]?.[record._id] as any;
+        const value = r?.seatNumber ?? seatNumber;
+        return value ? <Tag color="cyan">{value}</Tag> : <Text type="secondary">-</Text>;
+      },
     },
     {
       title: 'Trạng thái',
@@ -335,11 +362,48 @@ const StudentSchedule: React.FC = () => {
 
                     return (
                       <div style={{ padding: '16px 0' }}>
+                        {(() => {
+                          const studentName = (backendUser as any)?.name || (backendUser as any)?.fullName || '-';
+                          const className =
+                            (record as any)?.class?.className ||
+                            (record as any)?.class?.name ||
+                            (backendUser as any)?.class?.className ||
+                            (backendUser as any)?.className ||
+                            '-';
+                          const sbdForExam = (() => {
+                            const found = examData?.schedules?.find((s: any) => s?.sbd || s?.examStudent?.sbd || s?.studentExam?.sbd || s?.student?.sbd);
+                            if (found) return found.sbd ?? found.examStudent?.sbd ?? found.studentExam?.sbd ?? found.student?.sbd;
+                            const rMap = roomInfo[record._id];
+                            if (rMap) {
+                              const first: any = Object.values(rMap).find((r: any) => r?.sbd);
+                              if (first) return first.sbd;
+                            }
+                            return undefined;
+                          })();
+                          return (
+                            <div style={{ marginBottom: 12, background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 8, padding: 12 }}>
+                              <Space size={24} wrap>
+                                <div>
+                                  <Text type="secondary">Họ tên</Text>
+                                  <div><Text strong>{studentName}</Text></div>
+                                </div>
+                                <div>
+                                  <Text type="secondary">Lớp</Text>
+                                  <div>{className !== '-' ? <Tag color="blue">{className}</Tag> : <Text type="secondary">-</Text>}</div>
+                                </div>
+                                <div>
+                                  <Text type="secondary">SBD</Text>
+                                  <div>{sbdForExam ? <Tag color="purple">{sbdForExam}</Tag> : <Text type="secondary">-</Text>}</div>
+                                </div>
+                              </Space>
+                            </div>
+                          );
+                        })()}
                         <Text strong style={{ marginBottom: 16, display: 'block' }}>
                           Danh sách lịch thi:
                         </Text>
                         <Table
-                          columns={scheduleColumns}
+                          columns={buildScheduleColumns(record._id)}
                           dataSource={examData.schedules}
                           rowKey="_id"
                           pagination={false}

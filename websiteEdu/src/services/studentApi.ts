@@ -1,6 +1,9 @@
 // src/services/studentApi.ts
 import api from "@/services/axiosInstance";
-import { Account } from "@/types/student";
+import {
+  Account,
+  StudentTransferHistoryResponse,
+} from "@/types/student";
 
 /* =========================================================
    📘 Interfaces
@@ -39,6 +42,18 @@ export interface StudentCreatePayload {
 
 export interface StudentUpdatePayload extends Partial<StudentCreatePayload> {}
 
+export interface StudentTransferPayload {
+  targetClassId: string;
+  effectiveDate?: string | null;
+  reason?: string | null;
+  keepOldYearRecords?: boolean;
+}
+
+export interface StudentTransferHistoryParams {
+  page?: number;
+  limit?: number | "all";
+}
+
 /* =========================================================
    📡 API functions (dùng axiosInstance -> tự gắn token)
 ========================================================= */
@@ -72,6 +87,26 @@ const studentApi = {
       console.error(`Error updating student ${id}:`, err.response?.data || err.message);
       throw new Error(err.response?.data?.message || "Failed to update student");
     }
+  },
+
+  async transfer(id: string, payload: StudentTransferPayload) {
+    try {
+      const res = await api.post(`/students/${id}/transfer`, payload);
+      return res.data;
+    } catch (err: any) {
+      console.error(`Error transferring student ${id}:`, err.response?.data || err.message);
+      throw new Error(err.response?.data?.message || "Failed to transfer student");
+    }
+  },
+
+  async getTransferHistory(
+    id: string,
+    params?: StudentTransferHistoryParams
+  ): Promise<StudentTransferHistoryResponse> {
+    const res = await api.get(`/students/${id}/transfer-history`, {
+      params,
+    });
+    return res.data;
   },
 
   // 🗑️ Xóa học sinh

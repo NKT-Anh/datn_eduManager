@@ -265,3 +265,22 @@ exports.deleteOldLogs = async (req, res) => {
   }
 };
 
+/**
+ * POST /audit-logs
+ * Tạo mới một audit log
+ */
+exports.createAuditLog = async (req, res) => {
+  try {
+    const logData = req.body;
+    const newLog = await AuditLog.create(logData);
+    res.json({ success: true, data: newLog });
+  } catch (error) {
+    console.error('Error creating audit log:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi khi tạo log hoạt động',
+      error: error.message,
+    });
+  }
+};
+

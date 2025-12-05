@@ -146,6 +146,20 @@ async getAll(params?: {
   },
 
   /* =========================================================
+     👀 LỊCH COI THI (GIÁM THỊ)
+  ========================================================= */
+  async getSupervisorSchedule(params?: { limit?: number; page?: number }) {
+    try {
+      const res = await api.get(`/gvbm/exams/supervisor-schedule`, { params });
+      // Normalize to array
+      return Array.isArray(res.data?.data) ? res.data.data : (Array.isArray(res.data) ? res.data : []);
+    } catch (error) {
+      console.error('Error getting supervisor schedule:', error);
+      return [];
+    }
+  },
+
+  /* =========================================================
      📊 PHÂN TÍCH ĐIỂM THI VÀ SO SÁNH VỚI NĂM TRƯỚC
   ========================================================= */
   async getGradeAnalysis(id: string, compareWithPreviousYear: boolean = true) {

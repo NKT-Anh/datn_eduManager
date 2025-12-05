@@ -177,7 +177,7 @@ export default function InitGradeTablePage() {
                 <SelectContent>
                   {schoolYears.map((year) => (
                     <SelectItem key={year._id} value={year.code || year._id}>
-                      {year.name || year.code || year.year}
+                      {year.name || year.code}
                     </SelectItem>
                   ))}
                 </SelectContent>

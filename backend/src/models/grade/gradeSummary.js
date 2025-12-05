@@ -31,6 +31,11 @@ const mongoose = require('mongoose');
         default: false,
         description: 'Đánh dấu xóa mềm - giữ hồ sơ học bạ'
       },
+
+      // ✅ Công bố điểm (GVBM nhấn Công bố) -> HS/GVCN mới thấy
+      isOfficial: { type: Boolean, default: false },
+      officialAt: { type: Date, default: null },
+      officialBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },
     },
     { timestamps: true }
   );

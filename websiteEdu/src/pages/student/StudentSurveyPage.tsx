@@ -293,10 +293,14 @@ export default function StudentSurveyPage() {
     return true;
   };
 
+  // Phân loại khảo sát theo trạng thái hoàn thành (dựa trên tất cả giáo viên cần đánh giá)
+  const completedSurveys = surveys.filter(s => s.teachersToEvaluate && s.teachersToEvaluate.length > 0 && s.teachersToEvaluate.every(t => t.hasSubmitted));
+  const pendingSurveys = surveys.filter(s => !(s.teachersToEvaluate && s.teachersToEvaluate.length > 0 && s.teachersToEvaluate.every(t => t.hasSubmitted)));
+
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-4 sm:p-6">
       <div>
-        <h1 className="text-3xl font-bold">Khảo sát đánh giá giáo viên</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold">Khảo sát đánh giá</h1>
         <p className="text-muted-foreground">
           Đánh giá giáo viên của bạn để cải thiện chất lượng giảng dạy
         </p>
@@ -314,78 +318,141 @@ export default function StudentSurveyPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {surveys.map((survey) => (
-            <Card key={survey._id}>
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <CardTitle>{survey.title}</CardTitle>
-                    {survey.description && (
-                      <CardDescription className="mt-2">{survey.description}</CardDescription>
-                    )}
-                    <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
-                      <span>Môn: {survey.subjectId.name}</span>
-                      <span>Năm học: {survey.year}</span>
-                      <span>Học kỳ: {survey.semester}</span>
-                      {survey.startDate && (
-                        <span>
-                          Bắt đầu: {format(new Date(survey.startDate), 'dd/MM/yyyy', { locale: vi })}
-                        </span>
-                      )}
-                      {survey.endDate && (
-                        <span>
-                          Kết thúc: {format(new Date(survey.endDate), 'dd/MM/yyyy', { locale: vi })}
-                        </span>
+        <div className="space-y-8">
+          {/* Khảo sát chưa hoàn thành */}
+          <div className="space-y-4">
+            <h2 className="text-xl font-semibold flex items-center gap-2">
+              <FileText className="h-5 w-5 text-blue-600" /> Chưa khảo sát
+              <Badge variant="outline" className="ml-1">{pendingSurveys.length}</Badge>
+            </h2>
+            {pendingSurveys.length === 0 ? (
+              <Card>
+                <CardContent className="py-6 text-sm text-muted-foreground">Không còn khảo sát cần thực hiện</CardContent>
+              </Card>
+            ) : (
+              pendingSurveys.map((survey) => (
+                <Card key={survey._id} className="border-blue-200">
+                  <CardHeader>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex-1">
+                        <CardTitle>{survey.title}</CardTitle>
+                        {survey.description && (
+                          <CardDescription className="mt-2">{survey.description}</CardDescription>
+                        )}
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-sm text-muted-foreground">
+                          <span>Môn: {survey.subjectId.name}</span>
+                          <span>Năm học: {survey.year}</span>
+                          <span>Học kỳ: {survey.semester}</span>
+                          {survey.startDate && (
+                            <span>
+                              Bắt đầu: {format(new Date(survey.startDate), 'dd/MM/yyyy', { locale: vi })}
+                            </span>
+                          )}
+                          {survey.endDate && (
+                            <span>
+                              Kết thúc: {format(new Date(survey.endDate), 'dd/MM/yyyy', { locale: vi })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 mb-4">
+                        <Users className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm font-medium">Giáo viên cần đánh giá:</span>
+                      </div>
+                      {survey.teachersToEvaluate.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">Không có giáo viên nào cần đánh giá</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {survey.teachersToEvaluate.map((teacher) => (
+                            <div
+                              key={teacher._id}
+                              className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+                            >
+                              <div className="flex items-start gap-3">
+                                <div>
+                                  <p className="font-medium">{teacher.name}</p>
+                                  <p className="text-sm text-muted-foreground">Mã: {teacher.teacherCode}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3 sm:justify-end">
+                                {getStatusBadge(survey, teacher)}
+                                {canEvaluate(survey, teacher) && (
+                                  <Button
+                                    size="sm"
+                                    className="w-full sm:w-auto"
+                                    onClick={() => handleEvaluate(survey, teacher)}
+                                  >
+                                    Đánh giá
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Users className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">Giáo viên cần đánh giá:</span>
-                  </div>
-                  {survey.teachersToEvaluate.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      Không có giáo viên nào cần đánh giá
-                    </p>
-                  ) : (
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+
+          {/* Khảo sát đã hoàn thành */}
+          <div className="space-y-4">
+            <h2 className="text-xl font-semibold flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-green-600" /> Đã khảo sát
+              <Badge variant="outline" className="ml-1">{completedSurveys.length}</Badge>
+            </h2>
+            {completedSurveys.length === 0 ? (
+              <Card>
+                <CardContent className="py-6 text-sm text-muted-foreground">Chưa có khảo sát nào hoàn thành toàn bộ</CardContent>
+              </Card>
+            ) : (
+              completedSurveys.map((survey) => (
+                <Card key={survey._id} className="border-green-200">
+                  <CardHeader>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex-1">
+                        <CardTitle>{survey.title}</CardTitle>
+                        {survey.description && (
+                          <CardDescription className="mt-2">{survey.description}</CardDescription>
+                        )}
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-sm text-muted-foreground">
+                          <span>Môn: {survey.subjectId.name}</span>
+                          <span>Năm học: {survey.year}</span>
+                          <span>Học kỳ: {survey.semester}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
                     <div className="space-y-2">
                       {survey.teachersToEvaluate.map((teacher) => (
                         <div
                           key={teacher._id}
-                          className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+                          className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between p-3 border rounded-lg bg-green-50 dark:bg-green-900/20"
                         >
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-start gap-3">
                             <div>
                               <p className="font-medium">{teacher.name}</p>
-                              <p className="text-sm text-muted-foreground">
-                                Mã: {teacher.teacherCode}
-                              </p>
+                              <p className="text-sm text-muted-foreground">Mã: {teacher.teacherCode}</p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            {getStatusBadge(survey, teacher)}
-                            {canEvaluate(survey, teacher) && (
-                              <Button
-                                size="sm"
-                                onClick={() => handleEvaluate(survey, teacher)}
-                              >
-                                Đánh giá
-                              </Button>
-                            )}
-                          </div>
+                          <Badge className="bg-green-500 text-white flex items-center gap-1">
+                            <CheckCircle2 className="h-3 w-3" /> Đã hoàn thành
+                          </Badge>
                         </div>
                       ))}
                     </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
         </div>
       )}
 
@@ -415,7 +482,7 @@ export default function StudentSurveyPage() {
                     onValueChange={(value) =>
                       setAnswers({ ...answers, [question._id]: parseInt(value) })
                     }
-                    className="flex gap-4"
+                    className="grid grid-cols-5 gap-3 sm:flex sm:gap-4"
                   >
                     {[1, 2, 3, 4, 5].map((score) => (
                       <div key={score} className="flex items-center space-x-2">

@@ -22,7 +22,7 @@ exports.getGradeConfig = async (req, res) => {
  */
 exports.upsertGradeConfig = async (req, res) => {
   try {
-    const { schoolYear, semester, weights, columnCounts, rounding, classification, requiredSubjects } = req.body;
+    const { schoolYear, semester, weights, columnCounts, rounding, classification, requiredSubjects, completionPolicy, defaultMinRequiredScore } = req.body;
 
     if (!schoolYear || !semester) {
       return res.status(400).json({ message: 'Thiếu schoolYear hoặc semester' });
@@ -49,6 +49,16 @@ exports.upsertGradeConfig = async (req, res) => {
       updateData.requiredSubjects = requiredSubjects;
     }
 
+    // ✅ Cập nhật ngưỡng mặc định cho môn bắt buộc nếu có
+    if (typeof defaultMinRequiredScore === 'number') {
+      updateData.defaultMinRequiredScore = defaultMinRequiredScore;
+    }
+
+    // ✅ Cập nhật completionPolicy nếu có
+    if (completionPolicy) {
+      updateData.completionPolicy = completionPolicy;
+    }
+
     const config = await GradeConfig.findOneAndUpdate(
       { schoolYear, semester },
       {
@@ -58,6 +68,37 @@ exports.upsertGradeConfig = async (req, res) => {
     );
 
     res.json(config);
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi server', error });
+  }
+};
+
+/**
+ * ✅ Reset tất cả minScore của requiredSubjects về defaultMinRequiredScore
+ */
+exports.resetRequiredSubjectsMinScore = async (req, res) => {
+  try {
+    const { schoolYear, semester } = req.body;
+    if (!schoolYear || !semester) {
+      return res.status(400).json({ message: 'Thiếu schoolYear hoặc semester' });
+    }
+
+    const cfg = await GradeConfig.findOne({ schoolYear, semester });
+    if (!cfg) {
+      return res.status(404).json({ message: 'Chưa có cấu hình cho kỳ này' });
+    }
+
+    const defMin = typeof cfg.defaultMinRequiredScore === 'number' ? cfg.defaultMinRequiredScore : 8.0;
+    const updatedRequired = (cfg.requiredSubjects || []).map(rs => ({
+      ...rs.toObject?.() || rs,
+      minScore: defMin,
+    }));
+
+    cfg.requiredSubjects = updatedRequired;
+    cfg.updatedBy = req.user?._id;
+    await cfg.save();
+
+    res.json({ success: true, message: 'Đã reset minScore về ngưỡng mặc định', defaultMinRequiredScore: defMin, requiredSubjects: cfg.requiredSubjects });
   } catch (error) {
     res.status(500).json({ message: 'Lỗi server', error });
   }

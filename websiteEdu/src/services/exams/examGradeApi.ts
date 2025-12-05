@@ -3,10 +3,12 @@ import api from "@/services/axiosInstance";
 export interface ExamGrade {
   _id?: string;
   exam: string;
+  examStudent?: string;
   student: string;
   subject: string;
   gradeValue: number;
   isLocked?: boolean;
+  teacher?: any;
 }
 
 export const examGradeApi = {

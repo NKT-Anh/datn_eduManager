@@ -12,15 +12,21 @@ import {
   Typography,
   Row,
   Col,
+  Popover,
+  Checkbox,
+  Modal,
 } from "antd";
 import {
   SearchOutlined,
   ReloadOutlined,
   FileExcelOutlined,
+  AppstoreOutlined,
+  EditOutlined,
 } from "@ant-design/icons";
 import { examApi } from "@/services/exams/examApi";
 import { examGradeApi } from "@/services/exams/examGradeApi";
-import { useSchoolYears } from "@/hooks";
+import { examStudentApi } from "@/services/exams/examStudentApi";
+import { useSchoolYears, useClasses, useSubjects } from "@/hooks";
 import { ArrowUpOutlined, ArrowDownOutlined } from "@ant-design/icons";
 
 const { Option } = Select;
@@ -28,14 +34,26 @@ const { Text, Title } = Typography;
 
 export default function ExamGradesSearchPage() {
   const { schoolYears, currentYear } = useSchoolYears();
+  const { classes: allClasses } = useClasses();
   const [exams, setExams] = useState<any[]>([]);
   const [selectedExam, setSelectedExam] = useState<string>("");
   const [grades, setGrades] = useState<any[]>([]);
+  const [examStudents, setExamStudents] = useState<any[]>([]);
+    // Lấy danh sách môn học toàn trường (giống ExamGradePage)
+    const { subjects } = useSubjects();
   const [loading, setLoading] = useState(false);
   const [gradesLoading, setGradesLoading] = useState(false);
   const [examInfo, setExamInfo] = useState<any>(null);
   const [hk1Exam, setHk1Exam] = useState<any>(null);
   const [hk1Grades, setHk1Grades] = useState<any[]>([]);
+  const [selectedSubjects, setSelectedSubjects] = useState<Set<string>>(new Set());
+  const [filters, setFilters] = useState({
+    class: "Tất cả",
+    keyword: "",
+  });
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [viewRecord, setViewRecord] = useState<any | null>(null);
+  const [userAdjustedSubjects, setUserAdjustedSubjects] = useState(false);
 
   // 🔍 Fetch danh sách kỳ thi
   const fetchExams = async () => {
@@ -85,19 +103,53 @@ export default function ExamGradesSearchPage() {
 
       setExamInfo(exam);
 
+      // Lấy toàn bộ học sinh dự thi
+      const studentsRes = await examStudentApi.getByExam(selectedExam, { limit: 0 });
+      const examStudentsData = Array.isArray(studentsRes) ? studentsRes : (studentsRes?.data || []);
+      setExamStudents(examStudentsData);
+
       // Lấy điểm của kỳ thi hiện tại
-      const gradesRes = await examGradeApi.getByExam(selectedExam);
-      // ✅ examGradeApi.getByExam() có thể trả về { data: [...] } hoặc array trực tiếp
+      const gradesRes = await examGradeApi.getByExam(selectedExam, { limit: 0 });
       let gradesData: any[] = [];
       if (Array.isArray(gradesRes)) {
         gradesData = gradesRes;
       } else if (gradesRes?.data && Array.isArray(gradesRes.data)) {
         gradesData = gradesRes.data;
       } else if (gradesRes?.data && !Array.isArray(gradesRes.data)) {
-        // Nếu data là object, có thể là paginated response
         gradesData = gradesRes.data?.data || [];
       }
-      setGrades(gradesData);
+
+      // Merge: đảm bảo tất cả học sinh dự thi đều xuất hiện
+      // Tạo map điểm theo examStudentId + subjectId
+      const gradeMap = new Map<string, any>();
+      gradesData.forEach((grade) => {
+        const examStudentId = grade.examStudent?._id || grade.student?._id || grade.student;
+        const subjectId = grade.subject?._id || grade.subject;
+        if (examStudentId && subjectId) {
+          gradeMap.set(`${examStudentId}_${subjectId}`, grade);
+        }
+      });
+
+      // Tạo danh sách merged: mỗi học sinh dự thi sẽ có điểm từng môn nếu có, nếu không thì null
+      const mergedGrades: any[] = [];
+      examStudentsData.forEach((es) => {
+        // Lấy thông tin học sinh
+        const studentInfo = es.student || {};
+        // Lấy danh sách môn học từ hook subjects (giống ExamGradePage)
+        subjects.forEach((subject) => {
+          const subjectId = subject._id || subject;
+          const grade = gradeMap.get(`${es._id}_${subjectId}`);
+          mergedGrades.push({
+            examStudent: es,
+            student: studentInfo,
+            subject,
+            gradeValue: grade?.gradeValue ?? null,
+            teacher: grade?.teacher || null,
+          });
+        });
+      });
+
+      setGrades(mergedGrades);
 
       // Nếu là HK2, tìm và lấy điểm HK1 cùng năm học
       if (exam.semester === "2" && exam.year) {
@@ -107,7 +159,7 @@ export default function ExamGradesSearchPage() {
         
         if (hk1ExamData) {
           setHk1Exam(hk1ExamData);
-          const hk1Res = await examGradeApi.getByExam(hk1ExamData._id);
+          const hk1Res = await examGradeApi.getByExam(hk1ExamData._id, { limit: 0 });
           // ✅ Xử lý response tương tự như trên
           let hk1Data: any[] = [];
           if (Array.isArray(hk1Res)) {
@@ -145,9 +197,7 @@ export default function ExamGradesSearchPage() {
 
   // 🔄 Transform dữ liệu: group theo học sinh và map với điểm so sánh
   const groupedData = useMemo(() => {
-    if (!Array.isArray(grades)) return [];
-
-    // Tạo map điểm kỳ thi hiện tại theo examStudent._id và subject._id
+    // Tạo map điểm hiện tại
     const currentMap = new Map<string, any>();
     grades.forEach((grade) => {
       const examStudentId = grade.examStudent?._id || grade.student?._id || grade.student;
@@ -169,35 +219,23 @@ export default function ExamGradesSearchPage() {
       });
     }
 
-    // Group theo học sinh
-    const studentMap = new Map<string, any>();
-    
-    grades.forEach((grade) => {
-      const examStudentId = grade.examStudent?._id || grade.student?._id || grade.student;
-      if (!examStudentId) return;
+    // Group theo học sinh: lấy từ examStudents (giống ExamGradePage)
+    return examStudents.map((es) => {
+      const studentInfo = es.student || {};
+      const classInfo = studentInfo.classId || es.class || {};
+      // Lấy điểm cho từng môn
+      const subjectsMap: Record<string, any> = {};
+      subjects.forEach((subject) => {
+        const subjectId = String(subject._id || subject);
+        const currentGrade = currentMap.get(`${es._id}_${subjectId}`);
+        const compareGrade = compareMap.get(`${es._id}_${subjectId}`);
 
-      if (!studentMap.has(examStudentId)) {
-        studentMap.set(examStudentId, {
-          student: grade.student,
-          examStudent: grade.examStudent,
-          subjects: {},
-        });
-      }
-
-      const subjectId = grade.subject?._id || grade.subject;
-      if (subjectId) {
-        const currentGrade = currentMap.get(`${examStudentId}_${subjectId}`);
-        const compareGrade = compareMap.get(`${examStudentId}_${subjectId}`);
-        
         // Tính xu hướng (chỉ khi có cả 2 điểm)
         let trend: "up" | "down" | "same" | null = null;
         let trendValue: number | null = null;
-        
-        // Nếu là HK2 và có điểm HK1 để so sánh
         if (examInfo?.semester === "2" && hk1Exam) {
           const currentScore = currentGrade?.gradeValue;
           const compareScore = compareGrade?.gradeValue;
-          
           if (currentScore !== null && currentScore !== undefined &&
               compareScore !== null && compareScore !== undefined) {
             trendValue = currentScore - compareScore;
@@ -206,46 +244,107 @@ export default function ExamGradesSearchPage() {
             else trend = "same";
           }
         }
-
         // Xác định điểm hiện tại và điểm so sánh
-        const currentScore = currentGrade?.gradeValue ?? null;
+        let currentScore = currentGrade?.gradeValue ?? null;
         const compareScore = examInfo?.semester === "2" && hk1Exam 
           ? (compareGrade?.gradeValue ?? null)
           : null;
+        let teacher = currentGrade?.teacher || compareGrade?.teacher || null;
 
-        studentMap.get(examStudentId).subjects[subjectId] = {
-          subject: grade.subject,
+        // Nếu chưa có điểm, lấy tạm từ examStudent.subjects[].score
+        if ((currentScore === null || currentScore === undefined) && Array.isArray(es.subjects)) {
+          const subjObj = es.subjects.find((s: any) => {
+            const sId = s.subject?._id || s.subject || s;
+            return String(sId) === String(subjectId);
+          });
+          if (subjObj && typeof subjObj.score === 'number') {
+            currentScore = subjObj.score;
+            teacher = subjObj.teacher || teacher;
+          }
+        }
+
+        subjectsMap[subjectId] = {
+          subject,
           hk1: examInfo?.semester === "2" && hk1Exam ? compareScore : null,
           hk2: examInfo?.semester === "2" ? currentScore : null,
           current: currentScore,
           trend,
           trendValue,
-          teacher: currentGrade?.teacher || compareGrade?.teacher || null,
+          teacher,
         };
-      }
+      });
+      return {
+        examStudent: es,
+        student: {
+          _id: studentInfo._id,
+          name: studentInfo.name || "",
+          studentCode: studentInfo.studentCode || "",
+          className: classInfo.className || classInfo.name || "",
+          classCode: classInfo.classCode || "",
+          grade: classInfo.grade || es.grade || "",
+          classId: classInfo._id || classInfo,
+        },
+        subjects: subjectsMap,
+      };
     });
+  }, [grades, hk1Grades, examInfo, hk1Exam, examStudents, subjects]);
 
-    return Array.from(studentMap.values());
-  }, [grades, hk1Grades, examInfo, hk1Exam]);
+  // Đã lấy subjects từ useSubjects ở trên, không cần useMemo nữa
 
-  // 📚 Lấy danh sách môn học từ dữ liệu điểm
-  const subjects = useMemo(() => {
-    const subjectSet = new Set<string>();
-    grades.forEach((grade) => {
-      const subjectId = grade.subject?._id || grade.subject;
-      if (subjectId) subjectSet.add(String(subjectId));
-    });
-    
-    const subjectMap = new Map();
-    grades.forEach((grade) => {
-      const subjectId = grade.subject?._id || grade.subject;
-      if (subjectId && !subjectMap.has(String(subjectId))) {
-        subjectMap.set(String(subjectId), grade.subject);
+  // Mặc định hiển thị số môn phù hợp màn hình (tối đa 7)
+  useEffect(() => {
+    if (subjects.length > 0 && selectedSubjects.size === 0 && !userAdjustedSubjects) {
+      if (typeof window !== "undefined") {
+        const viewport = window.innerWidth || 1280;
+        const LEFT_FIXED_WIDTH = 90 + 180 + 90; // MSHS + Họ và Tên + Lớp
+        const ACTION_WIDTH = 72;
+        const PADDING = 64; // khoảng trống lề
+        const SUBJECT_COL_WIDTH = 110; // mỗi cột môn ~110px
+        const available = Math.max(320, viewport - (LEFT_FIXED_WIDTH + ACTION_WIDTH + PADDING));
+        const maxFit = Math.max(1, Math.floor(available / SUBJECT_COL_WIDTH));
+        const defaultCount = Math.min(7, Math.max(3, maxFit));
+        setSelectedSubjects(new Set(subjects.slice(0, defaultCount).map((s: any) => String(s._id))));
+      } else {
+        setSelectedSubjects(new Set(subjects.slice(0, 7).map((s: any) => String(s._id))));
       }
-    });
-    
-    return Array.from(subjectMap.values());
-  }, [grades]);
+    }
+  }, [subjects, selectedSubjects.size, userAdjustedSubjects]);
+
+  // Danh sách môn hiển thị theo lựa chọn
+  const visibleSubjects = useMemo(() => {
+    if (!selectedSubjects.size) return subjects;
+    return subjects.filter((s: any) => selectedSubjects.has(String(s._id)));
+  }, [subjects, selectedSubjects]);
+
+  // Lọc danh sách học sinh theo tìm kiếm và lớp
+  const classes = useMemo(() => {
+    if (!examInfo?.year) return allClasses;
+    return allClasses.filter((c) => c.year === examInfo.year);
+  }, [allClasses, examInfo?.year]);
+
+  const filteredRows = useMemo(() => {
+    let result = Array.isArray(groupedData) ? [...groupedData] : [];
+
+    // Keyword filter
+    if (filters.keyword.trim()) {
+      const kw = filters.keyword.toLowerCase();
+      result = result.filter((item: any) =>
+        item.student?.name?.toLowerCase().includes(kw) ||
+        item.student?.studentCode?.toLowerCase().includes(kw) ||
+        item.student?.className?.toLowerCase().includes(kw)
+      );
+    }
+
+    // Class filter
+    if (filters.class !== "Tất cả") {
+      result = result.filter((item: any) => {
+        const classId = item.student?.classId?._id || item.student?.classId;
+        return String(classId) === String(filters.class);
+      });
+    }
+
+    return result;
+  }, [groupedData, filters]);
 
   // 🎨 Render xu hướng
   const renderTrend = (trend: "up" | "down" | "same" | null, trendValue: number | null) => {
@@ -280,20 +379,20 @@ export default function ExamGradesSearchPage() {
     return "#f8d7da";
   };
 
-  // 📊 Tạo cột cho bảng
+  // 📊 Tạo cột cho bảng theo style của ExamGradePage
   const columns = useMemo(() => {
     const cols: any[] = [
       {
         title: "MSHS",
         dataIndex: ["student", "studentCode"],
         align: "center" as const,
-        width: 100,
+        width: 90,
         fixed: "left" as const,
       },
       {
         title: "Họ và Tên",
         dataIndex: ["student", "name"],
-        width: 200,
+        width: 180,
         fixed: "left" as const,
         render: (v: string) => <span className="font-medium">{v}</span>,
       },
@@ -301,7 +400,7 @@ export default function ExamGradesSearchPage() {
         title: "Lớp",
         dataIndex: ["student", "className"],
         align: "center" as const,
-        width: 100,
+        width: 90,
         fixed: "left" as const,
         render: (v: string) => (
           <Tag style={{ background: "#e9ecef", color: "#495057", border: "none" }}>
@@ -311,64 +410,35 @@ export default function ExamGradesSearchPage() {
       },
     ];
 
-    // Thêm cột cho từng môn học
-    subjects.forEach((subject) => {
+    // Thêm cột cho từng môn học hiển thị
+    visibleSubjects.forEach((subject: any) => {
       cols.push({
         title: subject.name,
         align: "center" as const,
-        width: 150,
+        width: 110,
         render: (_: any, record: any) => {
           const subjectData = record.subjects[subject._id];
-          if (!subjectData) {
-            return <span style={{ color: "#999" }}>-</span>;
-          }
+          if (!subjectData) return <span style={{ color: "#999" }}>-</span>;
 
-          const hk1Score = subjectData.hk1;
-          const hk2Score = subjectData.hk2;
           const currentScore = subjectData.current;
-          const trend = subjectData.trend;
-          const trendValue = subjectData.trendValue;
           const teacher = subjectData.teacher;
 
+          const bgColor = getScoreColor(currentScore);
           return (
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <div style={{ display: "flex", gap: 8, justifyContent: "center", alignItems: "center" }}>
-                {hk1Exam && hk1Score !== null && (
-                  <>
-                    <div
-                      style={{
-                        background: getScoreColor(hk1Score),
-                        padding: "4px 8px",
-                        borderRadius: "4px",
-                        fontSize: "12px",
-                        minWidth: "40px",
-                      }}
-                    >
-                      {hk1Score.toFixed(1)}
-                    </div>
-                    <span style={{ fontSize: "12px", color: "#999" }}>→</span>
-                  </>
-                )}
-                <div
-                  style={{
-                    background: getScoreColor(currentScore),
-                    padding: "4px 8px",
-                    borderRadius: "4px",
-                    fontSize: "12px",
-                    fontWeight: "bold",
-                    minWidth: "40px",
-                  }}
-                >
-                  {currentScore !== null && currentScore !== undefined ? currentScore.toFixed(1) : "-"}
-                </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
+              <div
+                style={{
+                  background: bgColor,
+                  padding: "6px",
+                  borderRadius: "4px",
+                  minWidth: "52px",
+                  display: "inline-block",
+                }}
+              >
+                {currentScore !== null && currentScore !== undefined ? Number(currentScore).toFixed(1) : "-"}
               </div>
-              {hk1Exam && trend !== null && (
-                <div style={{ fontSize: "11px" }}>
-                  {renderTrend(trend, trendValue)}
-                </div>
-              )}
               {teacher && (
-                <div style={{ fontSize: "10px", color: "#666", textAlign: "center", marginTop: 2 }}>
+                <div style={{ fontSize: "10px", color: "#666", textAlign: "center" }}>
                   {typeof teacher === 'object' ? (teacher.name || teacher.teacherCode || '') : ''}
                 </div>
               )}
@@ -378,8 +448,26 @@ export default function ExamGradesSearchPage() {
       });
     });
 
+    // Cột thao tác (xem toàn bộ điểm của học sinh trong kỳ thi)
+    cols.push({
+      title: "Thao tác",
+      align: "center" as const,
+      width: 72,
+      fixed: "right" as const,
+      render: (_: any, record: any) => (
+        <Button
+          type="text"
+          icon={<EditOutlined />}
+          onClick={() => {
+            setViewRecord(record);
+            setViewModalOpen(true);
+          }}
+        />
+      ),
+    });
+
     return cols;
-  }, [subjects, hk1Exam]);
+  }, [visibleSubjects]);
 
   return (
     <div style={{ padding: 24 }}>
@@ -478,34 +566,116 @@ export default function ExamGradesSearchPage() {
           </Row>
         </Card>
 
+        {/* 🔍 Tìm Kiếm & Lọc (style giống ExamGradePage) */}
+        {selectedExam && (
+          <Card style={{ marginBottom: 16 }}>
+            <div style={{ marginBottom: 12 }}>
+              <Text strong style={{ fontSize: 16 }}>Tìm Kiếm & Lọc</Text>
+            </div>
+            <Text type="secondary" style={{ display: "block", marginBottom: 16 }}>
+              Tìm kiếm theo MSHS, họ tên hoặc lớp
+            </Text>
+            <Row gutter={[16, 16]} align="middle">
+              <Col xs={24} sm={12} md={12}>
+                <Input
+                  placeholder="Tìm kiếm..."
+                  prefix={<SearchOutlined />}
+                  value={filters.keyword}
+                  onChange={(e) => setFilters((f) => ({ ...f, keyword: e.target.value }))}
+                  allowClear
+                  size="large"
+                />
+              </Col>
+              <Col xs={24} sm={12} md={12}>
+                <Select
+                  value={filters.class}
+                  onChange={(v) => setFilters((f) => ({ ...f, class: v }))}
+                  style={{ width: "100%" }}
+                  placeholder="Tất cả lớp"
+                  size="large"
+                >
+                  <Option value="Tất cả">Tất cả lớp</Option>
+                  {classes.map((c: any) => (
+                    <Option key={c._id} value={c._id}>
+                      {c.className}
+                    </Option>
+                  ))}
+                </Select>
+              </Col>
+            </Row>
+          </Card>
+        )}
+
         {/* 📊 Bảng điểm thi */}
         {selectedExam && (
           <Card>
-            <div style={{ marginBottom: 16 }}>
-              <Title level={4}>Bảng Điểm Thi</Title>
-              {hk1Exam && (
-                <Text type="secondary">
-                  So sánh điểm HK2 với HK1 - Màu xanh: tăng, Màu đỏ: giảm
-                </Text>
-              )}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div>
+                <Text strong style={{ fontSize: 18 }}>Bảng Điểm Thi</Text>
+                <div>
+                  <Text type="secondary">Hiển thị {filteredRows.length} học sinh</Text>
+                </div>
+              </div>
+              <Space>
+                <Popover
+                  title="Chọn môn học hiển thị"
+                  content={
+                    <div style={{ maxHeight: 400, overflowY: "auto", minWidth: 200 }}>
+                      <div style={{ marginBottom: 8, borderBottom: "1px solid #f0f0f0", paddingBottom: 8 }}>
+                        <Space>
+                          <Button size="small" type="link" onClick={() => setSelectedSubjects(new Set(subjects.map((s: any) => String(s._id))))}>
+                            Chọn tất cả
+                          </Button>
+                          <Button size="small" type="link" onClick={() => setSelectedSubjects(new Set())}>
+                            Bỏ chọn tất cả
+                          </Button>
+                        </Space>
+                      </div>
+                      <Checkbox.Group
+                        value={Array.from(selectedSubjects)}
+                        onChange={(checkedValues) => {
+                          const next = new Set<string>();
+                          (checkedValues as any[]).forEach((v) => next.add(String(v)));
+                          setSelectedSubjects(next);
+                          setUserAdjustedSubjects(true);
+                        }}
+                        style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                      >
+                        {subjects.map((subject: any, idx: number) => (
+                          <Checkbox key={subject._id || idx} value={String(subject._id)}>
+                            {subject.name}
+                          </Checkbox>
+                        ))}
+                      </Checkbox.Group>
+                    </div>
+                  }
+                  trigger="click"
+                  placement="bottomRight"
+                >
+                  <Button icon={<AppstoreOutlined />}>
+                    Chọn Môn ({visibleSubjects.length}/{subjects.length})
+                  </Button>
+                </Popover>
+              </Space>
             </div>
 
             <Spin spinning={gradesLoading}>
-              {groupedData.length === 0 && !gradesLoading ? (
+              {filteredRows.length === 0 && !gradesLoading ? (
                 <div style={{ textAlign: "center", padding: 40 }}>
                   <Text type="secondary">Chưa có dữ liệu điểm thi</Text>
                 </div>
               ) : (
                 <Table
-                  dataSource={groupedData}
+                  dataSource={filteredRows}
                   columns={columns}
                   rowKey={(r) => {
                     const studentId = r.student?._id || r.examStudent?._id || "";
                     return `student_${studentId}`;
                   }}
                   pagination={{
-                    pageSize: 20,
+                    pageSize: 50,
                     showSizeChanger: true,
+                    pageSizeOptions: ["10", "20", "50", "100"],
                     showTotal: (total) => `Tổng ${total} học sinh`,
                   }}
                   bordered
@@ -516,6 +686,62 @@ export default function ExamGradesSearchPage() {
             </Spin>
           </Card>
         )}
+
+        {/* Modal xem toàn bộ điểm của học sinh trong kỳ thi */}
+        <Modal
+          title={
+            viewRecord
+              ? `Điểm thi - ${viewRecord.student?.name || ''} (${viewRecord.student?.studentCode || ''})`
+              : "Điểm thi"
+          }
+          open={viewModalOpen}
+          onCancel={() => setViewModalOpen(false)}
+          footer={[
+            <Button key="close" onClick={() => setViewModalOpen(false)}>
+              Đóng
+            </Button>,
+          ]}
+          width={700}
+        >
+          {viewRecord ? (
+            <div>
+              <div style={{ marginBottom: 12 }}>
+                <Space wrap>
+                  <Tag color="blue">Lớp: {viewRecord.student?.className || '-'}</Tag>
+                </Space>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                {subjects.map((subject: any, idx: number) => {
+                  const data = viewRecord.subjects?.[subject._id];
+                  const score = data?.current ?? null;
+                  const teacher = data?.teacher;
+                  return (
+                    <Card key={subject._id || idx} size="small">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ fontWeight: 600 }}>{subject.name}</div>
+                        <div style={{
+                          background: getScoreColor(score),
+                          padding: '4px 10px',
+                          borderRadius: 4,
+                          minWidth: 50,
+                          textAlign: 'center',
+                          fontWeight: 600,
+                        }}>
+                          {score !== null && score !== undefined ? Number(score).toFixed(1) : '-'}
+                        </div>
+                      </div>
+                      {teacher && (
+                        <div style={{ marginTop: 6, fontSize: 12, color: '#666' }}>
+                          GV: {typeof teacher === 'object' ? (teacher.name || teacher.teacherCode || '') : ''}
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          ) : <Spin />}
+        </Modal>
 
         {!selectedExam && (
           <Card>

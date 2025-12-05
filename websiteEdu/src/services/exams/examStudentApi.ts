@@ -11,6 +11,7 @@ export interface ExamStudent {
   status?: "registered" | "present" | "absent" | "excluded";
   sbd?: string;
   note?: string;
+  subjects?: any[];
 }
 
 /* =========================================================

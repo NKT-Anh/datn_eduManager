@@ -219,11 +219,11 @@
 import api from "@/services/axiosInstance";
 
 // ================== EXAM ==================
-export const getExams = () => api.get("/exams");
-export const getExamById = (id) => api.get(`/exams/${id}`);
-export const createExam = (data) => api.post("/exams", data);
-export const updateExam = (id, data) => api.put(`/exams/${id}`, data);
-export const deleteExam = (id) => api.delete(`/exams/${id}`);
+export const getExams = () => api.get("/exam");
+export const getExamById = (id) => api.get(`/exam/${id}`);
+export const createExam = (data) => api.post("/exam", data);
+export const updateExam = (id, data) => api.put(`/exam/${id}`, data);
+export const deleteExam = (id) => api.delete(`/exam/${id}`);
 
 // ================== EXAM CLASS ==================
 export const getExamClasses = (examId) => api.get(`/exam/classes?examId=${examId}`);

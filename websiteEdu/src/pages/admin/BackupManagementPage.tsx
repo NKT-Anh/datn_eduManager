@@ -66,7 +66,14 @@ export default function BackupManagementPage() {
     try {
       setLoading(true);
       const data = await backupApi.getBackups();
-      setBackups(data);
+      const sorted = Array.isArray(data)
+        ? [...data].sort((a, b) => {
+            const timeA = new Date(a.createdAt || 0).getTime();
+            const timeB = new Date(b.createdAt || 0).getTime();
+            return timeB - timeA;
+          })
+        : [];
+      setBackups(sorted);
     } catch (error: any) {
       console.error("Lỗi khi tải danh sách backup:", error);
       toast({

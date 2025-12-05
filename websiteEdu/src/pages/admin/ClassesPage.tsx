@@ -637,16 +637,39 @@ export default function ClassesPage() {
                         )}
                       </TableCell>
                       <TableCell>
+                        {/* Đếm sĩ số đúng từ Student collection */}
                         <Badge
                           variant={
-                            cls.currentSize >= cls.capacity
+                            (students.filter(
+                              (s) =>
+                                s.classId &&
+                                ((typeof s.classId === 'object' ? s.classId._id : s.classId) === cls._id) &&
+                                s.status === 'active' &&
+                                !s.isDeleted &&
+                                (selectedYear === 'Tất cả' || s.classId.year === selectedYear)
+                            ).length >= cls.capacity)
                               ? "destructive"
-                              : cls.currentSize >= cls.capacity * 0.8
+                              : (students.filter(
+                                  (s) =>
+                                    s.classId &&
+                                    ((typeof s.classId === 'object' ? s.classId._id : s.classId) === cls._id) &&
+                                    s.status === 'active' &&
+                                    !s.isDeleted &&
+                                    (selectedYear === 'Tất cả' || s.classId.year === selectedYear)
+                                ).length >= cls.capacity * 0.8)
                               ? "secondary"
                               : "outline"
                           }
                         >
-                          {cls.currentSize}/{cls.capacity}
+                          {students.filter(
+                            (s) =>
+                              s.classId &&
+                              ((typeof s.classId === 'object' ? s.classId._id : s.classId) === cls._id) &&
+                              s.status === 'active' &&
+                              !s.isDeleted &&
+                              (selectedYear === 'Tất cả' || s.classId.year === selectedYear)
+                          ).length}
+                          /{cls.capacity}
                         </Badge>
                       </TableCell>
                     </TableRow>
@@ -730,16 +753,39 @@ export default function ClassesPage() {
                   <Users className="h-4 w-4 text-primary" />
                   <span>Học sinh</span>
                 </div>
+                {/* Đếm sĩ số đúng từ Student collection */}
                 <Badge
                   variant={
-                    cls.currentSize >= cls.capacity
+                    (students.filter(
+                      (s) =>
+                        s.classId &&
+                        ((typeof s.classId === 'object' ? s.classId._id : s.classId) === cls._id) &&
+                        s.status === 'active' &&
+                        !s.isDeleted &&
+                        (selectedYear === 'Tất cả' || s.classId.year === selectedYear)
+                    ).length >= cls.capacity)
                       ? "destructive"
-                      : cls.currentSize >= cls.capacity * 0.8
+                      : (students.filter(
+                          (s) =>
+                            s.classId &&
+                            ((typeof s.classId === 'object' ? s.classId._id : s.classId) === cls._id) &&
+                            s.status === 'active' &&
+                            !s.isDeleted &&
+                            (selectedYear === 'Tất cả' || s.classId.year === selectedYear)
+                        ).length >= cls.capacity * 0.8)
                       ? "secondary"
                       : "outline"
                   }
                 >
-                  {cls.currentSize}/{cls.capacity}
+                  {students.filter(
+                    (s) =>
+                      s.classId &&
+                      ((typeof s.classId === 'object' ? s.classId._id : s.classId) === cls._id) &&
+                      s.status === 'active' &&
+                      !s.isDeleted &&
+                      (selectedYear === 'Tất cả' || s.classId.year === selectedYear)
+                  ).length}
+                  /{cls.capacity}
                 </Badge>
               </div>
 

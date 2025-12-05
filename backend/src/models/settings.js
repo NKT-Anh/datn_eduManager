@@ -22,6 +22,12 @@ const SettingSchema = new mongoose.Schema({
   website: { type: String, default: '' },
   facebook: { type: String, default: '' },
 
+  schoolLogo: {
+    url: { type: String, default: '' },
+    publicId: { type: String, default: '' },
+    format: { type: String, default: 'png' }
+  },
+
   currentSchoolYear: { type: String, default: '2025-2026' },
   termStart: { type: String, default: '' },
   termEnd: { type: String, default: '' },

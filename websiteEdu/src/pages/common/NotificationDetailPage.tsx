@@ -38,6 +38,7 @@ interface CreatedBy {
   _id: string;
   email?: string;
   role?: string;
+  displayName?: string;
   linkedId?: {
     name?: string;
     avatarUrl?: string;
@@ -62,6 +63,8 @@ interface Notification {
   isRead?: boolean;
   createdBy?: CreatedBy | string;
   attachments?: Attachment[];
+  sender?: string;
+  senderDisplayName?: string;
 }
 
 interface Reply {
@@ -184,58 +187,39 @@ export default function NotificationDetailPage() {
   
   // Get sender name - Ưu tiên tên người tạo, không dùng "Hệ thống"
   const getSenderName = (notif: Notification): string => {
-    if (typeof notif.createdBy === 'string') {
-      // Nếu createdBy là string (ID), không có thông tin -> dùng email hoặc "Hệ thống"
+    if (notif.senderDisplayName) return notif.senderDisplayName;
+    if (notif.sender) return notif.sender;
+
+    if (typeof notif.createdBy === 'string' || !notif.createdBy) {
       return 'Hệ thống';
     }
-    
+
     const createdBy = notif.createdBy;
-    if (!createdBy) return 'Hệ thống';
-    
-    // ✅ Ưu tiên lấy tên từ linkedId
+    if (createdBy.displayName) return createdBy.displayName;
+
     const name = createdBy.linkedId?.name;
     const gender = createdBy.linkedId?.gender;
-    
+
     if (createdBy.role === 'admin') {
-      // Admin: dùng tên nếu có, không thì dùng email, cuối cùng mới dùng "Ban Giám hiệu"
       if (name) return name;
       if (createdBy.email) return createdBy.email;
       return 'Ban Giám hiệu';
     }
-    
+
     if (createdBy.role === 'teacher') {
       if (name) {
-        // Phân biệt giới tính để thêm Cô/Thầy
-        if (gender === 'female' || gender === 'nữ') {
-          return `Cô ${name}`;
-        } else if (gender === 'male' || gender === 'nam') {
-          return `Thầy ${name}`;
-        } else {
-          // Fallback: đoán từ tên nếu không có gender
-          const isFemale = name.toLowerCase().includes('anh') || 
-                          name.toLowerCase().includes('lan') ||
-                          name.toLowerCase().includes('mai') ||
-                          name.toLowerCase().includes('linh') ||
-                          name.toLowerCase().includes('hương') ||
-                          name.toLowerCase().includes('thu') ||
-                          name.toLowerCase().includes('hoa');
-          return isFemale ? `Cô ${name}` : `Thầy ${name}`;
-        }
+        if (gender === 'female' || gender === 'nữ') return `Cô ${name}`;
+        if (gender === 'male' || gender === 'nam') return `Thầy ${name}`;
+        const lower = name.toLowerCase();
+        const femaleHints = ['anh', 'lan', 'mai', 'linh', 'hương', 'huong', 'thu', 'hoa', 'ngọc', 'ngoc', 'như', 'nhu', 'phương', 'phuong', 'trang'];
+        return femaleHints.some((hint) => lower.includes(hint)) ? `Cô ${name}` : `Thầy ${name}`;
       }
-      // Nếu không có tên, dùng email
       if (createdBy.email) return createdBy.email;
       return 'Giáo viên';
     }
-    
-    // ✅ Các role khác: ưu tiên tên, sau đó email
-    if (name) {
-      return name;
-    }
-    if (createdBy.email) {
-      return createdBy.email;
-    }
-    
-    // Chỉ khi không có cả tên và email mới dùng "Hệ thống"
+
+    if (name) return name;
+    if (createdBy.email) return createdBy.email;
     return 'Hệ thống';
   };
   
@@ -444,7 +428,7 @@ export default function NotificationDetailPage() {
         <div className="max-w-7xl mx-auto">
           {/* Breadcrumbs and Back Button */}
           <div className="flex flex-wrap gap-4 justify-between items-center mb-6">
-            <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+            {/* <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
               <a 
                 className="hover:text-primary transition-colors cursor-pointer" 
                 onClick={() => navigate(`${prefix}/home`)}
@@ -464,7 +448,7 @@ export default function NotificationDetailPage() {
                   ? notification.title.substring(0, 30) + '...' 
                   : notification.title}
               </span>
-            </div>
+            </div> */}
             <Button 
               onClick={() => navigate(`${prefix}/notifications`)}
               className="flex items-center gap-2 min-w-[84px] cursor-pointer justify-center overflow-hidden rounded-lg h-10 px-4 bg-primary text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-primary/90 transition-colors"

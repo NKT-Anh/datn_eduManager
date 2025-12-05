@@ -21,5 +21,8 @@ router.get('/:id', auditLogController.getAuditLogById);
 // DELETE /audit-logs - Xóa logs cũ (chỉ admin)
 router.delete('/', checkPermission(PERMISSIONS.ADMIN_DELETE), auditLogController.deleteOldLogs);
 
+// POST /audit-logs - Tạo mới một audit log
+router.post('/', auditLogController.createAuditLog);
+
 module.exports = router;
 

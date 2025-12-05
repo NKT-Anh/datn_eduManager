@@ -134,42 +134,47 @@ const StudentSchedulePage = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Thời khóa biểu</h1>
-          <p className="text-muted-foreground mt-1">
-            {studentInfo?.classId && typeof studentInfo.classId === 'object' 
-              ? `${studentInfo.classId.className} - Khối ${studentInfo.classId.grade}`
-              : 'Lớp của bạn'}
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          <Select value={schoolYear} onValueChange={setSchoolYear}>
-            <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Năm học" />
-            </SelectTrigger>
-            <SelectContent>
-              {allSchoolYears
-                .filter((year) => (year.code || year.name) && (year.code || year.name).trim() !== "")
-                .map((year) => {
-                  const yearValue = year.code || year.name;
-                  return (
-                    <SelectItem key={year._id} value={yearValue}>
-                      {year.name} {year.isActive && "(Năm học hiện tại)"}
-                    </SelectItem>
-                  );
-                })}
-            </SelectContent>
-          </Select>
-          <Select value={semester} onValueChange={setSemester}>
-            <SelectTrigger className="w-[120px]">
-              <SelectValue placeholder="Học kỳ" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1">Học kỳ 1</SelectItem>
-              <SelectItem value="2">Học kỳ 2</SelectItem>
-            </SelectContent>
-          </Select>
+      <div>
+        <h1 className="text-3xl font-bold">Thời khóa biểu</h1>
+        <p className="text-muted-foreground mt-1">
+          {studentInfo?.classId && typeof studentInfo.classId === 'object' 
+            ? `${studentInfo.classId.className} - Khối ${studentInfo.classId.grade}`
+            : 'Lớp của bạn'}
+        </p>
+        {/* Bộ chọn năm học và học kỳ: năm học ở trên, học kỳ ở dưới */}
+        <div className="mt-4 grid grid-cols-1 gap-3 max-w-sm">
+          <div>
+            <div className="text-sm text-muted-foreground mb-1">Năm học</div>
+            <Select value={schoolYear} onValueChange={setSchoolYear}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Năm học" />
+              </SelectTrigger>
+              <SelectContent>
+                {allSchoolYears
+                  .filter((year) => (year.code || year.name) && (year.code || year.name).trim() !== "")
+                  .map((year) => {
+                    const yearValue = year.code || year.name;
+                    return (
+                      <SelectItem key={year._id} value={yearValue}>
+                        {year.name} {year.isActive && "(Năm học hiện tại)"}
+                      </SelectItem>
+                    );
+                  })}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <div className="text-sm text-muted-foreground mb-1">Học kỳ</div>
+            <Select value={semester} onValueChange={setSemester}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Học kỳ" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">Học kỳ 1</SelectItem>
+                <SelectItem value="2">Học kỳ 2</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 

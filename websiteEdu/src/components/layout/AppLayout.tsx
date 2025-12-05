@@ -4,7 +4,7 @@ import { Button } from "../ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { AIChatbox } from "@/components/ai/AIChatbox";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
-import { isBGH, isGVCN, isQLBM, isGVBM } from "@/utils/permissions";
+import { usePublicSchoolInfo } from "@/hooks/usePublicSchoolInfo";
 
 import AppSidebar from "./AppSidebar"; // 👈 chỉ cần 1 sidebar
 
@@ -14,37 +14,9 @@ interface AppLayoutProps {
 
 const AppLayout = ({ children }: AppLayoutProps) => {
   const { backendUser, logout } = useAuth();
+  const { info: schoolInfo } = usePublicSchoolInfo();
 
   if (!backendUser) return null; // chưa có user thì chưa render layout
-
-  // Xác định title dựa trên role và teacherFlags
-  const getRoleTitle = () => {
-    if (backendUser.role === "admin") {
-      return "Quản trị hệ thống";
-    }
-    if (backendUser.role === "student") {
-      return "Học sinh";
-    }
-    if (backendUser.role === "teacher") {
-      // Kiểm tra teacher flags để xác định role cụ thể
-      if (isBGH(backendUser)) {
-        return "Ban Giám Hiệu";
-      }
-      if (isGVCN(backendUser)) {
-        return "Giáo viên chủ nhiệm";
-      }
-      if (isQLBM(backendUser)) {
-        return "Quản lý bộ môn";
-      }
-      if (isGVBM(backendUser)) {
-        return "Giáo viên bộ môn";
-      }
-      return "Giáo viên";
-    }
-    return "Hệ thống quản lý trường học";
-  };
-
-  const title = getRoleTitle();
 
   return (
     <SidebarProvider>
@@ -52,18 +24,23 @@ const AppLayout = ({ children }: AppLayoutProps) => {
         {/* Sidebar dùng chung cho mọi role */}
         <AppSidebar />
 
-        <div className="flex-1 flex flex-col">
-          <header className="h-16 flex items-center justify-between px-6 border-b border-border bg-card">
-            <div className="flex items-center space-x-3">
+<div className="flex-1 flex flex-col overflow-auto">
+
+          <header className="sticky top-0 z-40 h-16 flex items-center justify-between px-6 border-b border-border bg-card">
+            <div className="flex items-center gap-3">
               <SidebarTrigger className="p-2" />
-              <div>
-                <h1 className="text-lg font-semibold">{title}</h1>
-                <p className="text-sm text-muted-foreground">
-                  Xin chào, {backendUser.name ?? "Người dùng"}!
-                </p>
-              </div>
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-col items-center space-y-0.5 text-center">
+              <p className="text-sm font-semibold text-foreground">
+                {schoolInfo.name}
+              </p>
+              {schoolInfo.slogan ? (
+                <p className="text-xs text-muted-foreground" title={schoolInfo.slogan}>
+                  {schoolInfo.slogan}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-2">
               <NotificationBell />
               <Button variant="outline" size="sm" onClick={logout}>
                 Đăng xuất

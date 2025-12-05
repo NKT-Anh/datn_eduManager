@@ -6,12 +6,10 @@ import { useToast } from '@/hooks/use-toast';
 import { useCurrentAcademicYear } from '@/hooks/useCurrentAcademicYear';
 import conductApi from '@/services/conductApi';
 import attendanceApi from '@/services/attendanceApi';
-import incidentApi from '@/services/incidentApi';
 import { 
   Star,
   CheckCircle2,
   Trophy,
-  AlertTriangle,
   Loader2,
 } from 'lucide-react';
 
@@ -39,12 +37,7 @@ interface Achievement {
   level: 'Xuất sắc' | 'Tốt' | 'Trung bình';
 }
 
-interface Violation {
-  id: string;
-  title: string;
-  date: string;
-  type: 'warning' | 'reminder';
-}
+// Removed violations/incidents section as requested
 
 const StudentConductPage = () => {
   const { backendUser } = useAuth();
@@ -55,7 +48,6 @@ const StudentConductPage = () => {
   const [attendanceStats, setAttendanceStats] = useState<AttendanceStats | null>(null);
   const [trainingScore, setTrainingScore] = useState<number>(85);
   const [achievements, setAchievements] = useState<Achievement[]>([]);
-  const [violations, setViolations] = useState<Violation[]>([]);
   const [behaviorStats, setBehaviorStats] = useState({
     excellent: 0,
     good: 0,
@@ -144,72 +136,27 @@ const StudentConductPage = () => {
     }
   }, [currentYear, selectedSemester, backendUser]);
 
-  // Lấy vi phạm từ API và tính đánh giá hành vi
+  // Incidents/violations removed: behavior assessment now derives only from conductRecord
   useEffect(() => {
-    const fetchViolationsAndBehavior = async () => {
-      try {
-        const res = await incidentApi.getIncidents({
-          type: 'discipline', // Chỉ lấy vi phạm kỷ luật
-        });
-        
-        if (res.success && res.data) {
-          const violationsData = res.data
-            .filter((inc: any) => {
-              // Lọc theo năm học hiện tại nếu có
-              const incidentDate = new Date(inc.createdAt);
-              const yearStart = parseInt(currentYear.split('-')[0]);
-              const yearEnd = parseInt(currentYear.split('-')[1]);
-              return incidentDate.getFullYear() >= yearStart && incidentDate.getFullYear() <= yearEnd;
-            })
-            .map((inc: any) => ({
-              id: inc._id,
-              title: inc.title,
-              date: new Date(inc.createdAt).toLocaleDateString('vi-VN'),
-              type: inc.severity === 'critical' || inc.severity === 'high' ? 'warning' : 'reminder',
-            }));
-          
-          setViolations(violationsData);
+    // Simple behavior assessment without incidents
+    let excellent = 0;
+    let good = 0;
+    let average = 0;
 
-          // Tính đánh giá hành vi dựa trên conduct record và violations
-          // Đếm số lượng vi phạm theo mức độ
-          let excellent = 0;
-          let good = 0;
-          let average = 0;
-
-          // Nếu có conduct record và GPA tốt, tăng excellent
-          if (conductRecord && conductRecord.gpa && conductRecord.gpa >= 8.0) {
-            excellent += 1;
-          }
-
-          // Đếm vi phạm
-          violationsData.forEach((v: any) => {
-            if (v.type === 'warning') {
-              average += 1;
-            } else {
-              good += 1;
-            }
-          });
-
-          // Nếu không có vi phạm và GPA tốt, tăng excellent
-          if (violationsData.length === 0 && conductRecord && conductRecord.gpa && conductRecord.gpa >= 8.0) {
-            excellent += 1;
-          }
-
-          setBehaviorStats({
-            excellent: Math.max(0, excellent),
-            good: Math.max(0, good),
-            average: Math.max(0, average),
-          });
-        }
-      } catch (error: any) {
-        console.error('Error fetching violations:', error);
-      }
-    };
-
-    if (currentYear) {
-      fetchViolationsAndBehavior();
+    if (conductRecord && conductRecord.gpa && conductRecord.gpa >= 8.0) {
+      excellent += 1;
+    } else if (conductRecord && conductRecord.gpa && conductRecord.gpa >= 6.5) {
+      good += 1;
+    } else if (conductRecord && conductRecord.gpa) {
+      average += 1;
     }
-  }, [currentYear, conductRecord]);
+
+    setBehaviorStats({
+      excellent: Math.max(0, excellent),
+      good: Math.max(0, good),
+      average: Math.max(0, average),
+    });
+  }, [conductRecord]);
 
   // Lấy thành tích từ API (tạm thời để trống vì chưa có API)
   useEffect(() => {
@@ -331,7 +278,7 @@ const StudentConductPage = () => {
         </Card>
       </div>
 
-      {/* Achievements and Violations */}
+      {/* Achievements */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Thành tích và khen thưởng */}
         <Card>
@@ -370,41 +317,6 @@ const StudentConductPage = () => {
               ) : (
                 <p className="text-center text-muted-foreground py-8">
                   Chưa có thành tích nào
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Vi phạm và nhắc nhở */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-red-600" />
-              Vi phạm và nhắc nhở
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {violations.length > 0 ? (
-                violations.map((violation) => (
-                  <div
-                    key={violation.id}
-                    className="flex items-center gap-3 p-3 bg-red-50 rounded-lg"
-                  >
-                    <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0" />
-                    <div className="flex-1">
-                      <p className="font-medium">{violation.title}</p>
-                      <p className="text-sm text-muted-foreground">{violation.date}</p>
-                    </div>
-                    <Badge variant="destructive">
-                      {violation.type === 'warning' ? 'Cảnh báo' : 'Nhắc nhở'}
-                    </Badge>
-                  </div>
-                ))
-              ) : (
-                <p className="text-center text-muted-foreground py-8">
-                  Không có vi phạm nào
                 </p>
               )}
             </div>

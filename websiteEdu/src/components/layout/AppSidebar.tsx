@@ -41,9 +41,12 @@ import {
   Mail,
   Trash2,
   Trophy,
+  Edit
 } from "lucide-react";
 import logoSchool from "@/assets/logo_school.png";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePublicSchoolInfo } from "@/hooks";
+import { isBGH, isGVCN, isQLBM, isGVBM } from "@/utils/permissions";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,6 +55,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // ✅ Hàm helper tạo navigationGroups dựa trên role/flagss
 const getNavigationGroups = (backendUser: any, prefix: string) => {
@@ -136,7 +140,6 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
       {
         label: "Khác",
         items: [
-          { id: "incidents", title: "Sự cố", url: `${prefix}/incidents`, icon: UserCheck },
         ],
       },
       {
@@ -192,7 +195,6 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
       {
         label: "Khác",
         items: [
-          { id: "incidents", title: "Sự cố", url: `${prefix}/incidents`, icon: UserCheck },
         ],
       },
       {
@@ -351,7 +353,7 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
               title: "Khảo sát",
               icon: FileText,
               children: [
-                { id: "survey-management", title: "Quản lý khảo sát", url: `${prefix}/surveys`, icon: FileText },
+                { id: "survey-management", title: "Quản lý khảo sát", url: `${prefix}/surveyss`, icon: FileText },
                 { id: "survey-dashboard", title: "Dashboard Khảo sát", url: `${prefix}/surveys/dashboard`, icon: BarChart3 },
                 { id: "award-management", title: "Danh hiệu / Khen thưởng", url: `${prefix}/awards`, icon: Trophy },
               ],
@@ -393,8 +395,11 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
               icon: BarChart3,
               children: [
                 { id: "grades-list", title: "Bảng điểm", url: `${prefix}/grades`, icon: BarChart3 },
+                { id: "edit-grades", title: "Sửa điểm học sinh", url: `${prefix}/grades`, icon: Edit },
+                { id: "conduct-statistics", title: "Thống kê hạnh kiểm", url: `${prefix}/conduct-statistics`, icon: BarChart3 },
+                { id: "conduct-admin", title: "Quản lý hạnh kiểm", url: `${prefix}/conduct`, icon: ClipboardList },
+                { id: "grade-config", title: "Cấu hình điểm", url: `${prefix}/grade-config`, icon: Settings },
                 { id: "init-grades", title: "Khởi tạo bảng điểm", url: `${prefix}/init-grades`, icon: Database },
-                { id: "grade-config", title: "Cấu hình điểm số", url: `${prefix}/grade-config`, icon: Settings },
               ],
             },
             { id: "attendance", title: "Điểm danh", url: `${prefix}/attendance`, icon: ClipboardList },
@@ -431,7 +436,10 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
       return [
         {
           label: "Điều hướng",
-          items: [{ id: "home", title: "Trang chủ", url: `${prefix}/home`, icon: Home }],
+          items: [
+            { id: "home", title: "Trang chủ", url: `${prefix}/home`, icon: Home },
+            { id: "notifications", title: "Thông báo", url: `${prefix}/notifications`, icon: Bell },
+          ],
         },
         {
           label: "Học tập",
@@ -448,7 +456,6 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
               children: [
                 { id: "student-schedule", title: "Lịch thi", url: `${prefix}/exams/student-schedule`, icon: Calendar },
                 { id: "exam-grades-search", title: "Điểm thi", url: `${prefix}/exams/grades-search`, icon: BarChart3 },
-                { id: "exam-room", title: "Phòng thi", url: `${prefix}/exams/exam-room`, icon: School },
               ],
             },
           ],
@@ -456,20 +463,38 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
         {
           label: "Khác",
           items: [
-            { id: "incidents", title: "Sự cố", url: `${prefix}/incidents`, icon: UserCheck },
-            { id: "notifications", title: "Thông báo", url: `${prefix}/notifications`, icon: Bell },
           ],
         },
         {
           label: "Cá nhân",
           items: [
             { id: "profile", title: "Hồ sơ", url: `${prefix}/profile`, icon: User },
+            { id: "settings", title: "Cài đặt", url: `${prefix}/settings`, icon: Settings },
           ],
         },
       ];
     default:
-      return [];
+      return [
+        {
+          label: "Điều hướng",
+          items: [{ id: "home", title: "Trang chủ", url: `${prefix}/home`, icon: Home }],
+        },
+      ];
   }
+};
+
+const getRoleTitle = (backendUser: any) => {
+  if (!backendUser) return "";
+  if (backendUser.role === "admin") return "Quản trị hệ thống";
+  if (backendUser.role === "student") return "Học sinh";
+  if (backendUser.role === "teacher") {
+    if (isBGH(backendUser)) return "Ban Giám Hiệu";
+    if (isGVCN(backendUser)) return "Giáo viên chủ nhiệm";
+    if (isQLBM(backendUser)) return "Quản lý bộ môn";
+    if (isGVBM(backendUser)) return "Giáo viên bộ môn";
+    return "Giáo viên";
+  }
+  return "Người dùng";
 };
 
 const AppSidebar = () => {
@@ -478,23 +503,37 @@ const AppSidebar = () => {
   const { backendUser, logout } = useAuth();
   const location = useLocation();
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
+  const { info: schoolInfo, loading: schoolInfoLoading } = usePublicSchoolInfo();
+  const schoolLogo = schoolInfo.logoUrl || logoSchool;
+  const roleTitle = backendUser ? getRoleTitle(backendUser) : "";
+  const parentIconSize = collapsed ? "h-6 w-6" : "h-4 w-4";
+  const childIconSize = collapsed ? "h-5 w-5" : "h-3.5 w-3.5";
+  const parentButtonLayout = collapsed ? "justify-center" : "justify-between";
+  const parentButtonPadding = collapsed ? "px-0 py-3" : "px-2 py-2";
+  const parentContentLayout = collapsed ? "justify-center" : "justify-start gap-2";
+  const parentContentWidth = collapsed ? "w-full" : "";
 
   if (!backendUser) return null;
 
   // Prefix
+  const isBGHUser = backendUser.role === "teacher" && backendUser.teacherFlags?.isLeader === true;
   let prefix = `/${backendUser.role}`;
   if (backendUser.role === "teacher") {
-    const isBGH = backendUser.teacherFlags?.isLeader === true;
     const isGVCN = backendUser.teacherFlags?.isHomeroom === true;
     const isQLBM = backendUser.teacherFlags?.isDepartmentHead === true;
-    if (isBGH) prefix = "/bgh";
+    if (isBGHUser) prefix = "/bgh";
     else if (isGVCN) prefix = "/gvcn";
     else if (isQLBM) prefix = "/qlbm";
     else prefix = "/gvbm";
   }
 
+  const settingsHref = backendUser.role === "admin" ? "/admin/settings" : isBGHUser ? "/bgh/settings" : null;
+
   // Memoize navigationGroups
-  const navigationGroups = useMemo(() => getNavigationGroups(backendUser, prefix), [backendUser, prefix]);
+  const navigationGroups = useMemo(() => {
+    const groups = getNavigationGroups(backendUser, prefix);
+    return groups.filter((group) => Array.isArray(group.items) && group.items.length > 0);
+  }, [backendUser, prefix]);
 
   // Auto mở submenu nếu active
   useEffect(() => {
@@ -511,6 +550,12 @@ const AppSidebar = () => {
     });
     setOpenMenus((prev) => ({ ...prev, ...newOpenMenus }));
   }, [location.pathname, navigationGroups]);
+
+  useEffect(() => {
+    if (collapsed) {
+      setOpenMenus({});
+    }
+  }, [collapsed]);
 
   const toggleMenu = (id: string) => {
     setOpenMenus((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -541,96 +586,132 @@ const AppSidebar = () => {
   return (
     <Sidebar collapsible="icon">
       {/* Header */}
-      <SidebarHeader className="p-4">
-        <div className="flex items-center space-x-3">
-          <div className="flex items-center justify-center w-10 h-10 rounded-lg overflow-hidden bg-white">
-            <img src={logoSchool} alt="Logo trường học" className="w-full h-full object-contain" />
+      <SidebarHeader className="p-4 border-b border-border/60 bg-gradient-to-br from-primary/10 via-transparent to-transparent">
+        <div className={`flex flex-col items-center ${collapsed ? "gap-2" : "gap-3"}`}>
+          <div className="flex items-center justify-center">
+            {schoolInfoLoading ? (
+              <Skeleton className={`${collapsed ? "h-10 w-10" : "h-14 w-14"} rounded-xl`} />
+            ) : (
+              <div
+                className={`flex items-center justify-center ${collapsed ? "h-10 w-10" : "h-14 w-14"} rounded-xl border border-border/70 bg-background shadow-sm overflow-hidden`}
+              >
+                <img src={schoolLogo} alt="Logo trường học" className="h-full w-full object-contain" />
+              </div>
+            )}
           </div>
+
           {!collapsed && (
-            <div>
-              <h2 className="text-lg font-semibold">EduManage</h2>
-              <p className="text-xs text-muted-foreground">Quản lý trường học</p>
+            <div className="w-full text-center">
+              {schoolInfoLoading ? (
+                <div className="flex flex-col items-center gap-1">
+                  <Skeleton className="h-3.5 w-32" />
+                  <Skeleton className="h-3 w-24" />
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold truncate" title={schoolInfo.name}>
+                    {schoolInfo.name}
+                  </p>
+                  {schoolInfo.slogan ? (
+                    <p className="text-xs text-muted-foreground truncate" title={schoolInfo.slogan}>
+                      {schoolInfo.slogan}
+                    </p>
+                  ) : null}
+                </>
+              )}
             </div>
           )}
         </div>
       </SidebarHeader>
 
       {/* Content */}
-      <SidebarContent className="pb-8">
+      <SidebarContent className="pb-6 px-1 space-y-1">
         {navigationGroups.map((group) => (
-          <SidebarGroup key={group.label}>
-            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+          <SidebarGroup key={group.label} className="rounded-lg">
+            <SidebarGroupLabel className="px-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80">
+              {group.label}
+            </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {group.items.map((item) => (
-                  <SidebarMenuItem key={item.id}>
-                    {"children" in item ? (
-                      <div key={`${item.id}-wrapper`}>
-                        <button
-                          onClick={() => toggleMenu(item.id)}
-                          className={`flex items-center justify-between w-full px-2 py-2 rounded-md transition-colors ${
-                            isItemActive(item)
-                              ? "bg-primary/10 text-primary font-semibold"
-                              : openMenus[item.id]
-                              ? "bg-muted/50"
-                              : "hover:bg-accent hover:text-accent-foreground"
+                {group.items.map((item) => {
+                  const active = isItemActive(item);
+
+                  return (
+                    <SidebarMenuItem key={item.id}>
+                      {"children" in item ? (
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => toggleMenu(item.id)}
+                            aria-expanded={openMenus[item.id] === true}
+                            aria-controls={`${item.id}-submenu`}
+                            className={`flex w-full items-center ${parentButtonLayout} ${parentButtonPadding} rounded-md transition-colors ${
+                              active
+                                ? "bg-primary/10 text-primary font-semibold"
+                                : openMenus[item.id]
+                                ? "bg-muted/50"
+                                : "hover:bg-accent hover:text-accent-foreground"
+                            }`}
+                          >
+                            <div className={`flex items-center ${parentContentLayout} ${parentContentWidth}`}>
+                              <item.icon className={`${parentIconSize} ${active ? "text-primary" : "text-muted-foreground"}`} />
+                              {!collapsed && <span>{item.title}</span>}
+                            </div>
+                            {!collapsed &&
+                              (openMenus[item.id] ? (
+                                <ChevronDown className="h-4 w-4 opacity-70" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4 opacity-70" />
+                              ))}
+                          </button>
+
+                          {openMenus[item.id] && !collapsed && (
+                            <div id={`${item.id}-submenu`} className="ml-6 mt-1 space-y-1 border-l border-border/40 pl-3">
+                              {item.children.map((child: any) => {
+                                // ✅ Chỉ active khi exact match hoặc là sub-path của chính child đó
+                                // Ưu tiên child có url dài hơn (specific hơn) nếu nhiều child match
+                                let isActive = location.pathname === child.url;
+                                if (!isActive && location.pathname.startsWith(child.url + "/")) {
+                                  // ✅ Kiểm tra xem có child nào khác có url dài hơn và cũng match không
+                                  const hasMoreSpecificChild = item.children.some((otherChild: any) =>
+                                    otherChild.url !== child.url &&
+                                    otherChild.url.length > child.url.length &&
+                                    location.pathname.startsWith(otherChild.url + "/")
+                                  );
+                                  isActive = !hasMoreSpecificChild;
+                                }
+                                return (
+                                  <NavLink
+                                    key={child.id}
+                                    to={child.url}
+                                    aria-current={isActive ? "page" : undefined}
+                                    className={`flex items-center space-x-2 rounded-md px-2 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                                      isActive ? "bg-primary/10 text-primary font-medium shadow-sm" : "hover:bg-accent hover:text-accent-foreground"
+                                    }`}
+                                  >
+                                    <child.icon className={`${childIconSize} ${isActive ? "text-primary" : "text-muted-foreground"}`} />
+                                    <span>{child.title}</span>
+                                  </NavLink>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <NavLink
+                          to={item.url}
+                          aria-current={active ? "page" : undefined}
+                          className={`group flex items-center ${parentContentLayout} rounded-md ${parentButtonPadding} transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                            active ? "bg-primary/10 text-primary font-semibold shadow-sm" : "hover:bg-accent hover:text-accent-foreground"
                           }`}
                         >
-                          <div className="flex items-center space-x-2">
-                            <item.icon className={`h-4 w-4 ${isItemActive(item) ? "text-primary" : ""}`} />
-                            {!collapsed && <span>{item.title}</span>}
-                          </div>
-                          {!collapsed &&
-                            (openMenus[item.id] ? <ChevronDown className="h-4 w-4 opacity-70" /> : <ChevronRight className="h-4 w-4 opacity-70" />)}
-                        </button>
-
-                        {openMenus[item.id] && !collapsed && (
-                          <div className="ml-6 mt-1 space-y-1">
-                            {item.children.map((child: any) => {
-                              // ✅ Chỉ active khi exact match hoặc là sub-path của chính child đó
-                              // Ưu tiên child có url dài hơn (specific hơn) nếu nhiều child match
-                              let isActive = location.pathname === child.url;
-                              if (!isActive && location.pathname.startsWith(child.url + "/")) {
-                                // ✅ Kiểm tra xem có child nào khác có url dài hơn và cũng match không
-                                const hasMoreSpecificChild = item.children.some((otherChild: any) => 
-                                  otherChild.url !== child.url && 
-                                  otherChild.url.length > child.url.length &&
-                                  location.pathname.startsWith(otherChild.url + "/")
-                                );
-                                isActive = !hasMoreSpecificChild;
-                              }
-                              return (
-                                <NavLink
-                                  key={child.id}
-                                  to={child.url}
-                                  className={`flex items-center space-x-2 px-2 py-1.5 rounded-md text-sm transition-colors ${
-                                    isActive ? "bg-primary/10 text-primary font-medium" : "hover:bg-accent hover:text-accent-foreground"
-                                  }`}
-                                >
-                                  <child.icon className={`h-3.5 w-3.5 ${isActive ? "text-primary" : ""}`} />
-                                  <span>{child.title}</span>
-                                </NavLink>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <NavLink
-                        to={item.url}
-                        className={({ isActive }) => {
-                          const active = isActive || location.pathname.startsWith(item.url + "/");
-                          return `flex items-center space-x-2 px-2 py-2 rounded-md transition-colors ${
-                            active ? "bg-primary/10 text-primary font-semibold" : "hover:bg-accent hover:text-accent-foreground"
-                          }`;
-                        }}
-                      >
-                        <item.icon className={`h-4 w-4 ${isItemActive(item) ? "text-primary" : ""}`} />
-                        {!collapsed && <span>{item.title}</span>}
-                      </NavLink>
-                    )}
-                  </SidebarMenuItem>
-                ))}
+                          <item.icon className={`${parentIconSize} ${active ? "text-primary" : "text-muted-foreground"}`} />
+                          {!collapsed && <span>{item.title}</span>}
+                        </NavLink>
+                      )}
+                    </SidebarMenuItem>
+                  );
+                })}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -641,16 +722,28 @@ const AppSidebar = () => {
       <SidebarFooter className="p-4 space-y-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            {!collapsed && backendUser && (
-              <div className="px-3 py-2 bg-muted rounded-lg cursor-pointer hover:bg-muted/80 transition">
-                <div className="flex items-center space-x-2">
+            {backendUser && (
+              <button
+                type="button"
+                aria-label="Tùy chọn tài khoản"
+                className={`w-full rounded-lg border border-border/60 bg-muted transition hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                  collapsed ? "flex items-center justify-center p-2" : "px-3 py-2"
+                }`}
+              >
+                {collapsed ? (
                   <UserCheck className="h-4 w-4 text-primary" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{backendUser.name}</p>
-                    <p className="text-xs text-muted-foreground capitalize">{backendUser.role}</p>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    <UserCheck className="h-4 w-4 text-primary" />
+                    <div className="min-w-0 flex-1 text-left">
+                      <p className="text-sm font-medium truncate">{backendUser.name}</p>
+                      {roleTitle ? (
+                        <p className="text-xs text-muted-foreground truncate">{roleTitle}</p>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              </div>
+                )}
+              </button>
             )}
           </DropdownMenuTrigger>
 
@@ -658,6 +751,7 @@ const AppSidebar = () => {
             <DropdownMenuLabel className="font-normal">
               <div className="flex flex-col space-y-1">
                 <p className="text-sm font-medium leading-none">{backendUser.name}</p>
+                {roleTitle ? <p className="text-xs leading-none text-muted-foreground">{roleTitle}</p> : null}
                 <p className="text-xs leading-none text-muted-foreground">{backendUser.email}</p>
               </div>
             </DropdownMenuLabel>
@@ -671,12 +765,17 @@ const AppSidebar = () => {
               </NavLink>
             </DropdownMenuItem>
 
-            <DropdownMenuItem asChild>
-              <NavLink to={`${prefix}/settings`} className="flex items-center space-x-2">
-                <Settings className="h-4 w-4 text-muted-foreground" />
-                <span>Cài đặt</span>
-              </NavLink>
-            </DropdownMenuItem>
+            {settingsHref && (
+              <DropdownMenuItem asChild>
+                <NavLink to={settingsHref} className="flex items-center space-x-2">
+                  <Settings className="h-4 w-4 text-muted-foreground" />
+                  <span>Cài đặt</span>
+                </NavLink>
+              </DropdownMenuItem>
+            )}
+
+
+            {/* Removed settings from footer for all roles */}
 
             <DropdownMenuItem onClick={logout} className="flex items-center space-x-2 cursor-pointer">
               <LogOut className="h-4 w-4 text-red-500" />
