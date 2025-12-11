@@ -13,7 +13,10 @@ import { useCurrentAcademicYear } from '@/hooks/useCurrentAcademicYear';
 import schoolConfigApi from '@/services/schoolConfigApi';
 import gradesApi from '@/services/gradesApi';
 import gradeConfigApi from '@/services/gradeConfigApi';
+import conductApi from '@/services/conductApi';
 import { toast } from 'sonner';
+// @ts-ignore - sweetalert2 types are included in the package
+import Swal from 'sweetalert2';
 import { FileText, BarChart3, Award, TrendingUp, TrendingDown, Minus, Download, Loader2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import api from '@/services/axiosInstance';
@@ -28,7 +31,47 @@ type SubjectEntry = {
   };
   gradeItems?: Record<string, number[]>;
   isOfficial?: boolean;
+  result?: string | null; // "D" hoặc "K" cho môn không tính điểm TB
+  subject?: {
+    _id?: string;
+    name?: string;
+    code?: string;
+    includeInAverage?: boolean;
+  };
 } | null;
+
+type ConductRecord = {
+  _id?: string | null;
+  studentId?: { _id: string } | string;
+  conduct?: string | null;
+  gpa?: number | null;
+  academicLevel?: string | null;
+  rank?: number | null;
+  conductStatus?: 'draft' | 'pending' | 'approved' | 'locked';
+};
+
+const normalizeId = (value: any): string => {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'object') {
+    if (typeof value.toHexString === 'function') return value.toHexString();
+    if (value._id) return normalizeId(value._id);
+    if (typeof value.toString === 'function' && value.toString !== Object.prototype.toString) {
+      return value.toString();
+    }
+  }
+  return String(value);
+};
+
+const normalizeConductSemester = (semester: string) => {
+  if (!semester) return 'CN';
+  const normalized = semester.toString().toUpperCase();
+  if (normalized === '1' || normalized === 'HK1') return 'HK1';
+  if (normalized === '2' || normalized === 'HK2') return 'HK2';
+  if (normalized === 'CN' || normalized === 'CUOI-NAM') return 'CN';
+  return semester;
+};
 
 const toScore = (value: unknown): number | null => (typeof value === 'number' ? Number(value) : null);
 
@@ -124,6 +167,8 @@ export default function HomeroomGradesPage() {
   const [selectedSemester, setSelectedSemester] = useState<string>('');
   const [semesters, setSemesters] = useState<{ code: string; name: string }[]>([]);
   const [activeTab, setActiveTab] = useState('all-grades');
+  // Semester riêng cho tab xếp loại (có thể chọn HK1, HK2, hoặc CN)
+  const [classificationSemester, setClassificationSemester] = useState<string>('');
   
   // Data states
   const [allGradesData, setAllGradesData] = useState<any[]>([]);
@@ -143,6 +188,21 @@ export default function HomeroomGradesPage() {
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [downloadingStudentId, setDownloadingStudentId] = useState<string | null>(null);
   const [downloadingClass, setDownloadingClass] = useState(false);
+  const [conductRecords, setConductRecords] = useState<Map<string, ConductRecord>>(new Map());
+  const [conductLoading, setConductLoading] = useState(false);
+  const [conductSyncing, setConductSyncing] = useState(false);
+  const [classificationLoading, setClassificationLoading] = useState(false);
+
+  const homeroomClassId = homeroomClass?._id as string | undefined;
+  const conductSemesterCode = useMemo(() => normalizeConductSemester(selectedSemester || 'CN'), [selectedSemester]);
+  const classificationEntries = useMemo(() => {
+    if (!classificationData) return [];
+    if (Array.isArray(classificationData.data)) return classificationData.data;
+    if (Array.isArray((classificationData as any)?.data?.data)) {
+      return (classificationData as any).data.data;
+    }
+    return [];
+  }, [classificationData]);
 
   // ✅ Lấy lớp chủ nhiệm
   useEffect(() => {
@@ -207,6 +267,37 @@ export default function HomeroomGradesPage() {
       setSelectedSemester(semesterOptions[0]?.code || '');
     }
   }, [selectedSemester, semesterOptions]);
+
+  // Khởi tạo classificationSemester khi có semesterOptions
+  // Ưu tiên học kỳ hiện tại (selectedSemester), nếu không có thì mới dùng CN hoặc option đầu tiên
+  useEffect(() => {
+    if (semesterOptions.length > 0 && !classificationSemester) {
+      // Ưu tiên selectedSemester nếu có và hợp lệ
+      if (selectedSemester && semesterOptions.some(opt => opt.code === selectedSemester)) {
+        setClassificationSemester(selectedSemester);
+      } else {
+        // Nếu không có selectedSemester, ưu tiên CN nếu có, nếu không thì lấy option đầu tiên
+        const cnOption = semesterOptions.find(opt => opt.code === 'CN');
+        setClassificationSemester(cnOption ? 'CN' : semesterOptions[0]?.code || '');
+      }
+    }
+  }, [semesterOptions, classificationSemester, selectedSemester]);
+
+  // Đồng bộ classificationSemester với selectedSemester khi chuyển sang tab xếp loại
+  // Ưu tiên hiển thị theo học kỳ hiện tại
+  useEffect(() => {
+    if (activeTab === 'classification' && selectedSemester && semesterOptions.length > 0) {
+      // Chỉ đồng bộ nếu selectedSemester hợp lệ và khác với classificationSemester hiện tại
+      if (semesterOptions.some(opt => opt.code === selectedSemester) && 
+          classificationSemester !== selectedSemester) {
+        // Chỉ đồng bộ nếu classificationSemester chưa được set hoặc đang là giá trị mặc định
+        // Để tránh ghi đè lựa chọn của người dùng
+        if (!classificationSemester || classificationSemester === 'CN') {
+          setClassificationSemester(selectedSemester);
+        }
+      }
+    }
+  }, [activeTab, selectedSemester, semesterOptions, classificationSemester]);
 
   const selectedSemesterLabel = useMemo(() => {
     if (!selectedSemester) return '';
@@ -284,26 +375,89 @@ export default function HomeroomGradesPage() {
   }, [selectedYear, selectedSemester]);
 
   const handleEvaluateAcademic = async () => {
-    if (!homeroomClass?._id || !selectedYear || !selectedSemester) return;
+    if (!homeroomClass?._id || !selectedYear || !classificationSemester) return;
     try {
       setEvaluating(true);
       const res = await gradesApi.evaluateHomeroomAcademic({
         classId: homeroomClass._id,
         schoolYear: selectedYear,
-        semester: selectedSemester,
+        semester: classificationSemester,
       });
       if (res?.success) {
         toast.success(`Đã xét học lực: cập nhật ${res.updated}, bỏ qua ${res.skipped}`);
+        
+        // ✅ Hiển thị SweetAlert2 nếu có học sinh bị bỏ qua
+        if (res.skipped > 0 && res.details && Array.isArray(res.details)) {
+          const skippedDetails = res.details.filter((d: any) => d.status === 'skipped');
+          if (skippedDetails.length > 0) {
+            const reasonsList = skippedDetails.map((d: any) => {
+              // Ưu tiên tên học sinh từ response, fallback về classificationData hoặc ID
+              let studentDisplay = '';
+              if (d.studentName) {
+                studentDisplay = d.studentName;
+                if (d.studentCode) {
+                  studentDisplay += ` (${d.studentCode})`;
+                }
+              } else {
+                // Fallback: tìm từ classificationData
+                const studentId = String(d.studentId || '');
+                if (classificationData && Array.isArray(classificationData)) {
+                  const foundStudent = classificationData.find((s: any) => {
+                    const sid = String(s._id || s.studentId?._id || s.studentId || '');
+                    return sid === studentId;
+                  });
+                  if (foundStudent) {
+                    const name = foundStudent.name || foundStudent.studentId?.name || '';
+                    const code = foundStudent.studentCode || foundStudent.studentId?.studentCode || '';
+                    studentDisplay = name ? `${name}${code ? ` (${code})` : ''}` : `Học sinh ID: ${studentId}`;
+                  } else {
+                    studentDisplay = studentId ? `Học sinh ID: ${studentId}` : 'Học sinh không xác định';
+                  }
+                } else {
+                  studentDisplay = studentId ? `Học sinh ID: ${studentId}` : 'Học sinh không xác định';
+                }
+              }
+              const reason = d.reason || 'Không xác định';
+              return `<li style="margin-bottom: 10px;"><strong>${studentDisplay}:</strong><br/><span style="color: #666; font-size: 0.9em; margin-left: 20px;">${reason}</span></li>`;
+            }).join('');
+            
+            Swal.fire({
+              icon: 'warning',
+              title: `Có ${res.skipped} học sinh bị bỏ qua`,
+              html: `
+                <div style="text-align: left; max-height: 400px; overflow-y: auto; padding-right: 10px;">
+                  <p style="margin-bottom: 15px; font-weight: 500;">Các học sinh sau không được xét học lực do:</p>
+                  <ul style="margin-top: 10px; padding-left: 20px; list-style-type: disc;">
+                    ${reasonsList}
+                  </ul>
+                </div>
+              `,
+              confirmButtonText: 'Đã hiểu',
+              confirmButtonColor: '#3085d6',
+              width: '650px',
+              customClass: {
+                htmlContainer: 'text-left'
+              }
+            });
+          }
+        }
       } else {
         toast.info(res?.message || 'Đã gửi yêu cầu xét học lực');
       }
-      // reload classification
-      const refreshed = await gradesApi.getHomeroomClassClassification({
-        classId: homeroomClass._id,
-        schoolYear: selectedYear,
-        semester: selectedSemester,
-      });
-      setClassificationData(refreshed);
+      // reload classification sau khi đóng alert (đợi một chút để backend cập nhật)
+      setTimeout(async () => {
+        try {
+          const refreshed = await gradesApi.getHomeroomClassClassification({
+            classId: homeroomClass._id,
+            schoolYear: selectedYear,
+            semester: classificationSemester,
+          });
+          setClassificationData(refreshed);
+        } catch (err: any) {
+          console.error('Error reloading classification:', err);
+          toast.error('Không thể tải lại dữ liệu xếp loại');
+        }
+      }, 300);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Không thể xét học lực');
     } finally {
@@ -335,28 +489,34 @@ export default function HomeroomGradesPage() {
   }, [homeroomClass, selectedYear, activeTab]);
 
   // ✅ Lấy kết quả xếp loại
-  useEffect(() => {
-    const fetchClassification = async () => {
-      if (!homeroomClass?._id || !selectedYear || activeTab !== 'classification') {
-        setClassificationData(null);
-        return;
-      }
+  const fetchClassification = useCallback(async () => {
+    if (!homeroomClass?._id || !selectedYear || !classificationSemester) {
+      setClassificationData(null);
+      return;
+    }
 
-      try {
-        const res = await gradesApi.getHomeroomClassClassification({
-          classId: homeroomClass._id,
-          schoolYear: selectedYear,
-          semester: selectedSemester,
-        });
-        setClassificationData(res);
-      } catch (err: any) {
-        console.error('Error fetching classification:', err);
-        toast.error(err.response?.data?.message || 'Không thể tải kết quả xếp loại');
-        setClassificationData(null);
-      }
-    };
-    fetchClassification();
-  }, [homeroomClass, selectedYear, selectedSemester, activeTab]);
+    try {
+      setClassificationLoading(true);
+      const res = await gradesApi.getHomeroomClassClassification({
+        classId: homeroomClass._id,
+        schoolYear: selectedYear,
+        semester: classificationSemester,
+      });
+      setClassificationData(res);
+    } catch (err: any) {
+      console.error('Error fetching classification:', err);
+      toast.error(err.response?.data?.message || 'Không thể tải kết quả xếp loại');
+      setClassificationData(null);
+    } finally {
+      setClassificationLoading(false);
+    }
+  }, [homeroomClass, selectedYear, classificationSemester]);
+
+  useEffect(() => {
+    if (activeTab === 'classification') {
+      fetchClassification();
+    }
+  }, [activeTab, fetchClassification]);
 
   const subjectOptions = useMemo(() => {
     const map = new Map<string, { value: string; label: string }>();
@@ -377,6 +537,47 @@ export default function HomeroomGradesPage() {
       setSubjectFilter('all');
     }
   }, [subjectFilter, subjectOptions]);
+
+  const fetchConductRecords = useCallback(async () => {
+    if (!homeroomClassId || !selectedYear) {
+      setConductRecords(new Map());
+      return;
+    }
+    try {
+      setConductLoading(true);
+      // ✅ Lấy hạnh kiểm theo semester: nếu đang ở tab classification thì dùng classificationSemester, nếu không thì dùng selectedSemester
+      // Nếu không có semester nào, mặc định lấy CN
+      const semesterToUse = activeTab === 'classification' && classificationSemester 
+        ? classificationSemester 
+        : (selectedSemester || 'CN');
+      const conductSemester = normalizeConductSemester(semesterToUse);
+      
+      const res = await conductApi.getConducts({
+        year: selectedYear,
+        semester: conductSemester,
+        classId: homeroomClassId,
+      });
+      const records = Array.isArray(res?.data) ? res.data : res?.data?.data ?? [];
+      const map = new Map<string, ConductRecord>();
+      records.forEach((record: any) => {
+        const sid = normalizeId(record?.studentId?._id ?? record?.studentId);
+        // ✅ Chỉ lấy hạnh kiểm đã chốt
+        if (sid && record?.conductStatus === 'locked') {
+          map.set(sid, record);
+        }
+      });
+      setConductRecords(map);
+    } catch (error: any) {
+      console.error('Error loading conduct records:', error);
+      toast.error(error?.response?.data?.message || 'Không thể tải dữ liệu hạnh kiểm');
+    } finally {
+      setConductLoading(false);
+    }
+  }, [homeroomClassId, selectedYear, activeTab, classificationSemester, selectedSemester]);
+
+  useEffect(() => {
+    fetchConductRecords();
+  }, [fetchConductRecords]);
 
   const visibleSubjects = useMemo(() => {
     if (subjectFilter === 'all') {
@@ -408,7 +609,8 @@ export default function HomeroomGradesPage() {
           subjectsMap.set(String(subjectId), entry);
         }
       });
-      map.set(String(student._id), subjectsMap);
+      const studentKey = normalizeId(student._id);
+      map.set(studentKey, subjectsMap);
     });
     return map;
   }, [allGradesData]);
@@ -501,7 +703,6 @@ export default function HomeroomGradesPage() {
     const actionColumns = isAllSubjects ? 1 : 0;
     return baseColumns + subjectColumns + averageColumns + summaryColumns + actionColumns;
   }, [isAllSubjects, displayedSubjects, subjectComponents]);
-  const homeroomClassId = homeroomClass?._id as string | undefined;
 
   const sanitizeForFileName = useCallback((value: string | undefined | null) => {
     if (!value) return 'ket-qua';
@@ -581,6 +782,100 @@ export default function HomeroomGradesPage() {
       setDownloadingClass(false);
     }
   }, [homeroomClassId, homeroomClass?.className, selectedYear, selectedSemester, sanitizeForFileName]);
+
+  const handleSyncAcademicToConduct = useCallback(async () => {
+    if (!classificationEntries.length) {
+      toast.info('Chưa có dữ liệu xếp loại để lưu');
+      return;
+    }
+    if (!homeroomClassId || !selectedYear) {
+      toast.error('Thiếu thông tin lớp hoặc năm học');
+      return;
+    }
+
+    const payloads = classificationEntries
+      .map((student: any) => {
+        const studentKey = normalizeId(student?._id || student?.studentId?._id);
+        if (!studentKey) return null;
+        const rawGpa =
+          typeof student?.gpa === 'number'
+            ? student.gpa
+            : typeof student?.gpa?.year === 'number'
+            ? student.gpa.year
+            : null;
+        return {
+          studentId: studentKey,
+          gpa: rawGpa,
+          rank: student?.rank ?? null,
+          academicLevel: student?.academicLevel || null,
+        };
+      })
+      .filter(Boolean) as Array<{
+        studentId: string;
+        gpa: number | null;
+        rank: number | null;
+        academicLevel: string | null;
+      }>;
+
+    if (!payloads.length) {
+      toast.info('Không có dữ liệu để lưu');
+      return;
+    }
+
+    setConductSyncing(true);
+    try {
+      await Promise.all(
+        payloads.map(async (entry) => {
+          const existing = conductRecords.get(entry.studentId);
+          if (existing?.conductStatus === 'locked') {
+            return;
+          }
+          const updatePayload: any = {
+            year: selectedYear,
+            semester: conductSemesterCode,
+          };
+          if (entry.gpa !== null && !Number.isNaN(entry.gpa)) {
+            updatePayload.gpa = Number(entry.gpa.toFixed(2));
+          }
+          if (entry.rank !== null && entry.rank !== undefined) {
+            updatePayload.rank = entry.rank;
+          }
+          if (entry.academicLevel) {
+            updatePayload.academicLevel = entry.academicLevel;
+          }
+
+          if (existing?._id) {
+            await conductApi.updateConduct(existing._id, updatePayload);
+          } else {
+            await conductApi.createConduct({
+              studentId: entry.studentId,
+              classId: homeroomClassId,
+              year: selectedYear,
+              semester: conductSemesterCode,
+              gpa: updatePayload.gpa,
+              rank: updatePayload.rank,
+              conduct: undefined,
+              note: undefined,
+            });
+          }
+        })
+      );
+      toast.success('Đã lưu GPA, học lực và xếp hạng vào hạnh kiểm');
+      await fetchConductRecords();
+    } catch (error: any) {
+      console.error('Error syncing conduct data:', error);
+      toast.error(error?.response?.data?.message || 'Không thể lưu dữ liệu hạnh kiểm');
+    } finally {
+      setConductSyncing(false);
+    }
+  }, [
+    classificationEntries,
+    conductRecords,
+    conductSemesterCode,
+    fetchConductRecords,
+    homeroomClassId,
+    selectedYear,
+  ]);
 
 
   const filteredStudents = useMemo(() => {
@@ -794,7 +1089,10 @@ export default function HomeroomGradesPage() {
                                   </TableHead>
                                 ))}
                             {!isAllSubjects && (
-                                <TableHead className="text-center">TB môn</TableHead>
+                                <>
+                                  <TableHead className="text-center">TB môn</TableHead>
+                                  <TableHead className="text-center">Kết quả</TableHead>
+                                </>
                               )}
                             {isAllSubjects && (
                                 <>
@@ -817,11 +1115,14 @@ export default function HomeroomGradesPage() {
                             </TableRow>
                           ) : (
                             filteredStudents.map((student, index) => {
-                              const studentId = String(student._id);
+                              const studentId = normalizeId(student._id);
                               const subjectMap = studentSubjectMap.get(studentId);
                               const subjectEntry = !isAllSubjects
                                 ? ((subjectEntryMap?.get(studentId) ?? null) as SubjectEntry)
                                 : null;
+                              const conductRecord = conductRecords.get(studentId);
+                              const lockedConduct =
+                                conductRecord?.conductStatus === 'locked' ? conductRecord : undefined;
                               const allowYearAverage = selectedSemester === 'CN';
                               const publishedAverage = getPublishedAverage(subjectEntry, allowYearAverage);
                               const backendSemesterAverage = toScore(student.semesterAverage);
@@ -830,13 +1131,23 @@ export default function HomeroomGradesPage() {
                                 ? displayedSubjects.map(subjectMeta => {
                                     const entry = (subjectMap?.get(subjectMeta.value) ?? null) as SubjectEntry;
                                     const subjectAverage = getPublishedAverage(entry, allowYearAverage);
-                                    if (subjectAverage !== null) {
+                                    const includeInAverage = entry?.subject?.includeInAverage;
+                                    const result = entry?.result;
+                                    
+                                    if (subjectAverage !== null && includeInAverage !== false) {
                                       subjectAveragesForOverall.push(subjectAverage);
                                     }
                                     return (
                                       <TableCell key={`${student._id}-${subjectMeta.value}`} className="text-center">
-                                        {subjectAverage !== null ? (
+                                        {includeInAverage !== false && subjectAverage !== null ? (
                                           <span className={getScoreClass(subjectAverage)}>{formatScore(subjectAverage)}</span>
+                                        ) : includeInAverage === false ? (
+                                          <Badge 
+                                            variant={result === 'D' ? 'default' : result === 'K' ? 'destructive' : 'outline'}
+                                            className="font-semibold text-xs"
+                                          >
+                                            {result === 'D' ? 'Đạt' : result === 'K' ? 'Không đạt' : '-'}
+                                          </Badge>
                                         ) : (
                                           <span className="text-muted-foreground">-</span>
                                         )}
@@ -878,6 +1189,10 @@ export default function HomeroomGradesPage() {
                               const semesterAverage = selectedSemester === 'CN'
                                 ? (computedOverallAverage ?? backendSemesterAverage)
                                 : (backendSemesterAverage ?? computedOverallAverage);
+                              const savedSemesterAverage =
+                                typeof lockedConduct?.gpa === 'number'
+                                  ? lockedConduct.gpa
+                                  : semesterAverage;
                               return (
                                 <TableRow key={student._id}>
                                   <TableCell>{index + 1}</TableCell>
@@ -885,26 +1200,60 @@ export default function HomeroomGradesPage() {
                                   <TableCell className="font-medium">{student.name}</TableCell>
                                   {subjectCells}
                                   {!isAllSubjects && (
-                                    <TableCell className={`text-center font-semibold ${subjectEntry ? '' : 'text-muted-foreground'}`}>
-                                      {subjectEntry && publishedAverage !== null ? (
-                                        <span className={getScoreClass(publishedAverage)}>{formatScore(publishedAverage)}</span>
-                                      ) : (
-                                        <span className="text-muted-foreground">-</span>
-                                      )}
-                                    </TableCell>
+                                    <>
+                                      <TableCell className={`text-center font-semibold ${subjectEntry ? '' : 'text-muted-foreground'}`}>
+                                        {subjectEntry ? (
+                                          subjectEntry.subject?.includeInAverage !== false ? (
+                                            publishedAverage !== null ? (
+                                              <span className={getScoreClass(publishedAverage)}>{formatScore(publishedAverage)}</span>
+                                            ) : subjectEntry.average !== null && subjectEntry.average !== undefined ? (
+                                              <span className={getScoreClass(subjectEntry.average)}>{formatScore(subjectEntry.average)}</span>
+                                            ) : (
+                                              <span className="text-muted-foreground">-</span>
+                                            )
+                                          ) : (
+                                            <span className="text-muted-foreground">-</span>
+                                          )
+                                        ) : (
+                                          <span className="text-muted-foreground">-</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="text-center">
+                                        {subjectEntry && subjectEntry.subject?.includeInAverage === false ? (
+                                          <Badge 
+                                            variant={subjectEntry.result === 'D' ? 'default' : subjectEntry.result === 'K' ? 'destructive' : 'outline'}
+                                            className="font-semibold text-xs"
+                                          >
+                                            {subjectEntry.result === 'D' ? 'Đạt' : subjectEntry.result === 'K' ? 'Không đạt' : '-'}
+                                          </Badge>
+                                        ) : (
+                                          <span className="text-muted-foreground">-</span>
+                                        )}
+                                      </TableCell>
+                                    </>
                                   )}
                                   {isAllSubjects && (
                                     <>
                                       <TableCell className="text-center font-semibold">
-                                        {semesterAverage !== null
-                                          ? formatScore(semesterAverage, 2)
+                                        {savedSemesterAverage !== null && savedSemesterAverage !== undefined
+                                          ? formatScore(savedSemesterAverage, 2)
                                           : '-'}
                                       </TableCell>
                                       <TableCell className="text-center">
-                                        {getConductBadge(student.conduct)}
+                                        {conductLoading ? (
+                                          <span className="text-xs text-muted-foreground">Đang tải...</span>
+                                        ) : (
+                                          getConductBadge(lockedConduct?.conduct)
+                                        )}
                                       </TableCell>
                                       <TableCell className="text-center">
-                                        {getAcademicLevelBadge(student.academicLevel)}
+                                        {conductLoading ? (
+                                          <span className="text-xs text-muted-foreground">Đang tải...</span>
+                                        ) : (
+                                          getAcademicLevelBadge(
+                                            lockedConduct?.academicLevel
+                                          )
+                                        )}
                                       </TableCell>
                                     </>
                                   )}
@@ -1033,7 +1382,7 @@ export default function HomeroomGradesPage() {
 
             {/* Tab 3: Xếp loại */}
             <TabsContent value="classification" className="space-y-4">
-              {!classificationData ? (
+              {classificationLoading || !classificationData ? (
                 <Card>
                   <CardContent className="p-8 text-center">
                     <Skeleton className="h-64 w-full" />
@@ -1045,13 +1394,30 @@ export default function HomeroomGradesPage() {
                   {classificationData.statistics && (
                     <Card>
                       <CardHeader>
-                        <div className="flex items-center justify-between">
-                          <CardTitle>Thống kê xếp loại</CardTitle>
+                        <div className="flex items-center justify-between flex-wrap gap-4">
+                          <div className="flex items-center gap-3">
+                            <CardTitle>Thống kê xếp loại</CardTitle>
+                            <Select
+                              value={classificationSemester}
+                              onValueChange={setClassificationSemester}
+                            >
+                              <SelectTrigger className="w-[180px]">
+                                <SelectValue placeholder="Chọn học kỳ" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {semesterOptions.map((sem) => (
+                                  <SelectItem key={sem.code} value={sem.code}>
+                                    {sem.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
                           <div className="flex items-center gap-2">
                             <button
                               className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
                               onClick={handleEvaluateAcademic}
-                              disabled={evaluating || !selectedSemester}
+                              disabled={evaluating || !classificationSemester}
                               title="Xét học lực theo cấu hình và môn bắt buộc đã công bố"
                             >
                               {evaluating ? 'Đang xét…' : 'Xét học lực'}
@@ -1091,7 +1457,24 @@ export default function HomeroomGradesPage() {
                   {/* Danh sách học sinh */}
                   <Card>
                     <CardHeader>
-                      <CardTitle>Kết quả xếp loại học tập</CardTitle>
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <CardTitle>
+                          Kết quả xếp loại học tập
+                          {classificationSemester && (
+                            <span className="ml-2 text-sm font-normal text-muted-foreground">
+                              ({semesterOptions.find(s => s.code === classificationSemester)?.name || classificationSemester})
+                            </span>
+                          )}
+                        </CardTitle>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleSyncAcademicToConduct}
+                          disabled={conductSyncing || classificationEntries.length === 0}
+                        >
+                          {conductSyncing ? 'Đang lưu...' : 'Lưu GPA & hạnh kiểm'}
+                        </Button>
+                      </div>
                     </CardHeader>
                     <CardContent>
                       <div className="overflow-x-auto">
@@ -1105,30 +1488,113 @@ export default function HomeroomGradesPage() {
                               <TableHead className="text-center">Hạnh kiểm</TableHead>
                               <TableHead className="text-center">Học lực</TableHead>
                               <TableHead className="text-center">Xếp hạng (Lớp/Khối)</TableHead>
+                              <TableHead className="text-center">Hành động</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {classificationData.data?.map((student: any, index: number) => (
-                              <TableRow key={student._id}>
-                                <TableCell>{index + 1}</TableCell>
-                                <TableCell className="font-medium">{student.name}</TableCell>
-                                <TableCell>{student.studentCode}</TableCell>
-                                <TableCell className="text-center font-semibold">
-                                  {student.gpa !== null ? student.gpa.toFixed(2) : '-'}
-                                </TableCell>
-                                <TableCell className="text-center">
-                                  {getConductBadge(student.conduct)}
-                                </TableCell>
-                                <TableCell className="text-center">
-                                  {getAcademicLevelBadge(student.academicLevel)}
-                                </TableCell>
-                                <TableCell className="text-center">
-                                  {student.rank || student.rankGrade 
-                                    ? `Lớp: ${student.rank || '-'} / Khối: ${student.rankGrade || '-'}`
-                                    : '-'}
-                                </TableCell>
-                              </TableRow>
-                            ))}
+                            {classificationEntries.map((student: any, index: number) => {
+                              const studentId = normalizeId(student._id);
+                              // ✅ Lấy hạnh kiểm từ conductRecords (giống tab "Bảng điểm tất cả môn học")
+                              // Ưu tiên từ classificationData nếu có, nếu không thì lấy từ conductRecords
+                              const conductRecord = conductRecords.get(studentId);
+                              const lockedConduct = conductRecord?.conductStatus === 'locked' ? conductRecord : undefined;
+                              const finalConduct = student.conduct || lockedConduct?.conduct || null;
+                              
+                              return (
+                                <TableRow key={student._id}>
+                                  <TableCell>{index + 1}</TableCell>
+                                  <TableCell className="font-medium">{student.name}</TableCell>
+                                  <TableCell>{student.studentCode}</TableCell>
+                                  <TableCell className="text-center font-semibold">
+                                    {student.gpa !== null ? student.gpa.toFixed(2) : '-'}
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    {conductLoading ? (
+                                      <span className="text-xs text-muted-foreground">Đang tải...</span>
+                                    ) : (
+                                      getConductBadge(finalConduct)
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    {getAcademicLevelBadge(student.academicLevel)}
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    {student.rank || student.rankGrade 
+                                      ? `Lớp: ${student.rank || '-'} / Khối: ${student.rankGrade || '-'}`
+                                      : '-'}
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={async () => {
+                                        if (!selectedYear || !classificationSemester) {
+                                          toast.error('Vui lòng chọn năm học và học kỳ');
+                                          return;
+                                        }
+                                        
+                                        try {
+                                          const res = await gradesApi.evaluateStudentAcademic({
+                                            studentId: student._id,
+                                            schoolYear: selectedYear,
+                                            semester: classificationSemester,
+                                          });
+                                          
+                                          if (res.success) {
+                                            // ✅ Hiển thị SweetAlert2 với thông tin chi tiết
+                                            const details = res.academicDetails || {};
+                                            const reasons = details.reasons || [];
+                                            const reasonsHtml = reasons.length > 0 
+                                              ? `<ul style="text-align: left; margin-top: 10px;">${reasons.map((r: string) => `<li>${r}</li>`).join('')}</ul>`
+                                              : '<p>Không có thông tin chi tiết</p>';
+                                            
+                                            await Swal.fire({
+                                              title: `Xét học lực: ${student.name}`,
+                                              html: `
+                                                <div style="text-align: left;">
+                                                  <p><strong>Mã HS:</strong> ${student.studentCode}</p>
+                                                  <p><strong>Điểm TB:</strong> ${res.gpa?.toFixed(2) || 'N/A'}</p>
+                                                  <p><strong>Học lực:</strong> <span style="font-weight: bold; color: ${res.academicLevel === 'Giỏi' ? 'green' : res.academicLevel === 'Khá' ? 'blue' : res.academicLevel === 'Trung bình' ? 'orange' : 'red'}">${res.academicLevel || 'Chưa xác định'}</span></p>
+                                                  <hr style="margin: 15px 0;">
+                                                  <p><strong>Cách xếp học lực:</strong></p>
+                                                  ${reasonsHtml}
+                                                </div>
+                                              `,
+                                              icon: 'success',
+                                              confirmButtonText: 'Đóng',
+                                              width: '600px'
+                                            });
+                                            
+                                            // Reload dữ liệu sau khi đóng alert (đợi một chút để backend cập nhật)
+                                            setTimeout(async () => {
+                                              try {
+                                                const refreshed = await gradesApi.getHomeroomClassClassification({
+                                                  classId: homeroomClass?._id,
+                                                  schoolYear: selectedYear,
+                                                  semester: classificationSemester,
+                                                });
+                                                setClassificationData(refreshed);
+                                              } catch (err: any) {
+                                                console.error('Error reloading classification:', err);
+                                                toast.error('Không thể tải lại dữ liệu xếp loại');
+                                              }
+                                            }, 300);
+                                          } else {
+                                            toast.error(res.message || 'Không thể xét học lực');
+                                          }
+                                        } catch (err: any) {
+                                          console.error('Error evaluating academic level:', err);
+                                          toast.error(err.response?.data?.message || 'Không thể xét học lực');
+                                        }
+                                      }}
+                                      className="text-xs"
+                                    >
+                                      Xét học lực
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
                           </TableBody>
                         </Table>
                       </div>

@@ -375,30 +375,61 @@ async function computeAndSaveYearGPA({ studentId, classId, schoolYear }) {
     // Việc xét học lực sẽ do GVCN chủ động bấm nút "Xét học lực" ở bảng điểm lớp CN.
     let academicLevel = null;
 
-    // Lưu vào StudentYearRecord với semester='CN'
-    if (yearGPA !== null && classId) {
-      const updateData = {
-        gpa: yearGPA,
-        classId: classId,
-      };
+    // ✅ Lưu GPA cho từng học kỳ (HK1, HK2) và cả năm (CN)
+    if (classId) {
+      const updates = [];
       
-      // Không set academicLevel tự động; chỉ lưu GPA. Học lực sẽ được set qua quy trình xét học lực.
+      // Lưu GPA cho HK1 nếu có
+      if (hk1GPA !== null) {
+        updates.push(
+          StudentYearRecord.findOneAndUpdate(
+            { studentId, year: schoolYear, semester: 'HK1' },
+            { $set: { gpa: hk1GPA, classId: classId } },
+            { upsert: true, new: true }
+          )
+        );
+      }
       
-      await StudentYearRecord.findOneAndUpdate(
-        { studentId, year: schoolYear, semester: 'CN' },
-        { $set: updateData },
-        { upsert: true, new: true }
-      );
-      console.log(`✅ Đã lưu điểm TB cả năm cho học sinh ${studentId} (${schoolYear}): ${yearGPA.toFixed(2)}${academicLevel ? `, Học lực: ${academicLevel}` : ''}`);
+      // Lưu GPA cho HK2 nếu có
+      if (hk2GPA !== null) {
+        updates.push(
+          StudentYearRecord.findOneAndUpdate(
+            { studentId, year: schoolYear, semester: 'HK2' },
+            { $set: { gpa: hk2GPA, classId: classId } },
+            { upsert: true, new: true }
+          )
+        );
+      }
       
-      // ✅ Tính lại rank cho lớp và khối sau khi cập nhật GPA
-      try {
-        // Tính rank theo lớp
-        await recomputeRanksForClass({ classId, schoolYear, rankBy: 'class' });
-        // Tính rank theo khối
-        await recomputeRanksForClass({ classId, schoolYear, rankBy: 'grade' });
-      } catch (rankError) {
-        console.error('⚠️ Lỗi khi tính lại rank (không ảnh hưởng đến việc lưu điểm):', rankError);
+      // Lưu GPA cả năm nếu có
+      if (yearGPA !== null) {
+        updates.push(
+          StudentYearRecord.findOneAndUpdate(
+            { studentId, year: schoolYear, semester: 'CN' },
+            { $set: { gpa: yearGPA, classId: classId } },
+            { upsert: true, new: true }
+          )
+        );
+      }
+      
+      // Thực hiện tất cả các update
+      if (updates.length > 0) {
+        await Promise.all(updates);
+        const savedGPAs = [];
+        if (hk1GPA !== null) savedGPAs.push(`HK1: ${hk1GPA.toFixed(2)}`);
+        if (hk2GPA !== null) savedGPAs.push(`HK2: ${hk2GPA.toFixed(2)}`);
+        if (yearGPA !== null) savedGPAs.push(`CN: ${yearGPA.toFixed(2)}`);
+        console.log(`✅ Đã lưu điểm TB cho học sinh ${studentId} (${schoolYear}): ${savedGPAs.join(', ')}`);
+        
+        // ✅ Tính lại rank cho lớp và khối sau khi cập nhật GPA (chỉ tính rank dựa trên GPA cả năm)
+        try {
+          // Tính rank theo lớp
+          await recomputeRanksForClass({ classId, schoolYear, rankBy: 'class' });
+          // Tính rank theo khối
+          await recomputeRanksForClass({ classId, schoolYear, rankBy: 'grade' });
+        } catch (rankError) {
+          console.error('⚠️ Lỗi khi tính lại rank (không ảnh hưởng đến việc lưu điểm):', rankError);
+        }
       }
     }
 
@@ -476,6 +507,7 @@ async function recomputeRanksForClass({ classId, schoolYear, rankBy = 'class' })
 
     // Gán rank (1, 2, 3, ...)
     // Nếu có nhiều học sinh cùng GPA, cùng rank (ví dụ: 2 học sinh cùng GPA cao nhất → cả 2 đều rank 1)
+    // Logic: Học sinh đầu tiên luôn rank 1, nếu GPA thấp hơn học sinh trước thì rank = vị trí + 1
     let currentRank = 1;
     let previousGPA = null;
     
@@ -484,9 +516,16 @@ async function recomputeRanksForClass({ classId, schoolYear, rankBy = 'class' })
       const record = yearRecords[i];
       const currentGPA = record.gpa;
       
-      // Nếu GPA khác với học sinh trước, tăng rank
-      if (previousGPA !== null && currentGPA < previousGPA) {
-        currentRank = i + 1;
+      // Học sinh đầu tiên luôn rank 1
+      if (i === 0) {
+        currentRank = 1;
+      } else {
+        // Nếu GPA thấp hơn học sinh trước, rank = vị trí + 1 (bỏ qua các học sinh cùng rank)
+        if (currentGPA < previousGPA) {
+          currentRank = i + 1;
+        }
+        // Nếu GPA bằng học sinh trước, giữ nguyên rank (cùng rank)
+        // Không cần làm gì, currentRank giữ nguyên
       }
       
       // Cập nhật rank theo loại (lớp hoặc khối)
@@ -557,13 +596,14 @@ async function getClassSubjectSummary({ classId, subjectId, schoolYear, semester
     summaryByStudent.set(String(s.studentId?._id || s.studentId), s);
   }
 
-  // ✅ Lấy tất cả GradeItem để hiển thị các điểm riêng lẻ
+  // ✅ Lấy tất cả GradeItem để hiển thị các điểm riêng lẻ (chỉ lấy điểm chưa bị xóa)
   const allGradeItems = await GradeItem.find({ 
     classId, 
     subjectId, 
     schoolYear, 
     semester,
-    studentId: { $in: studentIds }
+    studentId: { $in: studentIds },
+    isDeleted: { $ne: true } // ✅ Chỉ lấy điểm chưa bị xóa
   })
     .select('studentId component score attempt')
     .sort({ studentId: 1, component: 1, attempt: 1 })
@@ -612,6 +652,9 @@ async function getClassSubjectSummary({ classId, subjectId, schoolYear, semester
         average: null,
         result: null,
         gradeItems: gradeItemsByComponent,
+        isOfficial: false,
+        officialAt: null,
+        officialBy: null,
       };
     }
 
@@ -625,6 +668,9 @@ async function getClassSubjectSummary({ classId, subjectId, schoolYear, semester
       average: summary.average,
       result: summary.result,
       gradeItems: gradeItemsByComponent,
+      isOfficial: summary.isOfficial === true,
+      officialAt: summary.officialAt || null,
+      officialBy: summary.officialBy || null,
     };
   });
 }

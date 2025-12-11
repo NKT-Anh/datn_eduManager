@@ -4,8 +4,31 @@ const Student = require('../../models/user/student');
 const Teacher = require('../../models/user/teacher');
 const admin = require('../../config/firebaseAdmin');
 const User = require('../../models/user/user');
+const xlsx = require('xlsx');
 
-const generatePassword = () => Math.random().toString(36).slice(-8); // random 8 ký tự
+/**
+ * 🔐 Tạo mật khẩu ngẫu nhiên mạnh (8-12 ký tự, bao gồm chữ hoa, chữ thường, số)
+ */
+const generateRandomPassword = (length = 10) => {
+  const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+  const numbers = '0123456789';
+  const allChars = uppercase + lowercase + numbers;
+  
+  let password = '';
+  // Đảm bảo có ít nhất 1 ký tự từ mỗi loại
+  password += uppercase[Math.floor(Math.random() * uppercase.length)];
+  password += lowercase[Math.floor(Math.random() * lowercase.length)];
+  password += numbers[Math.floor(Math.random() * numbers.length)];
+  
+  // Thêm các ký tự ngẫu nhiên còn lại
+  for (let i = password.length; i < length; i++) {
+    password += allChars[Math.floor(Math.random() * allChars.length)];
+  }
+  
+  // Xáo trộn các ký tự
+  return password.split('').sort(() => Math.random() - 0.5).join('');
+};
 
 /**
  * 🧠 Lấy mật khẩu mặc định từ Setting (hoặc fallback)
@@ -67,10 +90,14 @@ const account = await Account.create(accountData);
 
 /**
  * 📚 Tạo tài khoản học sinh hàng loạt
+ * @param {boolean} useRandomPassword - Nếu true, mỗi học sinh sẽ có mật khẩu ngẫu nhiên riêng
+ * @param {boolean} exportFile - Nếu true, sẽ trả về file Excel thay vì JSON
  */
 const createBatchStudents = async (req, res) => {
   try {
-    const { students } = req.body; // [{ _id, name, studentCode, phone }]
+    const { students, useRandomPassword } = req.body; // [{ _id, name, studentCode, phone }]
+    const { exportFile } = req.query; // Query param để xuất file
+    
     if (!students?.length)
       return res.status(400).json({ message: 'Thiếu danh sách học sinh' });
 
@@ -78,10 +105,17 @@ const createBatchStudents = async (req, res) => {
     if (!setting)
       return res.status(500).json({ message: 'Setting chưa được cấu hình' });
 
+    // 🔐 Lấy phương thức tạo mật khẩu từ setting nếu không được chỉ định trong body
+    const passwordMethod = setting.passwordGenerationMethod || 'random';
+    const shouldUseRandom = useRandomPassword !== undefined 
+      ? useRandomPassword 
+      : (passwordMethod === 'random');
+
     const domain = setting.studentEmailDomain || 'student.school.com';
-    const defaultPassword = await getDefaultPassword();
+    const defaultPassword = shouldUseRandom ? null : await getDefaultPassword();
     const createdAccounts = [];
     const existedAccounts = [];
+    const accountDetails = []; // Danh sách chi tiết để export file
 
     for (const s of students) {
       const studentCode =
@@ -91,49 +125,116 @@ const createBatchStudents = async (req, res) => {
         s.name.replace(/\s+/g, '').toLowerCase();
       const email = `${studentCode}@${domain}`;
 
+      // 🔐 Tạo mật khẩu theo phương thức đã chọn
+      const password = shouldUseRandom ? generateRandomPassword() : defaultPassword;
+
       const result = await createAccountIfNotExists(
         email,
         'student',
         s.phone,
-        defaultPassword
+        password
       );
 
       if (result.existed) {
-  // 🔹 Nếu Account tồn tại, lấy nó ra và gắn lại vào Student
-  const existedAcc = await Account.findOne({ email });
-  if (existedAcc) {
-    await Student.findByIdAndUpdate(s._id, { accountId: existedAcc._id });
-    existedAccounts.push(result.email);
-  }
-}
-
-      else if (result.error) existedAccounts.push(`${result.email} (lỗi: ${result.error})`);
-      else {
+        // 🔹 Nếu Account tồn tại, lấy nó ra và gắn lại vào Student
+        const existedAcc = await Account.findOne({ email });
+        if (existedAcc) {
+          await Student.findByIdAndUpdate(s._id, { accountId: existedAcc._id });
+          existedAccounts.push(result.email);
+        }
+      } else if (result.error) {
+        existedAccounts.push(`${result.email} (lỗi: ${result.error})`);
+      } else {
+        // Lấy thông tin học sinh để thêm vào file export
+        const student = await Student.findById(s._id).lean();
+        
         const updatedStudent = await User.findByIdAndUpdate(
-  s._id,
-  { accountId: result.accountId },
-  { new: true }
-);
+          s._id,
+          { accountId: result.accountId },
+          { new: true }
+        );
 
-if (updatedStudent)
-  console.log(`✅ Gắn accountId cho ${updatedStudent.name}`);
-else
-  console.warn(`⚠️ Không tìm thấy học sinh có id ${s._id}`);
+        if (updatedStudent)
+          console.log(`✅ Gắn accountId cho ${updatedStudent.name}`);
+        else
+          console.warn(`⚠️ Không tìm thấy học sinh có id ${s._id}`);
 
-console.log(`✅ Gắn accountId cho ${updatedStudent.name}`);
-        createdAccounts.push({
+        const accountInfo = {
           email: result.email,
           password: result.password,
           uid: result.uid,
+          studentName: student?.name || s.name || '',
+          studentCode: student?.studentCode || studentCode || '',
+        };
+
+        createdAccounts.push(accountInfo);
+        accountDetails.push({
+          STT: accountDetails.length + 1,
+          'Mã học sinh': accountInfo.studentCode,
+          'Họ và tên': accountInfo.studentName,
+          'Email/Tài khoản': accountInfo.email,
+          'Mật khẩu': accountInfo.password,
         });
       }
     }
 
+    // 📤 Nếu yêu cầu export file, trả về file Excel
+    if (exportFile === 'true') {
+      if (accountDetails.length === 0) {
+        // Không có tài khoản mới nào được tạo, trả về JSON với thông báo
+        return res.json({
+          message: 'Không có tài khoản mới nào được tạo. Tất cả học sinh đã có tài khoản.',
+          useRandomPassword,
+          createdCount: 0,
+          existedCount: existedAccounts.length,
+          createdAccounts: [],
+          existedAccounts,
+        });
+      }
+      
+      const workbook = xlsx.utils.book_new();
+      const worksheet = xlsx.utils.json_to_sheet(accountDetails);
+      
+      // Đặt độ rộng cột
+      worksheet['!cols'] = [
+        { wch: 5 },   // STT
+        { wch: 15 },  // Mã học sinh
+        { wch: 30 },  // Họ và tên
+        { wch: 35 },  // Email/Tài khoản
+        { wch: 15 },  // Mật khẩu
+      ];
+
+      xlsx.utils.book_append_sheet(workbook, worksheet, 'Danh sách tài khoản');
+
+      const excelBuffer = xlsx.write(workbook, {
+        type: 'buffer',
+        bookType: 'xlsx',
+      });
+
+      const fileName = `Tai_khoan_hoc_sinh_${new Date().toISOString().split('T')[0]}_${Date.now()}.xlsx`;
+
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      );
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${encodeURIComponent(fileName)}"`
+      );
+
+      return res.send(excelBuffer);
+    }
+
+    // 📋 Trả về JSON nếu không yêu cầu export file
     res.json({
       message: 'Tạo tài khoản học sinh hàng loạt hoàn tất',
-      defaultPassword,
+      useRandomPassword: shouldUseRandom,
+      passwordMethod: shouldUseRandom ? 'random' : 'default',
+      createdCount: createdAccounts.length,
+      existedCount: existedAccounts.length,
       createdAccounts,
       existedAccounts,
+      accountDetails, // Thêm thông tin chi tiết để frontend có thể export
     });
   } catch (err) {
     console.error(err);

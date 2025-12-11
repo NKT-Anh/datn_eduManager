@@ -263,14 +263,22 @@ exports.autoAssignTeaching = async (req, res) => {
               .populate('teacherId subjectId classId')
               .lean();
     
+    // ✅ QUAN TRỌNG: Khi shouldSupplement = true, cần tính số tiết từ TẤT CẢ assignment (bao gồm cả lớp bị khóa)
+    // để đảm bảo không vượt quá số tiết cho phép khi phân công bổ sung
+    // Nhưng chỉ phân công bổ sung cho các lớp không bị khóa
+    const assignmentsForCalculation = shouldSupplement
+      ? (applyProposals ? assignmentsToRespect : existingAssignments) // Lấy TẤT CẢ assignment để tính số tiết
+      : assignmentsToUse; // Các trường hợp khác dùng assignmentsToUse
+    
     // ✅ Tính toán phân công tự động
     // Nếu applyProposals = true, sẽ tôn trọng proposal (chỉ phân công phần còn trống)
     // Nếu applyProposals = false, sẽ phân công toàn quyền (ghi đè proposal)
+    // Truyền assignmentsForCalculation để tính số tiết, nhưng chỉ phân công cho unlockedClasses
     let newAssignments = await calculateAutoAssignments(
       unlockedClasses,
       subjects,
       teachers,
-      assignmentsToUse,
+      assignmentsForCalculation, // ✅ Dùng assignmentsForCalculation để tính số tiết đúng
       year,
       semester,
       grades,

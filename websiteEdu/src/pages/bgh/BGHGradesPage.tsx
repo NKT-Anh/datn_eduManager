@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -29,6 +29,16 @@ import { useCurrentAcademicYear } from '@/hooks/useCurrentAcademicYear';
 import { useAuth } from '@/contexts/AuthContext';
 import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
+import gradeConfigApi from '@/services/gradeConfigApi';
+
+const defaultGradeComponents = ['oral', 'quiz15', 'quiz45', 'midterm', 'final'] as const;
+const gradeComponentHeaderLabels: Record<string, string> = {
+  oral: 'Miệng',
+  quiz15: "15'",
+  quiz45: "45'",
+  midterm: 'Giữa kỳ',
+  final: 'Cuối kỳ',
+};
 
 const BGHGradesPage: React.FC = () => {
   const { backendUser } = useAuth();
@@ -52,6 +62,7 @@ const BGHGradesPage: React.FC = () => {
   const [studentsGrades, setStudentsGrades] = useState<any[]>([]);
   const [statistics, setStatistics] = useState<any>(null);
   const [auditLog, setAuditLog] = useState<any[]>([]);
+  const [gradeConfig, setGradeConfig] = useState<any>(null);
 
   // Options
   const [semesters, setSemesters] = useState<any[]>([]);
@@ -158,6 +169,41 @@ const BGHGradesPage: React.FC = () => {
       fetchAuditLog();
     }
   }, [activeTab, filters.schoolYear, filters.semester]);
+
+  const fetchGradeConfig = useCallback(async () => {
+    if (!filters.schoolYear || !filters.semester) {
+      setGradeConfig(null);
+      return;
+    }
+    try {
+      const res = await gradeConfigApi.getConfig({
+        schoolYear: filters.schoolYear,
+        semester: filters.semester,
+      });
+      setGradeConfig(res?.data || res || null);
+    } catch (err) {
+      console.error('Load grade config failed:', err);
+      setGradeConfig(null);
+    }
+  }, [filters.schoolYear, filters.semester]);
+
+  useEffect(() => {
+    fetchGradeConfig();
+  }, [fetchGradeConfig]);
+
+  const visibleComponents = useMemo(() => {
+    if (gradeConfig?.weights) {
+      const entries = Object.entries(gradeConfig.weights)
+        .filter(([, weight]) => typeof weight === 'number' && weight > 0)
+        .map(([component]) => component);
+      if (entries.length) {
+        const orderedDefaults = defaultGradeComponents.filter((comp) => entries.includes(comp));
+        const extras = entries.filter((comp) => !defaultGradeComponents.includes(comp as any));
+        return [...orderedDefaults, ...extras];
+      }
+    }
+    return [...defaultGradeComponents];
+  }, [gradeConfig]);
 
   // ✅ Get color for average score
   const getAverageColor = (avg: number | null | undefined): string => {
@@ -409,12 +455,13 @@ const BGHGradesPage: React.FC = () => {
                               <TableHeader>
                                 <TableRow>
                                   <TableHead>Môn học</TableHead>
-                                  <TableHead>Miệng</TableHead>
-                                  <TableHead>15'</TableHead>
-                                  <TableHead>45'</TableHead>
-                                  <TableHead>Giữa kỳ</TableHead>
-                                  <TableHead>Cuối kỳ</TableHead>
+                                  {visibleComponents.map((component) => (
+                                    <TableHead key={component}>
+                                      {gradeComponentHeaderLabels[component] || component}
+                                    </TableHead>
+                                  ))}
                                   <TableHead>ĐTB môn</TableHead>
+                                  <TableHead>Kết quả</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -423,16 +470,25 @@ const BGHGradesPage: React.FC = () => {
                                     <TableCell className="font-medium">
                                       {subject.subject?.name || '-'}
                                     </TableCell>
-                                    <TableCell>{subject.averages?.oral || '-'}</TableCell>
-                                    <TableCell>{subject.averages?.quiz15 || '-'}</TableCell>
-                                    <TableCell>{subject.averages?.quiz45 || '-'}</TableCell>
-                                    <TableCell>{subject.averages?.midterm || '-'}</TableCell>
-                                    <TableCell>{subject.averages?.final || '-'}</TableCell>
+                                    {visibleComponents.map((component) => {
+                                      const value = subject.averages?.[component];
+                                      return (
+                                        <TableCell key={`${subject._id}-${component}`}>
+                                          {typeof value === 'number'
+                                            ? value.toFixed(1)
+                                            : value ?? '-'}
+                                        </TableCell>
+                                      );
+                                    })}
                                     <TableCell>
                                       <div className="flex flex-col items-center gap-1">
-                                        <span className={getAverageColor(subject.average)}>
-                                          {subject.average?.toFixed(1) || '-'}
-                                        </span>
+                                        {subject.subject?.includeInAverage !== false ? (
+                                          <span className={getAverageColor(subject.average)}>
+                                            {subject.average?.toFixed(1) || '-'}
+                                          </span>
+                                        ) : (
+                                          <span className="text-muted-foreground">-</span>
+                                        )}
                                         {/* Hiển thị xu hướng */}
                                         {(() => {
                                           if (!student.trends) return null;
@@ -478,6 +534,18 @@ const BGHGradesPage: React.FC = () => {
                                           );
                                         })()}
                                       </div>
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      {subject.subject?.includeInAverage === false ? (
+                                        <Badge 
+                                          variant={subject.result === 'D' ? 'default' : subject.result === 'K' ? 'destructive' : 'outline'}
+                                          className="font-semibold"
+                                        >
+                                          {subject.result === 'D' ? 'Đạt' : subject.result === 'K' ? 'Không đạt' : '-'}
+                                        </Badge>
+                                      ) : (
+                                        <span className="text-muted-foreground">-</span>
+                                      )}
                                     </TableCell>
                                   </TableRow>
                                 ))}

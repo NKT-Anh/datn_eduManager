@@ -65,6 +65,7 @@ import TeacherSchedulePage from "./pages/teacher/TeacherSchedulePage";
 import MyClassesPage from "./pages/teacher/MyClassesPage";
 import TeacherAwardsPage from "./pages/teacher/TeacherAwardsPage";
 import TeacherSurveyStatisticsPage from "./pages/teacher/TeacherSurveyStatisticsPage";
+import TeacherMyAvailabilityPage from "./pages/teacher/TeacherMyAvailabilityPage";
 
 // 👨‍🏫 QLBM Pages
 import ProposalsPage from "./pages/qlbm/ProposalsPage.tsx";
@@ -177,6 +178,7 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/teacher/home", element: <TeacherDashboard /> },
     { path: "/teacher/my-classes", element: <MyClassesPage /> },
     { path: "/teacher/schedule", element: <TeacherSchedulePage /> },
+    { path: "/teacher/availability", element: <TeacherMyAvailabilityPage /> },
     { path: "/teacher/grades", element: <TeacherEnterGradesPage /> },
     { path: "/teacher/awards", element: <TeacherAwardsPage /> },
     { path: "/teacher/survey-statistics", element: <TeacherSurveyStatisticsPage /> },
@@ -208,6 +210,7 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/qlbm/teaching-assignments", element: <TeachingAssignmentsPage /> },
     { path: "/qlbm/my-classes", element: <MyClassesPage /> },
     { path: "/qlbm/schedule", element: <TeacherSchedulePage /> },
+    { path: "/qlbm/availability", element: <TeacherMyAvailabilityPage /> },
     { path: "/qlbm/grades", element: <TeacherEnterGradesPage /> },
     { path: "/qlbm/exams", element: <ExamListPage /> },
     { path: "/qlbm/exams/supervisor-schedule", element: <SupervisorSchedule /> },
@@ -221,12 +224,12 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
   gvcn: [
     { path: "/gvcn/home", element: <HomeroomDashboard /> },
     { path: "/gvcn/homeroom-class", element: <HomeroomClassPage /> },
+    { path: "/gvcn/students/:id", element: <StudentDetail /> },
     { path: "/gvcn/homeroom-grades", element: <HomeroomGradesPage /> },
     { path: "/gvcn/attendance", element: <HomeroomAttendancePage /> },
     { path: "/gvcn/my-classes", element: <MyClassesPage /> },
-    { path: "/gvcn/students", element: <StudentsList /> },
-    { path: "/gvcn/students/:id", element: <StudentDetail /> },
     { path: "/gvcn/schedule", element: <TeacherSchedulePage /> },
+    { path: "/gvcn/availability", element: <TeacherMyAvailabilityPage /> },
     { path: "/gvcn/grades", element: <TeacherEnterGradesPage /> },
     { path: "/gvcn/awards", element: <TeacherAwardsPage /> },
     { path: "/gvcn/survey-statistics", element: <TeacherSurveyStatisticsPage /> },
@@ -245,6 +248,7 @@ const routesConfig: Record<string, { path: string; element: JSX.Element }[]> = {
     { path: "/gvbm/teaching-subjects", element: <MyClassesPage /> },
     { path: "/gvbm/schedule", element: <TeacherSchedulePage /> },
     { path: "/gvbm/schedule-weekly", element: <TeacherSchedulePage /> },
+    { path: "/gvbm/availability", element: <TeacherMyAvailabilityPage /> },
     { path: "/gvbm/grades", element: <TeacherEnterGradesPage /> },
     { path: "/gvbm/awards", element: <TeacherAwardsPage /> },
     { path: "/gvbm/survey-statistics", element: <TeacherSurveyStatisticsPage /> },
@@ -353,6 +357,10 @@ const AppContent = () => {
         {roleRoutes.map(({ path, element }) => (
           <Route key={path} path={path} element={element} />
         ))}
+
+        {/* ✅ Redirect /login về home nếu đã đăng nhập */}
+        <Route path="/login" element={<Navigate to={homeRoute} replace />} />
+        <Route path="/forgot-password" element={<Navigate to={homeRoute} replace />} />
 
         {/* Redirect root → /role/home */}
         <Route path="/" element={<Navigate to={homeRoute} replace />} />

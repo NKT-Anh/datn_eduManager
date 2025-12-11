@@ -50,7 +50,8 @@ const LoginForm = () => {
       }
     }
     
-    navigate(`${routePrefix}/home`);
+    // ✅ Sử dụng replace để thay thế URL hiện tại, không thêm vào history
+    navigate(`${routePrefix}/home`, { replace: true });
   }, [backendUser, navigate]);
 
   const handleSendOTP = async () => {

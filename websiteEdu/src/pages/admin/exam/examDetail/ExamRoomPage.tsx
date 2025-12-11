@@ -432,7 +432,7 @@ const VisualRoomView: React.FC<VisualRoomViewProps> = ({
                   <Col xs={24} lg={8}>
                     <Card 
                       size="small" 
-                      title={`Phòng nhóm (FixedExamRoom) chưa xếp (${unassignedFixedRooms.length})`}
+                      title={`Phòng nhóm chưa xếp (${unassignedFixedRooms.length})`}
                       style={{ height: "100%" }}
                     >
                       <Spin spinning={loadingFixedRooms}>
@@ -1331,12 +1331,6 @@ export default function ExamRoomPage({ examId, exam }: ExamRoomPageProps) {
             {hasPermission(PERMISSIONS.EXAM_ROOM_AUTO) && (
               <>
                 <Button 
-                  icon={<ThunderboltOutlined />} 
-                  onClick={() => setOpenAssignFixedToExamRooms(true)}
-                >
-                  Phân phòng nhóm vào phòng thi
-                </Button>
-                <Button 
                   type="primary"
                   icon={<ThunderboltOutlined />} 
                   onClick={handleAssignFixedRoomsToAllSchedules}
@@ -1347,9 +1341,6 @@ export default function ExamRoomPage({ examId, exam }: ExamRoomPageProps) {
             )}
             {hasPermission(PERMISSIONS.EXAM_ROOM_MANAGE) && (
               <>
-                <Button icon={<TeamOutlined />} onClick={handleAutoAssignInvigilators}>
-                  Gán giám thị (1 lịch)
-                </Button>
                 <Button 
                   type="primary"
                   icon={<TeamOutlined />} 
@@ -1366,9 +1357,6 @@ export default function ExamRoomPage({ examId, exam }: ExamRoomPageProps) {
                 </Button>
               </>
             )}
-            <Button icon={<BarChartOutlined />} onClick={fetchStats}>
-              Thống kê
-            </Button>
             <Button icon={<ReloadOutlined />} onClick={fetchRooms}>
               Làm mới
             </Button>

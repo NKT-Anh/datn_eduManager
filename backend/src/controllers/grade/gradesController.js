@@ -369,6 +369,7 @@ const buildReportCardDocument = async ({
       subjectMap.set(subjectIdStr, {
         subjectId: subjectIdStr,
         subjectName: summary.subjectId?.name || 'Môn học',
+        includeInAverage: summary.subjectId?.includeInAverage, // ✅ Lưu includeInAverage
         semesters: {}
       });
     }
@@ -438,6 +439,10 @@ const buildReportCardDocument = async ({
         ? (semesters.CN || null)
         : (semesters[normalizedSemester] || null);
 
+      // ✅ Lấy thông tin môn học để kiểm tra includeInAverage
+      const includeInAverage = subjectData.includeInAverage;
+      const result = currentSummary?.result;
+
       let average = extractReportAverage(currentSummary);
       if (normalizedSemester === 'CN') {
         const hk1Avg = extractReportAverage(semesters['1']);
@@ -453,11 +458,29 @@ const buildReportCardDocument = async ({
         componentScores[component.key] = buildComponentScoreText(subjectData.subjectId, component.key);
       });
 
+      // ✅ Xác định rank/xếp loại:
+      // - Nếu môn không tính điểm TB: hiển thị "Đạt" hoặc "Không đạt" dựa trên result
+      // - Nếu môn tính điểm TB: hiển thị xếp loại học lực dựa trên average
+      let rank = '-';
+      if (includeInAverage === false) {
+        // Môn không tính điểm TB
+        if (result === 'D') {
+          rank = 'Đạt';
+        } else if (result === 'K') {
+          rank = 'Không đạt';
+        } else {
+          rank = '-';
+        }
+      } else {
+        // Môn tính điểm TB: hiển thị xếp loại học lực
+        rank = classifyAcademicLevel(average);
+      }
+
       return {
         subjectName: subjectData.subjectName,
         componentScores,
         average,
-        rank: classifyAcademicLevel(average)
+        rank
       };
     });
 
@@ -1774,6 +1797,9 @@ exports.getStudentGradesWithTrend = async (req, res) => {
         average: summary.average,
         result: summary.result,
         computedAt: summary.computedAt,
+        isOfficial: !!summary.isOfficial,
+        officialAt: summary.officialAt || null,
+        officialBy: summary.officialBy || null,
       };
     });
 
@@ -2038,18 +2064,36 @@ exports.getAllStudentsGrades = async (req, res) => {
       const student = studentMap.get(studentId);
       if (!student.subjects) student.subjects = [];
       
-      const yearRecord = yearRecords.find(yr => 
-        String(yr.studentId) === studentId &&
-        (!schoolYear || yr.year === schoolYear) &&
-        (!semester || (semester === '1' && yr.semester === 'HK1') || (semester === '2' && yr.semester === 'HK2'))
-      );
+      // ✅ Lấy yearRecord theo semester được chọn
+      let yearRecord = null;
+      if (semester === '1' || semester === 'HK1') {
+        yearRecord = yearRecords.find(yr => 
+          String(yr.studentId) === studentId &&
+          (!schoolYear || yr.year === schoolYear) &&
+          yr.semester === 'HK1'
+        );
+      } else if (semester === '2' || semester === 'HK2') {
+        yearRecord = yearRecords.find(yr => 
+          String(yr.studentId) === studentId &&
+          (!schoolYear || yr.year === schoolYear) &&
+          yr.semester === 'HK2'
+        );
+      } else {
+        // Nếu không có semester hoặc CN, lấy record CN
+        yearRecord = yearRecords.find(yr => 
+          String(yr.studentId) === studentId &&
+          (!schoolYear || yr.year === schoolYear) &&
+          yr.semester === 'CN'
+        );
+      }
 
       student.subjects.push({
         _id: summary._id,
         subject: {
           _id: summary.subjectId._id,
           name: summary.subjectId.name,
-          code: summary.subjectId.code
+          code: summary.subjectId.code,
+          includeInAverage: summary.subjectId.includeInAverage
         },
         averages: summary.averages || {},
         average: summary.average,
@@ -2068,14 +2112,27 @@ exports.getAllStudentsGrades = async (req, res) => {
       }
     });
 
-    // Calculate semester/year averages
+    // Calculate semester/year averages (chỉ tính các môn có includeInAverage !== false)
     const result = Array.from(studentMap.values()).map(student => {
       if (student.subjects && student.subjects.length > 0) {
+        // ✅ Chỉ tính các môn có includeInAverage !== false
         const validAverages = student.subjects
-          .filter(s => s.average !== null && s.average !== undefined)
+          .filter(s => {
+            // Kiểm tra includeInAverage từ subject object
+            const subject = s.subject || {};
+            const includeInAverage = subject.includeInAverage;
+            return s.average !== null && 
+                   s.average !== undefined && 
+                   includeInAverage !== false;
+          })
           .map(s => s.average);
         if (validAverages.length > 0) {
-          student.semesterAverage = validAverages.reduce((a, b) => a + b, 0) / validAverages.length;
+          const calculatedAverage = validAverages.reduce((a, b) => a + b, 0) / validAverages.length;
+          student.semesterAverage = calculatedAverage;
+          // ✅ Nếu chưa có GPA từ yearRecord, dùng calculatedAverage
+          if (!student.gpa || student.gpa === 0) {
+            student.gpa = calculatedAverage;
+          }
         }
       }
       return student;
@@ -2151,6 +2208,41 @@ exports.getAllStudentsGradesWithTrend = async (req, res) => {
     });
     const studentIds = validStudents.map(s => s._id);
 
+    const gradeItemsQuery = { 
+      studentId: { $in: studentIds },
+      isDeleted: { $ne: true } // ✅ Chỉ lấy điểm chưa bị xóa
+    };
+    if (schoolYear) gradeItemsQuery.schoolYear = schoolYear;
+    if (semester) gradeItemsQuery.semester = semester;
+    if (subjectId) gradeItemsQuery.subjectId = subjectId;
+
+    const gradeItemDocs = studentIds.length
+      ? await GradeItem.find(gradeItemsQuery)
+          .select('studentId subjectId component score attempt createdAt')
+          .sort({ studentId: 1, subjectId: 1, component: 1, attempt: 1, createdAt: 1 })
+          .lean()
+      : [];
+
+    const createEmptyGradeItems = () => ({
+      oral: [],
+      quiz15: [],
+      quiz45: [],
+      midterm: [],
+      final: [],
+    });
+
+    const gradeItemsMap = new Map();
+    gradeItemDocs.forEach(item => {
+      const key = `${item.studentId}-${item.subjectId}`;
+      if (!gradeItemsMap.has(key)) {
+        gradeItemsMap.set(key, createEmptyGradeItems());
+      }
+      const entry = gradeItemsMap.get(key);
+      if (entry && item.component && entry[item.component]) {
+        entry[item.component].push(Number(item.score));
+      }
+    });
+
     let summaryQuery = { studentId: { $in: studentIds } };
     if (schoolYear) summaryQuery.schoolYear = schoolYear;
     if (semester) summaryQuery.semester = semester;
@@ -2161,15 +2253,15 @@ exports.getAllStudentsGradesWithTrend = async (req, res) => {
       .populate('classId', 'className classCode grade')
       .lean();
 
+    // Query StudentYearRecord: lấy cả CN và học kỳ để có đủ hạnh kiểm và học lực
     let yearRecordQuery = { studentId: { $in: studentIds } };
     if (schoolYear) yearRecordQuery.year = schoolYear;
-    if (semester) {
-      if (semester === '1') yearRecordQuery.semester = 'HK1';
-      else if (semester === '2') yearRecordQuery.semester = 'HK2';
-    }
+    // Không filter theo semester để lấy cả CN và học kỳ (hạnh kiểm thường ở CN)
+    // Sắp xếp theo updatedAt giảm dần để ưu tiên record mới nhất nếu có nhiều record
     const yearRecords = await StudentYearRecord.find(yearRecordQuery)
       .populate('studentId', 'name studentCode')
       .populate('classId', 'className grade')
+      .sort({ updatedAt: -1 }) // ✅ Ưu tiên record mới nhất
       .lean();
 
     // Group by student
@@ -2190,6 +2282,177 @@ exports.getAllStudentsGradesWithTrend = async (req, res) => {
       });
     });
 
+    // ✅ Gán GPA, hạnh kiểm và học lực cho từng học sinh (lấy đúng theo semester)
+    Array.from(studentMap.values()).forEach(student => {
+      const studentId = String(student._id);
+      
+      // ✅ Xác định semester code
+      const semesterCode = semester === '1' ? 'HK1' : semester === '2' ? 'HK2' : (semester || 'CN');
+      
+      // ✅ Lấy tất cả records của học sinh
+      // Lưu ý: yr.studentId có thể là ObjectId hoặc string, cần normalize
+      // QUAN TRỌNG: Vì đã sort theo updatedAt giảm dần, find() sẽ lấy record mới nhất
+      // Normalize studentId để so sánh chính xác (giống logic trong getHomeroomClassClassification)
+      const normalizedStudentId = String(studentId);
+      
+      // Helper function để normalize studentId từ yearRecord (giống getHomeroomClassClassification)
+      const normalizeYearRecordStudentId = (r) => {
+        // Logic giống getHomeroomClassClassification: String(r.studentId?._id || r.studentId)
+        return String(r.studentId?._id || r.studentId);
+      };
+      
+      const hk1Record = yearRecords.find(yr => {
+        const rStudentId = normalizeYearRecordStudentId(yr);
+        const yrYear = String(yr.year || '');
+        return rStudentId === normalizedStudentId &&
+          (!schoolYear || yrYear === String(schoolYear)) &&
+          yr.semester === 'HK1';
+      });
+      const hk2Record = yearRecords.find(yr => {
+        const rStudentId = normalizeYearRecordStudentId(yr);
+        const yrYear = String(yr.year || '');
+        return rStudentId === normalizedStudentId &&
+          (!schoolYear || yrYear === String(schoolYear)) &&
+          yr.semester === 'HK2';
+      });
+      const cnRecord = yearRecords.find(yr => {
+        const rStudentId = normalizeYearRecordStudentId(yr);
+        const yrYear = String(yr.year || '');
+        return rStudentId === normalizedStudentId &&
+          (!schoolYear || yrYear === String(schoolYear)) &&
+          yr.semester === 'CN';
+      });
+      
+      // Debug: Log để kiểm tra (chỉ log cho học sinh đầu tiên hoặc học sinh cụ thể)
+      if (student.studentCode === '2025100002' || studentMap.size === 1 || String(student._id) === String(Array.from(studentMap.keys())[0])) {
+        const matchingRecords = yearRecords.filter(yr => {
+          const yrStudentId = normalizeYearRecordStudentId(yr);
+          return yrStudentId === normalizedStudentId && (!schoolYear || String(yr.year || '') === String(schoolYear));
+        });
+        console.log('🔍 [getAllStudentsGradesWithTrend] Debug for student:', {
+          studentName: student.name,
+          studentCode: student.studentCode,
+          studentId: normalizedStudentId,
+          schoolYear,
+          totalYearRecords: yearRecords.length,
+          matchingRecordsCount: matchingRecords.length,
+          matchingRecords: matchingRecords.map(yr => ({
+            semester: yr.semester,
+            academicLevel: yr.academicLevel,
+            gpa: yr.gpa,
+            year: yr.year,
+            studentId: normalizeYearRecordStudentId(yr),
+            studentIdRaw: yr.studentId
+          })),
+          hk1Record: hk1Record ? { 
+            semester: hk1Record.semester, 
+            academicLevel: hk1Record.academicLevel,
+            studentId: normalizeYearRecordStudentId({ studentId: hk1Record.studentId })
+          } : null,
+          hk2Record: hk2Record ? { 
+            semester: hk2Record.semester, 
+            academicLevel: hk2Record.academicLevel,
+            studentId: normalizeYearRecordStudentId({ studentId: hk2Record.studentId })
+          } : null,
+          cnRecord: cnRecord ? { 
+            semester: cnRecord.semester, 
+            academicLevel: cnRecord.academicLevel,
+            studentId: normalizeYearRecordStudentId({ studentId: cnRecord.studentId })
+          } : null
+        });
+      }
+      
+      // ✅ Lấy GPA theo semester được chọn
+      let gpaRecord = null;
+      if (semesterCode === 'HK1' && hk1Record) {
+        gpaRecord = hk1Record;
+      } else if (semesterCode === 'HK2' && hk2Record) {
+        gpaRecord = hk2Record;
+      } else if (cnRecord) {
+        gpaRecord = cnRecord;
+      }
+      
+      if (gpaRecord && gpaRecord.gpa !== null && gpaRecord.gpa !== undefined) {
+        student.gpa = gpaRecord.gpa;
+      }
+      
+      // ✅ Lấy học lực theo semester được chọn (giống logic trong getHomeroomClassClassification)
+      // Nếu semester là undefined (overview), không set academicLevel chung
+      // Frontend sẽ tự quyết định từ academicLevelHK1/HK2/CN dựa trên overviewView
+      // Chỉ set academicLevel chung khi có semester cụ thể (để tương thích với code cũ)
+      if (semester) {
+        const semesterCodeForAcademic = semester === '1' ? 'HK1' : semester === '2' ? 'HK2' : semester;
+        let academicRecord = null;
+        if (semesterCodeForAcademic === 'CN') {
+          academicRecord = cnRecord;
+        } else if (semesterCodeForAcademic === 'HK1') {
+          academicRecord = hk1Record;
+        } else if (semesterCodeForAcademic === 'HK2') {
+          academicRecord = hk2Record;
+        }
+        // Chỉ set academicLevel chung nếu có record và có giá trị
+        if (academicRecord && academicRecord.academicLevel !== null && academicRecord.academicLevel !== undefined) {
+          student.academicLevel = academicRecord.academicLevel;
+        }
+      }
+      
+      // ✅ Lấy hạnh kiểm: ưu tiên record theo semester (đã chốt), fallback về CN (đã chốt)
+      let conductRecord = null;
+      if (semesterCode === 'HK1' && hk1Record && (hk1Record.conductStatus === 'locked' || hk1Record.conductStatus === 'approved')) {
+        conductRecord = hk1Record;
+      } else if (semesterCode === 'HK2' && hk2Record && (hk2Record.conductStatus === 'locked' || hk2Record.conductStatus === 'approved')) {
+        conductRecord = hk2Record;
+      } else if (cnRecord && (cnRecord.conductStatus === 'locked' || cnRecord.conductStatus === 'approved')) {
+        conductRecord = cnRecord;
+      }
+      
+      if (conductRecord) {
+        student.conduct = conductRecord.conduct;
+      }
+      
+      // ✅ Lấy rank theo từng học kỳ (nếu có)
+      if (hk1Record) {
+        if (hk1Record.rank !== null && hk1Record.rank !== undefined) {
+          student.rankHK1 = hk1Record.rank;
+        }
+        if (hk1Record.rankGrade !== null && hk1Record.rankGrade !== undefined) {
+          student.rankGradeHK1 = hk1Record.rankGrade;
+        }
+      }
+      if (hk2Record) {
+        if (hk2Record.rank !== null && hk2Record.rank !== undefined) {
+          student.rankHK2 = hk2Record.rank;
+        }
+        if (hk2Record.rankGrade !== null && hk2Record.rankGrade !== undefined) {
+          student.rankGradeHK2 = hk2Record.rankGrade;
+        }
+      }
+      if (cnRecord) {
+        // Rank từ record CN (ưu tiên cho overview)
+        student.rank = cnRecord.rank || null;
+        student.rankGrade = cnRecord.rankGrade || null;
+        if (cnRecord.rank !== null && cnRecord.rank !== undefined) {
+          student.rankCN = cnRecord.rank;
+        }
+        if (cnRecord.rankGrade !== null && cnRecord.rankGrade !== undefined) {
+          student.rankGradeCN = cnRecord.rankGrade;
+        }
+      }
+      
+      // ✅ Tính điểm TB học kỳ
+      if (hk1Record && hk1Record.gpa) {
+        student.hk1Average = hk1Record.gpa;
+        student.semester1Average = hk1Record.gpa;
+      }
+      if (hk2Record && hk2Record.gpa) {
+        student.hk2Average = hk2Record.gpa;
+        student.semester2Average = hk2Record.gpa;
+      }
+      if (cnRecord && cnRecord.gpa) {
+        student.yearAverage = cnRecord.gpa;
+      }
+    });
+
     // Add summaries to students
     summaries.forEach(summary => {
       const studentId = String(summary.studentId);
@@ -2197,34 +2460,28 @@ exports.getAllStudentsGradesWithTrend = async (req, res) => {
       
       const student = studentMap.get(studentId);
       if (!student.subjects) student.subjects = [];
-      
-      const yearRecord = yearRecords.find(yr => 
-        String(yr.studentId) === studentId &&
-        (!schoolYear || yr.year === schoolYear) &&
-        (!semester || (semester === '1' && yr.semester === 'HK1') || (semester === '2' && yr.semester === 'HK2'))
-      );
+
+      const gradeItemsKey = `${summary.studentId}-${summary.subjectId._id}`;
+      const subjectGradeItems = gradeItemsMap.get(gradeItemsKey) || createEmptyGradeItems();
 
       student.subjects.push({
         _id: summary._id,
         subject: {
           _id: summary.subjectId._id,
           name: summary.subjectId.name,
-          code: summary.subjectId.code
+          code: summary.subjectId.code,
+          includeInAverage: summary.subjectId.includeInAverage
         },
         averages: summary.averages || {},
         average: summary.average,
         result: summary.result,
+        isOfficial: !!summary.isOfficial,
+        officialAt: summary.officialAt || null,
+        officialBy: summary.officialBy || null,
         semester: summary.semester,
-        schoolYear: summary.schoolYear
+        schoolYear: summary.schoolYear,
+        gradeItems: subjectGradeItems,
       });
-
-      if (yearRecord) {
-        student.gpa = yearRecord.gpa;
-        student.conduct = yearRecord.conduct;
-        student.academicLevel = yearRecord.academicLevel || null;
-        student.rank = yearRecord.rank || null; // Rank trong lớp
-        student.rankGrade = yearRecord.rankGrade || null; // Rank trong khối
-      }
     });
 
     // ✅ Tính xu hướng cho từng học sinh (song song)
@@ -2239,16 +2496,253 @@ exports.getAllStudentsGradesWithTrend = async (req, res) => {
 
     // Calculate semester/year averages
     const result = Array.from(studentMap.values()).map(student => {
-      if (student.subjects && student.subjects.length > 0) {
-        const validAverages = student.subjects
-          .filter(s => s.average !== null && s.average !== undefined)
-          .map(s => s.average);
-        if (validAverages.length > 0) {
-          student.semesterAverage = validAverages.reduce((a, b) => a + b, 0) / validAverages.length;
+      const studentId = String(student._id);
+      
+      // ✅ Helper function để normalize studentId từ yearRecord (giống logic trong forEach)
+      const normalizeYearRecordStudentId = (r) => {
+        // Logic giống getHomeroomClassClassification: String(r.studentId?._id || r.studentId)
+        return String(r.studentId?._id || r.studentId);
+      };
+      
+      // ✅ Luôn lấy điểm TB và hạnh kiểm từ yearRecords (dùng normalize để so sánh chính xác)
+      const normalizedStudentId = String(studentId);
+      const hk1Record = yearRecords.find(yr => {
+        const rStudentId = normalizeYearRecordStudentId(yr);
+        const yrYear = String(yr.year || '');
+        return rStudentId === normalizedStudentId &&
+          (!schoolYear || yrYear === String(schoolYear)) &&
+          yr.semester === 'HK1';
+      });
+      const hk2Record = yearRecords.find(yr => {
+        const rStudentId = normalizeYearRecordStudentId(yr);
+        const yrYear = String(yr.year || '');
+        return rStudentId === normalizedStudentId &&
+          (!schoolYear || yrYear === String(schoolYear)) &&
+          yr.semester === 'HK2';
+      });
+      const cnRecord = yearRecords.find(yr => {
+        const rStudentId = normalizeYearRecordStudentId(yr);
+        const yrYear = String(yr.year || '');
+        return rStudentId === normalizedStudentId &&
+          (!schoolYear || yrYear === String(schoolYear)) &&
+          yr.semester === 'CN';
+      });
+      
+      // ✅ Lấy điểm TB từ yearRecords cho từng học kỳ (luôn ưu tiên từ yearRecord)
+      // Luôn set từ yearRecords trước, sau đó mới tính từ subjects nếu chưa có
+      if (hk1Record && hk1Record.gpa !== null && hk1Record.gpa !== undefined) {
+        student.hk1Average = Number(hk1Record.gpa);
+        student.semester1Average = Number(hk1Record.gpa);
+      }
+      if (hk2Record && hk2Record.gpa !== null && hk2Record.gpa !== undefined) {
+        student.hk2Average = Number(hk2Record.gpa);
+        student.semester2Average = Number(hk2Record.gpa);
+      }
+      if (cnRecord && cnRecord.gpa !== null && cnRecord.gpa !== undefined) {
+        student.yearAverage = Number(cnRecord.gpa);
+      }
+      
+      // ✅ Set student.gpa theo semester được chọn
+      const semesterCode = semester === '1' ? 'HK1' : semester === '2' ? 'HK2' : (semester === 'CN' || semester === 'Cả năm' ? 'CN' : (semester || 'CN'));
+      if (semesterCode === 'HK1') {
+        // Nếu chọn HK1, lấy GPA từ HK1
+        if (hk1Record && hk1Record.gpa !== null && hk1Record.gpa !== undefined) {
+          student.gpa = hk1Record.gpa;
+        } else if (!student.gpa && student.hk1Average) {
+          student.gpa = student.hk1Average;
+        }
+      } else if (semesterCode === 'HK2') {
+        // Nếu chọn HK2, lấy GPA từ HK2
+        if (hk2Record && hk2Record.gpa !== null && hk2Record.gpa !== undefined) {
+          student.gpa = hk2Record.gpa;
+        } else if (!student.gpa && student.hk2Average) {
+          student.gpa = student.hk2Average;
+        }
+      } else {
+        // Nếu không có semester hoặc CN, lấy GPA từ CN
+        if (cnRecord && cnRecord.gpa !== null && cnRecord.gpa !== undefined) {
+          student.gpa = cnRecord.gpa;
+        } else if (!student.gpa && student.yearAverage) {
+          student.gpa = student.yearAverage;
         }
       }
+      
+      // ✅ Luôn lấy hạnh kiểm theo từng học kỳ (chỉ khi đã chốt)
+      if (hk1Record && (hk1Record.conductStatus === 'locked' || hk1Record.conductStatus === 'approved')) {
+        student.conductHK1 = hk1Record.conduct;
+      }
+      if (hk2Record && (hk2Record.conductStatus === 'locked' || hk2Record.conductStatus === 'approved')) {
+        student.conductHK2 = hk2Record.conduct;
+      }
+      if (cnRecord && (cnRecord.conductStatus === 'locked' || cnRecord.conductStatus === 'approved')) {
+        student.conductCN = cnRecord.conduct;
+        // Nếu chưa có conduct chung, dùng CN
+        if (!student.conduct) {
+          student.conduct = cnRecord.conduct;
+        }
+      }
+      
+      // ✅ Lấy học lực cho từng học kỳ (luôn set nếu có)
+      // QUAN TRỌNG: Set học lực từ record nếu có, không cần kiểm tra conductStatus
+      // (khác với hạnh kiểm - chỉ lấy khi đã chốt)
+      // Debug: Log trước khi set
+      const isDebugStudent = student.studentCode === '2025100002';
+      if (isDebugStudent) {
+        console.log('🔍 [getAllStudentsGradesWithTrend] Before setting academicLevel:', {
+          studentName: student.name,
+          studentCode: student.studentCode,
+          hk1Record: hk1Record ? { academicLevel: hk1Record.academicLevel } : null,
+          hk2Record: hk2Record ? { academicLevel: hk2Record.academicLevel } : null,
+          cnRecord: cnRecord ? { academicLevel: cnRecord.academicLevel } : null
+        });
+      }
+      
+      if (hk1Record && hk1Record.academicLevel !== null && hk1Record.academicLevel !== undefined) {
+        student.academicLevelHK1 = hk1Record.academicLevel;
+        if (isDebugStudent) {
+          console.log('✅ [getAllStudentsGradesWithTrend] Set academicLevelHK1:', {
+            studentName: student.name,
+            studentCode: student.studentCode,
+            hk1RecordAcademicLevel: hk1Record.academicLevel,
+            studentAcademicLevelHK1: student.academicLevelHK1
+          });
+        }
+      }
+      if (hk2Record && hk2Record.academicLevel !== null && hk2Record.academicLevel !== undefined) {
+        student.academicLevelHK2 = hk2Record.academicLevel;
+        if (isDebugStudent) {
+          console.log('✅ [getAllStudentsGradesWithTrend] Set academicLevelHK2:', {
+            studentName: student.name,
+            studentCode: student.studentCode,
+            hk2RecordAcademicLevel: hk2Record.academicLevel,
+            studentAcademicLevelHK2: student.academicLevelHK2
+          });
+        }
+      }
+      if (cnRecord && cnRecord.academicLevel !== null && cnRecord.academicLevel !== undefined) {
+        student.academicLevelCN = cnRecord.academicLevel;
+        if (isDebugStudent) {
+          console.log('✅ [getAllStudentsGradesWithTrend] Set academicLevelCN:', {
+            studentName: student.name,
+            studentCode: student.studentCode,
+            cnRecordAcademicLevel: cnRecord.academicLevel,
+            studentAcademicLevelCN: student.academicLevelCN
+          });
+        }
+      }
+      
+      // Debug: Log sau khi set tất cả
+      if (isDebugStudent) {
+        console.log('📊 [getAllStudentsGradesWithTrend] Final academicLevel fields:', {
+          studentName: student.name,
+          studentCode: student.studentCode,
+          academicLevelHK1: student.academicLevelHK1,
+          academicLevelHK2: student.academicLevelHK2,
+          academicLevelCN: student.academicLevelCN,
+          academicLevel: student.academicLevel
+        });
+      }
+      
+      // Tính điểm TB từ subjects nếu chưa có từ yearRecords (chỉ tính các môn có includeInAverage !== false)
+      // Nếu semester là undefined (overview), tính cho từng học kỳ riêng biệt
+      if (student.subjects && student.subjects.length > 0) {
+        // Nếu semester là undefined (overview), tính điểm TB cho từng học kỳ
+        if (!semester) {
+          // Tính cho HK1: lấy subjects có semester === '1' hoặc 'HK1'
+          const hk1Subjects = student.subjects.filter(s => {
+            const subjSemester = String(s.semester || '').trim();
+            const isHK1 = subjSemester === '1' || subjSemester === 'HK1' || subjSemester === 'hk1';
+            return isHK1 && 
+                   s.average !== null && 
+                   s.average !== undefined &&
+                   s.subject && 
+                   s.subject.includeInAverage !== false;
+          });
+          if (hk1Subjects.length > 0 && (student.hk1Average === null || student.hk1Average === undefined)) {
+            const hk1Avgs = hk1Subjects.map(s => s.average).filter(v => typeof v === 'number' && !isNaN(v));
+            if (hk1Avgs.length > 0) {
+              const calculated = hk1Avgs.reduce((a, b) => a + b, 0) / hk1Avgs.length;
+              student.hk1Average = Number(calculated.toFixed(2));
+              student.semester1Average = student.hk1Average;
+            }
+          }
+          
+          // Tính cho HK2: lấy subjects có semester === '2' hoặc 'HK2'
+          const hk2Subjects = student.subjects.filter(s => {
+            const subjSemester = String(s.semester || '').trim();
+            const isHK2 = subjSemester === '2' || subjSemester === 'HK2' || subjSemester === 'hk2';
+            return isHK2 && 
+                   s.average !== null && 
+                   s.average !== undefined &&
+                   s.subject && 
+                   s.subject.includeInAverage !== false;
+          });
+          if (hk2Subjects.length > 0 && (student.hk2Average === null || student.hk2Average === undefined)) {
+            const hk2Avgs = hk2Subjects.map(s => s.average).filter(v => typeof v === 'number' && !isNaN(v));
+            if (hk2Avgs.length > 0) {
+              const calculated = hk2Avgs.reduce((a, b) => a + b, 0) / hk2Avgs.length;
+              student.hk2Average = Number(calculated.toFixed(2));
+              student.semester2Average = student.hk2Average;
+            }
+          }
+          
+          // Tính cho cả năm: lấy tất cả subjects (hoặc tính từ HK1 và HK2)
+          if (student.yearAverage === null || student.yearAverage === undefined) {
+            if (student.hk1Average !== null && student.hk1Average !== undefined && 
+                student.hk2Average !== null && student.hk2Average !== undefined) {
+              student.yearAverage = Number(((student.hk1Average + student.hk2Average) / 2).toFixed(2));
+            } else {
+              const allSubjects = student.subjects.filter(s => {
+                return s.average !== null && 
+                       s.average !== undefined &&
+                       s.subject && 
+                       s.subject.includeInAverage !== false;
+              });
+              if (allSubjects.length > 0) {
+                const allAvgs = allSubjects.map(s => s.average).filter(v => typeof v === 'number' && !isNaN(v));
+                if (allAvgs.length > 0) {
+                  const calculated = allAvgs.reduce((a, b) => a + b, 0) / allAvgs.length;
+                  student.yearAverage = Number(calculated.toFixed(2));
+                }
+              }
+            }
+          }
+        } else {
+          // Nếu có semester, tính semesterAverage như cũ
+          const validAverages = student.subjects
+            .filter(s => {
+              // Kiểm tra includeInAverage từ subject object
+              const subject = s.subject || {};
+              const includeInAverage = subject.includeInAverage;
+              return s.average !== null && 
+                     s.average !== undefined && 
+                     includeInAverage !== false;
+            })
+            .map(s => s.average);
+          if (validAverages.length > 0) {
+            const calculatedAverage = validAverages.reduce((a, b) => a + b, 0) / validAverages.length;
+            if (!student.semesterAverage) {
+              student.semesterAverage = calculatedAverage;
+            }
+          }
+        }
+      }
+      
       return student;
     });
+
+    // ✅ Debug: Kiểm tra academicLevel fields trước khi trả về
+    const debugStudent = result.find(s => s.studentCode === '2025100002');
+    if (debugStudent) {
+      console.log('🔍 [getAllStudentsGradesWithTrend] Before returning response:', {
+        studentName: debugStudent.name,
+        studentCode: debugStudent.studentCode,
+        academicLevelHK1: debugStudent.academicLevelHK1,
+        academicLevelHK2: debugStudent.academicLevelHK2,
+        academicLevelCN: debugStudent.academicLevelCN,
+        academicLevel: debugStudent.academicLevel
+      });
+    }
 
     res.json({
       success: true,
@@ -2356,6 +2850,20 @@ exports.getStatistics = async (req, res) => {
         average: 0,
         weak: 0,
         total: validStudents2.length
+      },
+      // ✅ Thống kê hạnh kiểm
+      conduct: {
+        'Tốt': 0,
+        'Khá': 0,
+        'Trung bình': 0,
+        'Yếu': 0
+      },
+      // ✅ Thống kê học lực
+      academicLevel: {
+        'Giỏi': 0,
+        'Khá': 0,
+        'Trung bình': 0,
+        'Yếu': 0
       }
     };
 
@@ -2400,7 +2908,7 @@ exports.getStatistics = async (req, res) => {
     });
 
     try {
-      // Calculate overall
+      // ✅ Tính toán thống kê học lực (academicLevel)
       const excellent = yearRecords.filter(yr => yr.academicLevel === 'Giỏi').length;
       const good = yearRecords.filter(yr => yr.academicLevel === 'Khá').length;
       const average = yearRecords.filter(yr => yr.academicLevel === 'Trung bình').length;
@@ -2413,6 +2921,22 @@ exports.getStatistics = async (req, res) => {
         weak,
         total: validStudents2.length
       };
+
+      // ✅ Tính toán thống kê hạnh kiểm (conduct) - chỉ lấy những record đã chốt (locked hoặc approved)
+      const lockedOrApprovedRecords = yearRecords.filter(yr => 
+        yr.conductStatus === 'locked' || yr.conductStatus === 'approved'
+      );
+      
+      stats.conduct['Tốt'] = lockedOrApprovedRecords.filter(yr => yr.conduct === 'Tốt').length;
+      stats.conduct['Khá'] = lockedOrApprovedRecords.filter(yr => yr.conduct === 'Khá').length;
+      stats.conduct['Trung bình'] = lockedOrApprovedRecords.filter(yr => yr.conduct === 'Trung bình').length;
+      stats.conduct['Yếu'] = lockedOrApprovedRecords.filter(yr => yr.conduct === 'Yếu').length;
+
+      // ✅ Tính toán thống kê học lực (academicLevel)
+      stats.academicLevel['Giỏi'] = excellent;
+      stats.academicLevel['Khá'] = good;
+      stats.academicLevel['Trung bình'] = average;
+      stats.academicLevel['Yếu'] = weak;
 
       console.log('📊 [getStatistics] Final stats:', JSON.stringify(stats, null, 2));
 
@@ -2674,11 +3198,15 @@ exports.getHomeroomClassAllGrades = async (req, res) => {
       .populate('classId', 'className classCode grade')
       .lean();
 
-    // Lấy hạnh kiểm và học lực
+    // ✅ Lấy yearRecords: lấy cả CN và học kỳ để có đủ dữ liệu
+    const semesterCode = semester === '1' ? 'HK1' : semester === '2' ? 'HK2' : (semester || 'CN');
     const yearRecords = await StudentYearRecord.find({
       studentId: { $in: studentIds },
       year: schoolYear,
-      semester: semester === '1' ? 'HK1' : semester === '2' ? 'HK2' : semester
+      $or: [
+        { semester: semesterCode }, // Record theo semester được chọn
+        { semester: 'CN' } // Record cả năm (fallback)
+      ]
     })
       .populate('studentId', 'name studentCode')
       .populate('classId', 'className grade')
@@ -2751,15 +3279,69 @@ exports.getHomeroomClassAllGrades = async (req, res) => {
       });
     });
 
-    // Thêm hạnh kiểm và học lực
+    // ✅ Thêm GPA, hạnh kiểm và học lực (lấy đúng theo semester được chọn)
+    // Nhóm records theo học sinh để xử lý logic ưu tiên
+    const recordsByStudent = new Map();
     yearRecords.forEach(record => {
       const studentId = String(record.studentId);
+      if (!recordsByStudent.has(studentId)) {
+        recordsByStudent.set(studentId, { hk1: null, hk2: null, cn: null });
+      }
+      const studentRecords = recordsByStudent.get(studentId);
+      if (record.semester === 'HK1') studentRecords.hk1 = record;
+      else if (record.semester === 'HK2') studentRecords.hk2 = record;
+      else if (record.semester === 'CN') studentRecords.cn = record;
+    });
+    
+    recordsByStudent.forEach((records, studentId) => {
       if (!studentMap.has(studentId)) return;
-
       const student = studentMap.get(studentId);
-      student.conduct = record.conduct;
-      student.academicLevel = record.academicLevel;
-      student.gpa = record.gpa;
+      
+      // ✅ Lấy GPA từ record theo semester được chọn
+      let gpaRecord = null;
+      if (semesterCode === 'HK1' && records.hk1) {
+        gpaRecord = records.hk1;
+      } else if (semesterCode === 'HK2' && records.hk2) {
+        gpaRecord = records.hk2;
+      } else if (records.cn) {
+        gpaRecord = records.cn;
+      }
+      
+      if (gpaRecord && gpaRecord.gpa !== null && gpaRecord.gpa !== undefined) {
+        student.gpa = gpaRecord.gpa;
+      }
+      
+      // ✅ Lấy học lực từ record theo semester được chọn (ưu tiên record theo semester, fallback về CN)
+      let academicRecord = null;
+      if (semesterCode === 'HK1' && records.hk1 && records.hk1.academicLevel) {
+        academicRecord = records.hk1;
+      } else if (semesterCode === 'HK2' && records.hk2 && records.hk2.academicLevel) {
+        academicRecord = records.hk2;
+      } else if (records.cn && records.cn.academicLevel) {
+        academicRecord = records.cn;
+      } else if (semesterCode === 'HK1' && records.hk1) {
+        academicRecord = records.hk1;
+      } else if (semesterCode === 'HK2' && records.hk2) {
+        academicRecord = records.hk2;
+      }
+      
+      if (academicRecord) {
+        student.academicLevel = academicRecord.academicLevel || null;
+      }
+      
+      // ✅ Lấy hạnh kiểm: ưu tiên record theo semester (đã chốt), fallback về CN (đã chốt)
+      let conductRecord = null;
+      if (semesterCode === 'HK1' && records.hk1 && (records.hk1.conductStatus === 'locked' || records.hk1.conductStatus === 'approved')) {
+        conductRecord = records.hk1;
+      } else if (semesterCode === 'HK2' && records.hk2 && (records.hk2.conductStatus === 'locked' || records.hk2.conductStatus === 'approved')) {
+        conductRecord = records.hk2;
+      } else if (records.cn && (records.cn.conductStatus === 'locked' || records.cn.conductStatus === 'approved')) {
+        conductRecord = records.cn;
+      }
+      
+      if (conductRecord) {
+        student.conduct = conductRecord.conduct;
+      }
     });
 
     // ✅ Xác định tập môn bắt buộc tính ĐTB HK cho lớp (includeInAverage !== false)
@@ -2898,11 +3480,10 @@ exports.getHomeroomClassAllGradesWithTrend = async (req, res) => {
       .populate('classId', 'className classCode grade')
       .lean();
 
-    const yearRecords = await StudentYearRecord.find({
-      studentId: { $in: studentIds },
-      year: schoolYear,
-      semester: semester === '1' ? 'HK1' : semester === '2' ? 'HK2' : semester
-    })
+    // Query StudentYearRecord: lấy cả CN và học kỳ để có đủ hạnh kiểm và học lực
+    let yearRecordQuery = { studentId: { $in: studentIds }, year: schoolYear };
+    // Không filter theo semester để lấy cả CN và học kỳ (hạnh kiểm thường ở CN)
+    const yearRecords = await StudentYearRecord.find(yearRecordQuery)
       .populate('studentId', 'name studentCode')
       .populate('classId', 'className grade')
       .lean();
@@ -3021,14 +3602,101 @@ exports.getHomeroomClassAllGradesWithTrend = async (req, res) => {
       });
     });
 
-    yearRecords.forEach(record => {
-      const studentId = String(record.studentId);
-      if (!studentMap.has(studentId)) return;
-
-      const student = studentMap.get(studentId);
-      student.conduct = record.conduct;
-      student.academicLevel = record.academicLevel;
-      student.gpa = record.gpa;
+    // ✅ Gán GPA, hạnh kiểm và học lực cho từng học sinh (lấy đúng theo semester)
+    Array.from(studentMap.values()).forEach(student => {
+      const studentId = String(student._id);
+      
+      // ✅ Lấy GPA theo semester được chọn
+      const semesterCode = semester === '1' ? 'HK1' : semester === '2' ? 'HK2' : (semester || 'CN');
+      let gpaRecord = yearRecords.find(yr => 
+        String(yr.studentId) === studentId &&
+        yr.year === schoolYear &&
+        yr.semester === semesterCode
+      );
+      
+      // Nếu không có record theo semester, fallback về CN
+      if (!gpaRecord && semesterCode !== 'CN') {
+        gpaRecord = yearRecords.find(yr => 
+          String(yr.studentId) === studentId &&
+          yr.year === schoolYear &&
+          yr.semester === 'CN'
+        );
+      }
+      
+      // Lấy GPA từ record
+      if (gpaRecord && gpaRecord.gpa !== null && gpaRecord.gpa !== undefined) {
+        student.gpa = gpaRecord.gpa;
+      }
+      
+      // ✅ Lấy hạnh kiểm: ưu tiên record theo semester được chọn (đã chốt), fallback về CN (đã chốt)
+      let conductRecord = null;
+      if (semesterCode === 'HK1') {
+        conductRecord = yearRecords.find(yr => 
+          String(yr.studentId) === studentId &&
+          yr.year === schoolYear &&
+          yr.semester === 'HK1' &&
+          (yr.conductStatus === 'locked' || yr.conductStatus === 'approved')
+        );
+      } else if (semesterCode === 'HK2') {
+        conductRecord = yearRecords.find(yr => 
+          String(yr.studentId) === studentId &&
+          yr.year === schoolYear &&
+          yr.semester === 'HK2' &&
+          (yr.conductStatus === 'locked' || yr.conductStatus === 'approved')
+        );
+      }
+      
+      // Fallback về CN nếu không có record theo học kỳ
+      if (!conductRecord) {
+        conductRecord = yearRecords.find(yr => 
+          String(yr.studentId) === studentId &&
+          yr.year === schoolYear &&
+          yr.semester === 'CN' &&
+          (yr.conductStatus === 'locked' || yr.conductStatus === 'approved')
+        );
+      }
+      
+      // Lấy hạnh kiểm từ record
+      if (conductRecord) {
+        student.conduct = conductRecord.conduct;
+      }
+      
+      // ✅ Lấy học lực từ record theo semester được chọn (ưu tiên record theo semester, fallback về CN)
+      let academicRecord = null;
+      if (semesterCode === 'HK1') {
+        academicRecord = yearRecords.find(yr => 
+          String(yr.studentId) === studentId &&
+          yr.year === schoolYear &&
+          yr.semester === 'HK1' &&
+          yr.academicLevel
+        );
+      } else if (semesterCode === 'HK2') {
+        academicRecord = yearRecords.find(yr => 
+          String(yr.studentId) === studentId &&
+          yr.year === schoolYear &&
+          yr.semester === 'HK2' &&
+          yr.academicLevel
+        );
+      }
+      
+      // Fallback về CN nếu không có record theo học kỳ
+      if (!academicRecord) {
+        academicRecord = yearRecords.find(yr => 
+          String(yr.studentId) === studentId &&
+          yr.year === schoolYear &&
+          yr.semester === 'CN' &&
+          yr.academicLevel
+        );
+      }
+      
+      // Nếu vẫn không có, lấy từ gpaRecord
+      if (!academicRecord && gpaRecord) {
+        academicRecord = gpaRecord;
+      }
+      
+      if (academicRecord) {
+        student.academicLevel = academicRecord.academicLevel || null;
+      }
     });
 
     // ✅ Tính xu hướng cho từng học sinh (song song)
@@ -3064,7 +3732,41 @@ exports.getHomeroomClassAllGradesWithTrend = async (req, res) => {
     }
 
     const result = Array.from(studentMap.values()).map(student => {
-      if (student.subjects && student.subjects.length > 0) {
+      const studentId = String(student._id);
+      
+      // ✅ Ưu tiên lấy semesterAverage từ GPA trong yearRecord
+      const semesterCode = semester === '1' ? 'HK1' : semester === '2' ? 'HK2' : (semester || 'CN');
+      const hk1Record = yearRecords.find(yr => 
+        String(yr.studentId) === studentId &&
+        yr.year === schoolYear &&
+        yr.semester === 'HK1'
+      );
+      const hk2Record = yearRecords.find(yr => 
+        String(yr.studentId) === studentId &&
+        yr.year === schoolYear &&
+        yr.semester === 'HK2'
+      );
+      const cnRecord = yearRecords.find(yr => 
+        String(yr.studentId) === studentId &&
+        yr.year === schoolYear &&
+        yr.semester === 'CN'
+      );
+      
+      // ✅ Lấy GPA từ yearRecord theo semester được chọn
+      let gpaFromRecord = null;
+      if (semesterCode === 'HK1' && hk1Record && hk1Record.gpa !== null && hk1Record.gpa !== undefined) {
+        gpaFromRecord = hk1Record.gpa;
+      } else if (semesterCode === 'HK2' && hk2Record && hk2Record.gpa !== null && hk2Record.gpa !== undefined) {
+        gpaFromRecord = hk2Record.gpa;
+      } else if (cnRecord && cnRecord.gpa !== null && cnRecord.gpa !== undefined) {
+        gpaFromRecord = cnRecord.gpa;
+      }
+      
+      // ✅ Nếu có GPA từ yearRecord, dùng nó làm semesterAverage
+      if (gpaFromRecord !== null && gpaFromRecord !== undefined) {
+        student.semesterAverage = gpaFromRecord;
+      } else if (student.subjects && student.subjects.length > 0) {
+        // Fallback: tính từ các môn đã công bố
         const finalizedIncluded = student.subjects.filter(
           s =>
             s.isOfficial === true &&
@@ -3084,6 +3786,7 @@ exports.getHomeroomClassAllGradesWithTrend = async (req, res) => {
           student.semesterAverage = null;
         }
       }
+      
       return student;
     });
 
@@ -3412,17 +4115,15 @@ exports.getHomeroomClassClassification = async (req, res) => {
 
     const studentIds = students.map(s => s._id);
 
-    // Lấy hạnh kiểm và học lực
+    // Lấy hạnh kiểm và học lực - lấy cả CN và học kỳ để có đủ dữ liệu
     let yearRecordQuery = { studentId: { $in: studentIds }, year: schoolYear };
-    if (semester) {
-      if (semester === '1') yearRecordQuery.semester = 'HK1';
-      else if (semester === '2') yearRecordQuery.semester = 'HK2';
-      else if (semester === 'CN') yearRecordQuery.semester = 'CN';
-    }
+    // Không filter theo semester để lấy cả CN và học kỳ (hạnh kiểm thường ở CN)
+    // Sắp xếp theo updatedAt giảm dần để ưu tiên record mới nhất nếu có nhiều record
     const yearRecords = await StudentYearRecord.find(yearRecordQuery)
       .populate('studentId', 'name studentCode')
       .populate('classId', 'className grade')
       .populate('homeroomTeacherId', 'name teacherCode')
+      .sort({ updatedAt: -1 }) // ✅ Ưu tiên record mới nhất
       .lean();
 
     // Lấy điểm trung bình để tính học lực nếu chưa có
@@ -3438,51 +4139,135 @@ exports.getHomeroomClassClassification = async (req, res) => {
     const result = validStudents2.map(student => {
       const studentId = String(student._id);
       
-      // Tìm record tương ứng
+      // ✅ Lấy hạnh kiểm theo semester được chọn, chỉ lấy khi đã chốt (locked) hoặc đã phê duyệt (approved)
+      // Lưu ý: r.studentId có thể là ObjectId hoặc string, cần normalize
+      let conductRecord = null;
+      if (semester) {
+        const semesterCode = semester === '1' ? 'HK1' : semester === '2' ? 'HK2' : semester;
+        // Ưu tiên record theo semester đã chốt
+        conductRecord = yearRecords.find(r => {
+          const rStudentId = String(r.studentId?._id || r.studentId);
+          return rStudentId === studentId &&
+            r.semester === semesterCode &&
+            (r.conductStatus === 'locked' || r.conductStatus === 'approved');
+        });
+        // Nếu không có record theo semester đã chốt, không lấy (chỉ hiển thị khi đã chốt)
+      } else {
+        // Nếu không có semester, lấy record CN đã chốt
+        conductRecord = yearRecords.find(r => {
+          const rStudentId = String(r.studentId?._id || r.studentId);
+          return rStudentId === studentId &&
+            r.semester === 'CN' &&
+            (r.conductStatus === 'locked' || r.conductStatus === 'approved');
+        });
+      }
+      
+      // Tìm record cho học lực và GPA: theo semester được chọn hoặc CN
+      // Lưu ý: r.studentId có thể là ObjectId hoặc string, cần normalize
       let record = null;
       if (semester) {
-        record = yearRecords.find(r => String(r.studentId) === studentId);
+        const semesterCode = semester === '1' ? 'HK1' : semester === '2' ? 'HK2' : semester;
+        if (semesterCode === 'CN') {
+          // Nếu chọn CN, lấy record CN
+          record = yearRecords.find(r => {
+            const rStudentId = String(r.studentId?._id || r.studentId);
+            return rStudentId === studentId && r.semester === 'CN';
+          });
+        } else {
+          // Nếu chọn HK1 hoặc HK2, lấy record theo học kỳ
+          record = yearRecords.find(r => {
+            const rStudentId = String(r.studentId?._id || r.studentId);
+            return rStudentId === studentId && r.semester === semesterCode;
+          });
+        }
       } else {
         // Nếu không có semester, lấy record cả năm
-        record = yearRecords.find(
-          r => String(r.studentId) === studentId && r.semester === 'CN'
-        );
+        record = yearRecords.find(r => {
+          const rStudentId = String(r.studentId?._id || r.studentId);
+          return rStudentId === studentId && r.semester === 'CN';
+        });
       }
 
-      // Tính điểm trung bình nếu chưa có
+      // Tính điểm trung bình theo semester được chọn
       let gpa = record?.gpa || null;
-      if (!gpa && !semester) {
-        // Tính điểm TB cả năm
-        const hk1Summaries = gradeSummaries.filter(
-          g => String(g.studentId) === studentId && g.semester === '1'
-        );
-        const hk2Summaries = gradeSummaries.filter(
-          g => String(g.studentId) === studentId && g.semester === '2'
-        );
-
-        const allYearAverages = [];
-        const allSubjects = new Set([
-          ...hk1Summaries.map(g => String(g.subjectId._id)),
-          ...hk2Summaries.map(g => String(g.subjectId._id))
-        ]);
-
-        allSubjects.forEach(subjectIdStr => {
-          const hk1Grade = hk1Summaries.find(
-            g => String(g.subjectId._id) === subjectIdStr
+      
+      // Nếu chưa có GPA từ record, tính từ gradeSummaries (chỉ tính các môn có includeInAverage !== false)
+      if (!gpa) {
+        if (semester === 'CN' || !semester) {
+          // Tính điểm TB cả năm từ HK1 và HK2
+          const hk1Summaries = gradeSummaries.filter(
+            g => String(g.studentId) === studentId && g.semester === '1'
           );
-          const hk2Grade = hk2Summaries.find(
-            g => String(g.subjectId._id) === subjectIdStr
+          const hk2Summaries = gradeSummaries.filter(
+            g => String(g.studentId) === studentId && g.semester === '2'
           );
 
-          const hk1Avg = hk1Grade?.average ?? null;
-          const hk2Avg = hk2Grade?.average ?? null;
-          if (hk1Avg !== null && hk2Avg !== null) {
-            allYearAverages.push((hk1Avg + hk2Avg) / 2);
+          const allYearAverages = [];
+          const allSubjects = new Set([
+            ...hk1Summaries.map(g => String(g.subjectId._id)),
+            ...hk2Summaries.map(g => String(g.subjectId._id))
+          ]);
+
+          allSubjects.forEach(subjectIdStr => {
+            const hk1Grade = hk1Summaries.find(
+              g => String(g.subjectId._id) === subjectIdStr
+            );
+            const hk2Grade = hk2Summaries.find(
+              g => String(g.subjectId._id) === subjectIdStr
+            );
+
+            // ✅ Chỉ tính các môn có includeInAverage !== false
+            const subject = hk1Grade?.subjectId || hk2Grade?.subjectId;
+            if (subject && subject.includeInAverage === false) {
+              return; // Bỏ qua môn không tính điểm TB
+            }
+
+            const hk1Avg = hk1Grade?.average ?? null;
+            const hk2Avg = hk2Grade?.average ?? null;
+            if (hk1Avg !== null && hk2Avg !== null) {
+              allYearAverages.push((hk1Avg + hk2Avg) / 2);
+            }
+          });
+
+          if (allYearAverages.length > 0) {
+            gpa = allYearAverages.reduce((a, b) => a + b, 0) / allYearAverages.length;
           }
-        });
+        } else if (semester === '1') {
+          // Tính điểm TB học kỳ 1 (chỉ tính các môn có includeInAverage !== false)
+          const hk1Summaries = gradeSummaries.filter(
+            g => String(g.studentId) === studentId && 
+                 g.semester === '1' &&
+                 g.subjectId &&
+                 g.subjectId.includeInAverage !== false
+          );
+          const averages = hk1Summaries
+            .filter(g => g.average !== null && g.average !== undefined)
+            .map(g => g.average);
+          if (averages.length > 0) {
+            gpa = averages.reduce((a, b) => a + b, 0) / averages.length;
+          }
+        } else if (semester === '2') {
+          // Tính điểm TB học kỳ 2 (chỉ tính các môn có includeInAverage !== false)
+          const hk2Summaries = gradeSummaries.filter(
+            g => String(g.studentId) === studentId && 
+                 g.semester === '2' &&
+                 g.subjectId &&
+                 g.subjectId.includeInAverage !== false
+          );
+          const averages = hk2Summaries
+            .filter(g => g.average !== null && g.average !== undefined)
+            .map(g => g.average);
+          if (averages.length > 0) {
+            gpa = averages.reduce((a, b) => a + b, 0) / averages.length;
+          }
+        }
+      }
 
-        if (allYearAverages.length > 0) {
-          gpa = allYearAverages.reduce((a, b) => a + b, 0) / allYearAverages.length;
+      // ✅ Chỉ hiển thị hạnh kiểm từ record CN khi đã chốt hoặc đã phê duyệt
+      let conduct = null;
+      if (conductRecord) {
+        if (conductRecord.conductStatus === 'locked' || conductRecord.conductStatus === 'approved') {
+          conduct = conductRecord.conduct;
         }
       }
 
@@ -3496,7 +4281,7 @@ exports.getHomeroomClassClassification = async (req, res) => {
           classCode: student.classId.classCode,
           grade: student.classId.grade
         } : null,
-        conduct: record?.conduct || null,
+        conduct: conduct,
         academicLevel: record?.academicLevel || null,
         gpa: gpa,
         rank: record?.rank || null, // Rank trong lớp
@@ -3737,7 +4522,9 @@ exports.publishSubject = async (req, res) => {
       .lean();
     const studentIds = students.map(s => s._id);
 
-    // Kiểm tra đã có điểm thi (final) cho tất cả học sinh hay chưa
+    // ✅ Kiểm tra đã có điểm trung bình (average) cho tất cả học sinh hay chưa
+    // Lưu ý: Điểm thi (final) là một loại điểm kiểm tra, không bắt buộc phải có
+    // Chỉ cần có điểm trung bình (average) đã được tính là có thể công bố
     const summaries = await GradeSummary.find({
       studentId: { $in: studentIds },
       subjectId,
@@ -3745,12 +4532,13 @@ exports.publishSubject = async (req, res) => {
       semester,
     }).lean();
 
-    const missingFinal = summaries.filter(s => !(s?.averages && s.averages.final != null));
-    if (missingFinal.length > 0) {
+    // Kiểm tra xem tất cả học sinh đã có điểm trung bình chưa
+    const missingAverage = summaries.filter(s => s.average === null || s.average === undefined);
+    if (missingAverage.length > 0) {
       return res.status(400).json({
         success: false,
-        message: `Còn ${missingFinal.length} học sinh chưa có điểm thi (final)`,
-        missingCount: missingFinal.length,
+        message: `Còn ${missingAverage.length} học sinh chưa có điểm trung bình. Vui lòng nhập đủ điểm để hệ thống tính điểm trung bình trước khi công bố.`,
+        missingCount: missingAverage.length,
       });
     }
 
@@ -3780,6 +4568,108 @@ exports.publishSubject = async (req, res) => {
 };
 
 /**
+ * POST /grades/publish-student - GVBM công bố điểm của 1 học sinh cho 1 môn/học kỳ
+ * Body: { studentId, subjectId, schoolYear, semester }
+ */
+exports.publishStudentGrade = async (req, res) => {
+  try {
+    const { studentId, subjectId, schoolYear, semester } = req.body || {};
+    if (!studentId || !subjectId || !schoolYear || !semester) {
+      return res.status(400).json({ success: false, message: 'Thiếu studentId/subjectId/schoolYear/semester' });
+    }
+
+    const { role, accountId } = req.user || {};
+    // ✅ Chỉ GVBM của môn này (hoặc Admin) mới được công bố
+    if (role === 'teacher') {
+      const TeacherModel = require('../../models/user/teacher');
+      const teacher = await TeacherModel.findOne({ accountId }).lean();
+      if (!teacher) {
+        return res.status(404).json({ success: false, message: 'Không tìm thấy thông tin giáo viên' });
+      }
+      const Student = require('../../models/user/student');
+      const student = await Student.findById(studentId).select('classId').lean();
+      if (!student) {
+        return res.status(404).json({ success: false, message: 'Không tìm thấy học sinh' });
+      }
+      const TeachingAssignment = require('../../models/subject/teachingAssignment');
+      const assignment = await TeachingAssignment.findOne({
+        teacherId: teacher._id,
+        subjectId,
+        classId: student.classId,
+        year: String(schoolYear),
+        semester: String(semester),
+      }).lean();
+      if (!assignment) {
+        return res.status(403).json({ success: false, message: 'Bạn không được phân công dạy lớp/môn này' });
+      }
+    } else if (role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Không có quyền công bố điểm' });
+    }
+
+    // ✅ Kiểm tra đã có điểm trung bình (average) hoặc kết quả (result) cho học sinh hay chưa
+    const summary = await GradeSummary.findOne({
+      studentId,
+      subjectId,
+      schoolYear,
+      semester,
+    })
+      .populate('subjectId', 'includeInAverage')
+      .lean();
+
+    if (!summary) {
+      return res.status(404).json({
+        success: false,
+        message: 'Chưa có bản ghi điểm cho học sinh này',
+      });
+    }
+
+    // ✅ Kiểm tra môn có tính điểm TB hay không
+    const includeInAverage = summary.subjectId?.includeInAverage;
+    
+    if (includeInAverage !== false) {
+      // Môn tính điểm TB: cần có average
+      if (summary.average === null || summary.average === undefined) {
+        return res.status(400).json({
+          success: false,
+          message: 'Học sinh này chưa có điểm trung bình. Vui lòng nhập đủ điểm để hệ thống tính điểm trung bình trước khi công bố.',
+        });
+      }
+    } else {
+      // Môn không tính điểm TB: cần có result (Đạt/Không đạt)
+      if (!summary.result || (summary.result !== 'D' && summary.result !== 'K')) {
+        return res.status(400).json({
+          success: false,
+          message: 'Học sinh này chưa có kết quả (Đạt/Không đạt). Vui lòng nhập đủ điểm để hệ thống tính kết quả trước khi công bố.',
+        });
+      }
+    }
+
+    // Cập nhật công bố
+    const result = await GradeSummary.updateOne({
+      studentId,
+      subjectId,
+      schoolYear,
+      semester,
+    }, {
+      $set: {
+        isOfficial: true,
+        officialAt: new Date(),
+        officialBy: req.user?.accountId || null,
+      }
+    });
+
+    return res.json({
+      success: true,
+      message: 'Đã công bố điểm chính thức cho học sinh',
+      modified: result.modifiedCount || result.nModified || 0,
+    });
+  } catch (err) {
+    console.error('[GradeController::publishStudentGrade]', err);
+    res.status(500).json({ success: false, message: 'Không thể công bố điểm', error: err.message });
+  }
+};
+
+/**
  * POST /grades/homeroom/evaluate-academic
  * GVCN/Admin: Xét học lực cho cả lớp theo năm học + học kỳ đã chọn
  * Body: { classId, schoolYear, semester } with semester in ['1','2','CN']
@@ -3796,8 +4686,14 @@ exports.evaluateHomeroomAcademicLevel = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Thiếu classId/schoolYear/semester' });
     }
 
-    const semKey = semester === '1' ? 'HK1' : semester === '2' ? 'HK2' : 'CN';
-    const configSemester = semester === 'CN' ? '2' : String(semester);
+    // ✅ Normalize semester: '1' -> 'HK1', '2' -> 'HK2', 'CN' hoặc 'Cả năm' -> 'CN'
+    const normalizedSemester = String(semester || '').trim().toUpperCase();
+    const semKey = normalizedSemester === '1' || normalizedSemester === 'HK1' 
+      ? 'HK1' 
+      : normalizedSemester === '2' || normalizedSemester === 'HK2' 
+        ? 'HK2' 
+        : 'CN'; // Mặc định là 'CN' cho "Cả năm"
+    const configSemester = semKey === 'CN' ? '2' : (semKey === 'HK1' ? '1' : '2');
 
     // Quyền: GVCN của lớp hoặc Admin
     const { role } = req.user || {};
@@ -3816,12 +4712,17 @@ exports.evaluateHomeroomAcademicLevel = async (req, res) => {
 
     // Học sinh đang hoạt động cùng niên khóa lớp
     const students = await Student.find({ classId, status: 'active', isDeleted: { $ne: true }, currentYear: cls.year })
-      .select('_id')
+      .select('_id name studentCode')
       .lean();
     if (students.length === 0) {
       return res.json({ success: true, message: 'Lớp không có học sinh nào', updated: 0, skipped: 0, details: [] });
     }
     const studentIds = students.map(s => s._id);
+    // Tạo map để tra cứu tên học sinh
+    const studentMap = new Map();
+    students.forEach(s => {
+      studentMap.set(String(s._id), { name: s.name, studentCode: s.studentCode });
+    });
 
     const gradeConfig = await GradeConfig.findOne({ schoolYear: String(schoolYear), semester: configSemester }).lean();
 
@@ -3949,11 +4850,41 @@ exports.evaluateHomeroomAcademicLevel = async (req, res) => {
 
       const included = [...subjectMap.entries()].filter(([id, v]) => v.average !== null && v.average !== undefined);
       const finalizedIds = new Set(included.filter(([id, v]) => v.official).map(([id]) => id));
-      const hasAllRequired = requiredIdsArray.every(id => finalizedIds.has(id));
+      
+      // ✅ Tìm các môn bắt buộc chưa công bố để hiển thị chi tiết
+      const missingOfficialSubjects = requiredIdsArray.filter(id => !finalizedIds.has(id));
+      const hasAllRequired = missingOfficialSubjects.length === 0;
 
       if (!hasAllRequired) {
         skipped++;
-        results.push({ studentId: sid, status: 'skipped', reason: 'Chưa đủ môn bắt buộc đã công bố' });
+        const studentInfo = studentMap.get(String(sid)) || {};
+        
+        // ✅ Lấy tên các môn chưa công bố
+        let reasonDetail = 'Chưa đủ môn bắt buộc đã công bố';
+        if (missingOfficialSubjects.length > 0) {
+          try {
+            const Subject = require('../../models/subject/subject');
+            const missingSubjects = await Subject.find({ 
+              _id: { $in: missingOfficialSubjects } 
+            }).select('name code').lean();
+            const subjectNames = missingSubjects.map(s => s.name || s.code || 'Môn chưa xác định').join(', ');
+            if (subjectNames) {
+              reasonDetail = `Chưa công bố điểm các môn: ${subjectNames}`;
+            }
+          } catch (e) {
+            // Nếu không lấy được tên môn, dùng lý do mặc định
+            console.error('Lỗi khi lấy tên môn chưa công bố:', e);
+          }
+        }
+        
+        results.push({ 
+          studentId: sid, 
+          studentName: studentInfo.name || null,
+          studentCode: studentInfo.studentCode || null,
+          status: 'skipped', 
+          reason: reasonDetail,
+          missingSubjects: missingOfficialSubjects // Thêm danh sách ID môn chưa công bố
+        });
         continue;
       }
 
@@ -3987,6 +4918,261 @@ exports.evaluateHomeroomAcademicLevel = async (req, res) => {
     return res.json({ success: true, updated, skipped, details: results });
   } catch (err) {
     console.error('[GradeController::evaluateHomeroomAcademicLevel]', err);
+    return res.status(500).json({ success: false, message: 'Không thể xét học lực', error: err.message });
+  }
+};
+
+/**
+ * POST /grades/evaluate-student-academic
+ * Xét học lực cho một học sinh (Admin/BGH)
+ */
+exports.evaluateStudentAcademicLevel = async (req, res) => {
+  try {
+    const { studentId, schoolYear, semester } = req.body || {};
+    if (!studentId || !schoolYear || !semester) {
+      return res.status(400).json({ success: false, message: 'Thiếu studentId/schoolYear/semester' });
+    }
+
+    const { role, accountId } = req.user || {};
+    // Admin/BGH hoặc GVCN (giáo viên chủ nhiệm của lớp học sinh) được xét học lực
+    if (role !== 'admin' && role !== 'bgh' && role !== 'teacher') {
+      return res.status(403).json({ success: false, message: 'Không có quyền xét học lực' });
+    }
+
+    const semKey = semester === '1' ? 'HK1' : semester === '2' ? 'HK2' : 'CN';
+    const configSemester = semester === 'CN' ? '2' : String(semester);
+
+    // Lấy thông tin học sinh
+    const student = await Student.findById(studentId).select('_id name studentCode classId').lean();
+    if (!student) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy học sinh' });
+    }
+
+    const classId = student.classId;
+    if (!classId) {
+      return res.status(400).json({ success: false, message: 'Học sinh chưa được phân lớp' });
+    }
+
+    const cls = await Class.findById(classId).select('year grade homeroomTeacher').lean();
+    if (!cls) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy lớp học' });
+    }
+    
+    // Nếu là giáo viên, kiểm tra xem có phải GVCN của lớp học sinh không
+    if (role === 'teacher') {
+      const TeacherModel = require('../../models/user/teacher');
+      const teacher = await TeacherModel.findOne({ accountId })
+        .select('yearRoles currentHomeroomClassId homeroomClassIds')
+        .lean();
+      if (!teacher) {
+        return res.status(404).json({ success: false, message: 'Không tìm thấy thông tin giáo viên' });
+      }
+      
+      // Kiểm tra năm học
+      if (cls.year !== String(schoolYear)) {
+        return res.status(403).json({ success: false, message: 'Năm học không khớp với lớp học' });
+      }
+      
+      // ✅ Kiểm tra từ yearRoles (ưu tiên)
+      let isHomeroom = false;
+      if (teacher.yearRoles && Array.isArray(teacher.yearRoles)) {
+        const yearRole = teacher.yearRoles.find(yr => String(yr.schoolYear) === String(schoolYear));
+        if (yearRole && yearRole.isHomeroom && yearRole.currentHomeroomClassId) {
+          if (String(yearRole.currentHomeroomClassId) === String(classId)) {
+            isHomeroom = true;
+          }
+        }
+      }
+      
+      // ✅ Kiểm tra từ homeroomClassIds (lịch sử)
+      if (!isHomeroom && teacher.homeroomClassIds && Array.isArray(teacher.homeroomClassIds)) {
+        const hasHomeroom = teacher.homeroomClassIds.some(
+          id => String(id._id || id) === String(classId)
+        );
+        if (hasHomeroom) {
+          isHomeroom = true;
+        }
+      }
+      
+      // ✅ Kiểm tra trực tiếp từ lớp học sinh (fallback)
+      if (!isHomeroom && cls.homeroomTeacher) {
+        if (String(cls.homeroomTeacher) === String(teacher._id)) {
+          isHomeroom = true;
+        }
+      }
+      
+      if (!isHomeroom) {
+        return res.status(403).json({ success: false, message: 'Bạn không phải giáo viên chủ nhiệm của lớp này' });
+      }
+    }
+
+    const gradeConfig = await GradeConfig.findOne({ schoolYear: String(schoolYear), semester: configSemester }).lean();
+
+    // Xác định tập môn bắt buộc phải có điểm official trước khi xét học lực
+    let requiredSubjectIds = new Set();
+    if (gradeConfig?.requiredSubjects?.length) {
+      gradeConfig.requiredSubjects.forEach(item => {
+        if (item?.subjectId) {
+          requiredSubjectIds.add(String(item.subjectId));
+        }
+      });
+    }
+    if (requiredSubjectIds.size === 0) {
+      try {
+        const TeachingAssignment = require('../../models/subject/teachingAssignment');
+        if (semester === '1' || semester === '2') {
+          const assigns = await TeachingAssignment.find({ classId, year: String(schoolYear), semester: String(semester) })
+            .populate('subjectId', 'includeInAverage')
+            .lean();
+          assigns
+            .filter(a => a.subjectId && a.subjectId.includeInAverage !== false)
+            .forEach(a => requiredSubjectIds.add(String(a.subjectId._id || a.subjectId)));
+        } else {
+          const assigns1 = await TeachingAssignment.find({ classId, year: String(schoolYear), semester: '1' })
+            .populate('subjectId', 'includeInAverage').lean();
+          const assigns2 = await TeachingAssignment.find({ classId, year: String(schoolYear), semester: '2' })
+            .populate('subjectId', 'includeInAverage').lean();
+          [...assigns1, ...assigns2]
+            .filter(a => a.subjectId && a.subjectId.includeInAverage !== false)
+            .forEach(a => requiredSubjectIds.add(String(a.subjectId._id || a.subjectId)));
+        }
+      } catch {}
+      if (requiredSubjectIds.size === 0) {
+        const Subject = require('../../models/subject/subject');
+        const subs = await Subject.find({ grades: String(cls.grade), includeInAverage: { $ne: false } })
+          .select('_id')
+          .lean();
+        requiredSubjectIds = new Set(subs.map(s => String(s._id)));
+      }
+    }
+
+    // Lấy GradeSummary
+    let summaries = [];
+    if (semester === '1' || semester === '2') {
+      summaries = await GradeSummary.find({ studentId, schoolYear, semester })
+        .populate('subjectId', 'includeInAverage')
+        .lean();
+    } else {
+      const [hk1Summaries, hk2Summaries] = await Promise.all([
+        GradeSummary.find({ studentId, schoolYear, semester: '1' })
+          .populate('subjectId', 'includeInAverage')
+          .lean(),
+        GradeSummary.find({ studentId, schoolYear, semester: '2' })
+          .populate('subjectId', 'includeInAverage')
+          .lean(),
+      ]);
+      summaries = [...hk1Summaries, ...hk2Summaries];
+    }
+
+    // Xây dựng dữ liệu môn và kiểm tra official
+    const subjectMap = new Map();
+    if (semester === '1' || semester === '2') {
+      summaries.forEach(s => {
+        if (!s.subjectId || s.subjectId.includeInAverage === false) return;
+        const subjId = String(s.subjectId._id || s.subjectId);
+        subjectMap.set(subjId, {
+          average: s.average,
+          official: s.isOfficial === true,
+        });
+      });
+    } else {
+      const bySubj = new Map();
+      summaries.forEach(s => {
+        if (!s.subjectId || s.subjectId.includeInAverage === false) return;
+        const id = String(s.subjectId._id || s.subjectId);
+        const subjSemester = s.semester;
+        if (!bySubj.has(id)) {
+          bySubj.set(id, { hk1: null, hk2: null });
+        }
+        if (subjSemester === '1' || subjSemester === 'HK1') {
+          bySubj.get(id).hk1 = s;
+        } else if (subjSemester === '2' || subjSemester === 'HK2') {
+          bySubj.get(id).hk2 = s;
+        }
+      });
+      for (const [id, pair] of bySubj.entries()) {
+        const hk1Avg = pair.hk1?.average ?? null;
+        const hk2Avg = pair.hk2?.average ?? null;
+        const official = (pair.hk1?.isOfficial === true) && (pair.hk2?.isOfficial === true);
+        let yearAvg = null;
+        if (hk1Avg !== null && hk2Avg !== null) yearAvg = (hk1Avg + hk2Avg) / 2;
+        else if (hk1Avg !== null) yearAvg = hk1Avg;
+        else if (hk2Avg !== null) yearAvg = hk2Avg;
+        subjectMap.set(id, { average: yearAvg, official });
+      }
+    }
+
+    const included = [...subjectMap.entries()].filter(([id, v]) => v.average !== null && v.average !== undefined);
+    const finalizedIds = new Set(included.filter(([id, v]) => v.official).map(([id]) => id));
+    
+    const requiredIdsArray = [...requiredSubjectIds];
+    const missingOfficialSubjects = requiredIdsArray.filter(id => !finalizedIds.has(id));
+    const hasAllRequired = missingOfficialSubjects.length === 0;
+
+    if (!hasAllRequired) {
+      let reasonDetail = 'Chưa đủ môn bắt buộc đã công bố';
+      if (missingOfficialSubjects.length > 0) {
+        try {
+          const Subject = require('../../models/subject/subject');
+          const missingSubjects = await Subject.find({ 
+            _id: { $in: missingOfficialSubjects } 
+          }).select('name code').lean();
+          const subjectNames = missingSubjects.map(s => s.name || s.code || 'Môn chưa xác định').join(', ');
+          if (subjectNames) {
+            reasonDetail = `Chưa công bố điểm các môn: ${subjectNames}`;
+          }
+        } catch (e) {
+          console.error('Lỗi khi lấy tên môn chưa công bố:', e);
+        }
+      }
+      return res.json({ 
+        success: false, 
+        message: reasonDetail,
+        skipped: true,
+        missingSubjects: missingOfficialSubjects
+      });
+    }
+
+    // GPA của kỳ đánh giá
+    const averagesArr = included.map(([id, v]) => v.average).filter(v => typeof v === 'number');
+    const gpa = averagesArr.length ? (averagesArr.reduce((a, b) => a + b, 0) / averagesArr.length) : null;
+
+    // Chuẩn bị subjectAverages cho tính xếp loại
+    const subjectAverages = included.map(([id, v]) => ({ subjectId: id, average: v.average }));
+    let academicLevel = null;
+    let academicDetails = null;
+    if (gpa !== null) {
+      try {
+        const { calculateAcademicLevelWithDetails } = require('../../services/academicLevelService');
+        const result = await calculateAcademicLevelWithDetails(gpa, subjectAverages, schoolYear, configSemester, gradeConfig || null);
+        academicLevel = result.academicLevel;
+        academicDetails = result.details;
+      } catch (e) {
+        console.error('Lỗi khi tính học lực:', e);
+        academicLevel = null;
+      }
+    }
+
+    // Lưu vào StudentYearRecord
+    const update = { gpa };
+    if (academicLevel) update.academicLevel = academicLevel;
+    await StudentYearRecord.findOneAndUpdate(
+      { studentId, year: String(schoolYear), semester: semKey },
+      { $set: { ...update, classId } },
+      { upsert: true, new: true }
+    );
+
+    return res.json({ 
+      success: true, 
+      message: 'Đã xét học lực thành công',
+      gpa,
+      academicLevel,
+      academicDetails, // ✅ Thông tin chi tiết về cách xếp học lực
+      studentName: student.name,
+      studentCode: student.studentCode
+    });
+  } catch (err) {
+    console.error('[GradeController::evaluateStudentAcademicLevel]', err);
     return res.status(500).json({ success: false, message: 'Không thể xét học lực', error: err.message });
   }
 };

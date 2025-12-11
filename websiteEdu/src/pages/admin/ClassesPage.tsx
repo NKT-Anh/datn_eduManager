@@ -17,6 +17,14 @@ import { AssignRoomDialog } from "@/components/dialogs/AssignRoomDialog";
 import { AutoAssignRoomDialog } from "@/components/dialogs/AutoAssignRoomDialog";
 import { AutoAssignHomeroomTeacherDialog } from "@/components/dialogs/AutoAssignHomeroomTeacherDialog";
 import { ClassDetailDialog } from "@/components/dialogs/ClassDetailDialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ClassType } from "@/types/class";
 import { Teacher } from "@/types/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -36,6 +44,7 @@ import {
   Home,
   ChevronDown,
   ChevronUp,
+  Type,
 } from "lucide-react";
 // ✅ Sử dụng hooks thay vì API trực tiếp
 import { useClasses, useTeachers, useAutoAssignRooms, useAutoAssignHomeroomTeachers, useSchoolYears } from "@/hooks";
@@ -90,6 +99,9 @@ export default function ClassesPage() {
   const [isAutoAssignTeacherDialogOpen, setIsAutoAssignTeacherDialogOpen] = useState(false);
   const [isClassDetailDialogOpen, setIsClassDetailDialogOpen] = useState(false);
   const [selectedClassForDetail, setSelectedClassForDetail] = useState<ClassType | null>(null);
+  const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
+  const [renamingClass, setRenamingClass] = useState<ClassType | undefined>();
+  const [newClassName, setNewClassName] = useState("");
   
   // ✅ State cho phần xem giáo viên chủ nhiệm
   const [isHomeroomViewOpen, setIsHomeroomViewOpen] = useState<boolean>(false);
@@ -297,6 +309,53 @@ export default function ClassesPage() {
     } finally {
       setDeletingClass(undefined);
       setIsDeleteDialogOpen(false);
+    }
+  };
+
+  /* =========================================================
+     ✏️ ĐỔI TÊN LỚP
+  ========================================================== */
+  const handleRenameClass = async () => {
+    if (!renamingClass || !newClassName.trim()) return;
+    
+    try {
+      // Kiểm tra trùng tên
+      const duplicateName = classes.find(
+        (cls) =>
+          cls.className === newClassName.trim() &&
+          cls.year === renamingClass.year &&
+          cls.grade === renamingClass.grade &&
+          cls._id !== renamingClass._id
+      );
+
+      if (duplicateName) {
+        toast({
+          title: "Tên lớp đã tồn tại",
+          description: `Tên lớp "${newClassName.trim()}" đã tồn tại trong khối ${renamingClass.grade} năm học ${renamingClass.year}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      await updateClass({ 
+        id: renamingClass._id, 
+        data: { className: newClassName.trim() } 
+      });
+      
+      toast({
+        title: "✅ Đổi tên thành công",
+        description: `Lớp đã được đổi tên từ "${renamingClass.className}" thành "${newClassName.trim()}".`,
+      });
+      
+      setIsRenameDialogOpen(false);
+      setRenamingClass(undefined);
+      setNewClassName("");
+    } catch (error: any) {
+      toast({
+        title: "❌ Lỗi",
+        description: error.response?.data?.message || "Không thể đổi tên lớp học",
+        variant: "destructive",
+      });
     }
   };
 
@@ -718,6 +777,18 @@ export default function ClassesPage() {
                     variant="ghost"
                     size="icon"
                     onClick={() => {
+                      setRenamingClass(cls);
+                      setNewClassName(cls.className);
+                      setIsRenameDialogOpen(true);
+                    }}
+                    title="Đổi tên"
+                  >
+                    <Type className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
                       setSelectedClass(cls);
                       setIsFormOpen(true);
                     }}
@@ -900,6 +971,53 @@ export default function ClassesPage() {
         students={students}
         teachers={teachers}
       />
+
+      {/* Dialog đổi tên lớp */}
+      <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Đổi tên lớp</DialogTitle>
+            <DialogDescription>
+              Nhập tên mới cho lớp {renamingClass?.className}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Tên lớp mới</label>
+              <Input
+                value={newClassName}
+                onChange={(e) => setNewClassName(e.target.value)}
+                placeholder="Ví dụ: 10A1"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleRenameClass();
+                  }
+                }}
+                autoFocus
+              />
+            </div>
+            <div className="text-sm text-muted-foreground">
+              <p>Khối: {renamingClass?.grade}</p>
+              <p>Năm học: {renamingClass?.year}</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsRenameDialogOpen(false);
+                setRenamingClass(undefined);
+                setNewClassName("");
+              }}
+            >
+              Hủy
+            </Button>
+            <Button onClick={handleRenameClass} disabled={!newClassName.trim()}>
+              Đổi tên
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

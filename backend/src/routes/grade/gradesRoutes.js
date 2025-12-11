@@ -92,7 +92,7 @@ router.post('/items/bulk',
       ]);
       
       const componentLabel = getComponentLabel(component);
-      return `Nhập điểm hàng loạt: ${scores.length} điểm ${componentLabel} cho học sinh ${studentName}, Môn ${subjectName}, Lớp ${className}, ${schoolYear} - HK${semester}`;
+      return `Nhập điểm: ${scores.length} điểm ${componentLabel} cho học sinh ${studentName}, Môn ${subjectName}, Lớp ${className}, ${schoolYear} - HK${semester}`;
     },
   }),
   gradeController.upsertGradeItems
@@ -198,6 +198,25 @@ router.post('/publish',
   gradeController.publishSubject
 );
 
+// ✅ Công bố điểm cho 1 học sinh - GVBM (môn mình dạy) hoặc Admin
+router.post('/publish-student',
+  authMiddleware,
+  checkPermission([PERMISSIONS.GRADE_ENTER, PERMISSIONS.GRADE_VIEW], { checkContext: false }),
+  auditLog({
+    action: 'UPDATE',
+    resource: 'GRADE_PUBLISH',
+    getDescription: async (req) => {
+      const { studentId, subjectId, schoolYear, semester } = req.body || {};
+      const [studentName, subjectName] = await Promise.all([
+        getStudentName(studentId),
+        getSubjectName(subjectId),
+      ]);
+      return `Công bố điểm học sinh: ${studentName}, Môn ${subjectName}, ${schoolYear} - HK${semester}`;
+    },
+  }),
+  gradeController.publishStudentGrade
+);
+
 // ✅ GVCN/Admin: Xét học lực lớp chủ nhiệm theo học kỳ/năm
 router.post('/homeroom/evaluate-academic',
   authMiddleware,
@@ -212,6 +231,22 @@ router.post('/homeroom/evaluate-academic',
     }
   }),
   gradeController.evaluateHomeroomAcademicLevel
+);
+
+// ✅ Admin/BGH: Xét học lực cho một học sinh
+router.post('/evaluate-student-academic',
+  authMiddleware,
+  checkPermission([PERMISSIONS.GRADE_VIEW_ALL, PERMISSIONS.GRADE_VIEW_HOMEROOM], { checkContext: false }),
+  auditLog({
+    action: 'UPDATE',
+    resource: 'ACADEMIC_EVALUATION_STUDENT',
+    getDescription: async (req) => {
+      const { studentId, schoolYear, semester } = req.body || {};
+      const studentName = await getStudentName(studentId);
+      return `Xét học lực: Học sinh ${studentName}, ${schoolYear} - ${semester === 'CN' ? 'Cả năm' : 'HK' + semester}`;
+    }
+  }),
+  gradeController.evaluateStudentAcademicLevel
 );
 
 // ✅ Học sinh xem điểm của bản thân, GVCN xem điểm học sinh lớp chủ nhiệm

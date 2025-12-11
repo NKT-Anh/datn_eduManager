@@ -56,6 +56,8 @@ const SettingSchema = new mongoose.Schema({
   bghEmailDomain: { type: String, default: 'bgh.school.com' },
   qlbmEmailDomain: { type: String, default: 'qlbm.school.com' },
   defaultPassword: { type: String, default: "123456" },
+  // ✅ Phương thức tạo mật khẩu: 'default' = dùng mật khẩu mặc định, 'random' = tạo ngẫu nhiên cho mỗi người
+  passwordGenerationMethod: { type: String, enum: ['default', 'random'], default: 'random' },
 
   // ✅ Cấu hình thời gian nhập điểm
   gradeEntryStartHK1: { type: String, default: '' },

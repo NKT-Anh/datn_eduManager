@@ -102,20 +102,22 @@ export default function BGHConductApprovalPage() {
         // Lấy danh sách chờ phê duyệt
         const res = await conductApi.getPendingConducts({
           year: selectedYear,
-          semester: selectedSemester === 'ALL' ? undefined : selectedSemester,
+          semester: selectedSemester === 'ALL' ? undefined : (selectedSemester === 'CN' ? 'CN' : selectedSemester),
         });
         data = res.data || [];
       } else {
         // Lấy tất cả (có thể filter theo status sau)
         const res = await conductApi.getConducts({
           year: selectedYear,
-          semester: selectedSemester === 'ALL' ? undefined : selectedSemester,
+          semester: selectedSemester === 'ALL' ? undefined : (selectedSemester === 'CN' ? 'CN' : selectedSemester),
         });
         data = res.data || [];
         
         // Filter theo status
         if (statusFilter === 'approved') {
-          data = data.filter(c => c.conductStatus === 'approved' || c.conductStatus === 'locked');
+          data = data.filter(c => c.conductStatus === 'approved');
+        } else if (statusFilter === 'locked') {
+          data = data.filter(c => c.conductStatus === 'locked');
         } else if (statusFilter === 'all') {
           // Giữ nguyên tất cả
         }
@@ -166,7 +168,7 @@ export default function BGHConductApprovalPage() {
       await conductApi.bulkApproveConducts({
         action: 'approve',
         year: selectedYear,
-        semester: selectedSemester === 'ALL' ? undefined : selectedSemester,
+        semester: selectedSemester === 'ALL' ? undefined : (selectedSemester === 'CN' ? 'CN' : selectedSemester),
       });
       toast.success('Đã phê duyệt tất cả hạnh kiểm đang chờ phê duyệt');
       fetchConducts();
@@ -186,7 +188,7 @@ export default function BGHConductApprovalPage() {
       await conductApi.bulkApproveConducts({
         action: 'lock',
         year: selectedYear,
-        semester: selectedSemester === 'ALL' ? undefined : selectedSemester,
+        semester: selectedSemester === 'ALL' ? undefined : (selectedSemester === 'CN' ? 'CN' : selectedSemester),
       });
       toast.success('Đã chốt tất cả hạnh kiểm đã phê duyệt');
       fetchConducts();
@@ -205,7 +207,7 @@ export default function BGHConductApprovalPage() {
       await conductApi.bulkApproveConducts({
         action: 'approve',
         year: selectedYear,
-        semester: selectedSemester === 'ALL' ? undefined : selectedSemester,
+        semester: selectedSemester === 'ALL' ? undefined : (selectedSemester === 'CN' ? 'CN' : selectedSemester),
         ids: selectedIds,
       });
 
@@ -329,6 +331,7 @@ export default function BGHConductApprovalPage() {
                   <SelectItem value="ALL">Tất cả</SelectItem>
                   <SelectItem value="HK1">Học kỳ 1</SelectItem>
                   <SelectItem value="HK2">Học kỳ 2</SelectItem>
+                  <SelectItem value="CN">Cả năm</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -341,6 +344,7 @@ export default function BGHConductApprovalPage() {
                 <SelectContent>
                   <SelectItem value="pending">Chờ phê duyệt</SelectItem>
                   <SelectItem value="approved">Đã phê duyệt</SelectItem>
+                  <SelectItem value="locked">Đã chốt</SelectItem>
                   <SelectItem value="all">Tất cả</SelectItem>
                 </SelectContent>
               </Select>
@@ -444,7 +448,9 @@ export default function BGHConductApprovalPage() {
                       <TableCell>{record.studentId.studentCode}</TableCell>
                       <TableCell className="font-medium">{record.studentId.name}</TableCell>
                       <TableCell>{record.classId.className}</TableCell>
-                      <TableCell>{record.semester}</TableCell>
+                      <TableCell>
+                        {record.semester === 'CN' ? 'Cả năm' : record.semester}
+                      </TableCell>
                       <TableCell>{getConductBadge(record.conduct)}</TableCell>
                       <TableCell className="max-w-xs">
                         {record.conductNote ? (

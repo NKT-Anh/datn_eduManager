@@ -41,7 +41,8 @@ import {
   Mail,
   Trash2,
   Trophy,
-  Edit
+  Edit,
+  Clock
 } from "lucide-react";
 import logoSchool from "@/assets/logo_school.png";
 import { useAuth } from "@/contexts/AuthContext";
@@ -173,6 +174,7 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
         items: [
           { id: "my-classes", title: "Lớp đang dạy", url: `${prefix}/my-classes`, icon: School },
           { id: "schedule", title: "Thời khóa biểu", url: `${prefix}/schedule`, icon: Calendar },
+          { id: "availability", title: "Lịch rảnh", url: `${prefix}/availability`, icon: Clock },
           { id: "grades", title: "Nhập điểm", url: `${prefix}/grades`, icon: BarChart3 },
           { id: "awards", title: "Danh hiệu / Khen thưởng", url: `${prefix}/awards`, icon: Trophy },
           { id: "survey-statistics", title: "Thống kê khảo sát", url: `${prefix}/survey-statistics`, icon: BarChart3 },
@@ -226,6 +228,7 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
         items: [
           { id: "my-classes", title: "Lớp đang dạy", url: `${prefix}/my-classes`, icon: School },
           { id: "schedule", title: "Thời khóa biểu", url: `${prefix}/schedule`, icon: Calendar },
+          { id: "availability", title: "Lịch rảnh", url: `${prefix}/availability`, icon: Clock },
           { id: "grades", title: "Nhập điểm", url: `${prefix}/grades`, icon: BarChart3 },
           { id: "awards", title: "Danh hiệu / Khen thưởng", url: `${prefix}/awards`, icon: Trophy },
           { id: "survey-statistics", title: "Thống kê khảo sát", url: `${prefix}/survey-statistics`, icon: BarChart3 },
@@ -267,6 +270,7 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
           { id: "my-classes", title: "Lớp đang dạy", url: `${prefix}/my-classes`, icon: School },
           { id: "schedule", title: "Thời khóa biểu", url: `${prefix}/schedule`, icon: Calendar },
           { id: "schedule-weekly", title: "Lịch theo tuần", url: `${prefix}/schedule-weekly`, icon: Calendar },
+          { id: "availability", title: "Lịch rảnh", url: `${prefix}/availability`, icon: Clock },
           { id: "grades", title: "Nhập điểm", url: `${prefix}/grades`, icon: BarChart3 },
           { id: "awards", title: "Danh hiệu / Khen thưởng", url: `${prefix}/awards`, icon: Trophy },
           { id: "survey-statistics", title: "Thống kê khảo sát", url: `${prefix}/survey-statistics`, icon: BarChart3 },
@@ -395,8 +399,6 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
               icon: BarChart3,
               children: [
                 { id: "grades-list", title: "Bảng điểm", url: `${prefix}/grades`, icon: BarChart3 },
-                { id: "edit-grades", title: "Sửa điểm học sinh", url: `${prefix}/grades`, icon: Edit },
-                { id: "conduct-statistics", title: "Thống kê hạnh kiểm", url: `${prefix}/conduct-statistics`, icon: BarChart3 },
                 { id: "conduct-admin", title: "Quản lý hạnh kiểm", url: `${prefix}/conduct`, icon: ClipboardList },
                 { id: "grade-config", title: "Cấu hình điểm", url: `${prefix}/grade-config`, icon: Settings },
                 { id: "init-grades", title: "Khởi tạo bảng điểm", url: `${prefix}/init-grades`, icon: Database },
@@ -469,7 +471,6 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
           label: "Cá nhân",
           items: [
             { id: "profile", title: "Hồ sơ", url: `${prefix}/profile`, icon: User },
-            { id: "settings", title: "Cài đặt", url: `${prefix}/settings`, icon: Settings },
           ],
         },
       ];

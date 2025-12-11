@@ -6,6 +6,18 @@ const checkPermission = require('../../middlewares/checkPermission');
 const { PERMISSIONS } = require('../../config/permissions');
 const { auditLog } = require('../../middlewares/auditLogMiddleware');
 
+// ✅ Lấy lịch rảnh của chính mình - Giáo viên
+router.get('/me/availability',
+  authMiddleware,
+  teacherController.getMyAvailability
+);
+
+// ✅ Cập nhật lịch rảnh của chính mình - Giáo viên
+router.put('/me/availability',
+  authMiddleware,
+  teacherController.updateMyAvailability
+);
+
 // ✅ Cập nhật lịch rảnh - Giáo viên cập nhật của mình hoặc Admin
 router.put('/:id/availability',
   authMiddleware, 

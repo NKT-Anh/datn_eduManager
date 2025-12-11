@@ -583,7 +583,7 @@ exports.getSurveyProgress = async (req, res) => {
         console.warn(`⚠️ Có ${students.length - validStudents.length} bản ghi không có studentCode (có thể không phải học sinh)`);
       }
     } else if (survey.allowedClasses && survey.allowedClasses.length > 0) {
-      // Lấy học sinh từ các lớp (chỉ lấy học sinh trong lớp đúng năm học)
+      // ✅ Lấy học sinh từ các lớp - QUAN TRỌNG: Lấy theo currentYear (niên khóa) từ thông tin học sinh
       const Class = require('../../models/class/class');
       const classIds = survey.allowedClasses.map(c => c._id || c);
       
@@ -592,72 +592,177 @@ exports.getSurveyProgress = async (req, res) => {
         _id: { $in: classIds },
         year: surveyYear, // ✅ Chỉ lấy lớp đúng năm học
         isDeleted: { $ne: true }
-      }).select('_id').lean();
+      }).select('_id year').lean();
       
       const validClassIds = classes.map(c => c._id);
       
-      // ✅ Lấy học sinh trong các lớp đúng năm học (CHỈ LẤY HỌC SINH, KHÔNG LẤY GIÁO VIÊN)
-      // Vì lớp đã được filter theo năm học rồi, nên học sinh trong lớp đó cũng đúng năm học
-      // ✅ CHỈ QUERY TỪ STUDENT MODEL - KHÔNG QUERY TỪ TEACHER MODEL
-      // Class có field: students (array of Student IDs) và teacherId (single Teacher ID) - rõ ràng phân biệt
+      // ✅ QUAN TRỌNG: Lấy học sinh theo currentYear (niên khóa) từ thông tin học sinh
+      // Điều kiện QUAN TRỌNG NHẤT: currentYear phải trùng với surveyYear
+      // Sau đó mới filter theo classId (nếu có)
+      // Điều này đảm bảo chỉ lấy học sinh đúng niên khóa, không phụ thuộc vào dữ liệu lớp có thể không nhất quán
       const students = await Student.find({
-        classId: { $in: validClassIds }, // ✅ Chỉ lấy học sinh có classId (học sinh mới có field này)
+        currentYear: surveyYear, // ✅ QUAN TRỌNG NHẤT: Lấy theo niên khóa hiện tại từ thông tin học sinh
+        classId: { $in: validClassIds }, // ✅ Sau đó mới filter theo lớp (nếu có)
         status: 'active',
-        isDeleted: { $ne: true }
-        // ✅ Không có field teacherCode, departmentId -> đảm bảo chỉ lấy học sinh
-      }).select('_id studentCode classId').lean(); // ✅ Select studentCode để đảm bảo là học sinh
+        isDeleted: { $ne: true },
+        studentCode: { $exists: true, $ne: null } // ✅ Đảm bảo có studentCode (học sinh mới có)
+      })
+        .select('_id studentCode classId currentYear')
+        .lean();
       
-      // ✅ Validate: Đảm bảo tất cả đều có studentCode (học sinh mới có field này)
-      const validStudents = students.filter(s => s.studentCode);
-      allowedStudentIds = validStudents.map(s => s._id);
+      // ✅ Validate: Đảm bảo tất cả đều có studentCode và currentYear đúng
+      // QUAN TRỌNG: Validate lại currentYear một lần nữa để chắc chắn
+      const validStudents = students.filter(s => {
+        if (!s.studentCode) return false;
+        // ✅ Kiểm tra currentYear có trùng với surveyYear không (quan trọng nhất)
+        if (!s.currentYear || String(s.currentYear) !== String(surveyYear)) {
+          console.warn(`⚠️ Học sinh ${s._id} có currentYear=${s.currentYear} không khớp với surveyYear=${surveyYear}`);
+          return false;
+        }
+        return true;
+      });
+      
+      // ✅ Loại bỏ trùng lặp (nếu có) - đảm bảo mỗi học sinh chỉ được đếm 1 lần
+      const uniqueStudentIds = [...new Set(validStudents.map(s => String(s._id)))];
+      allowedStudentIds = uniqueStudentIds.map(id => {
+        // Tìm student object tương ứng
+        const student = validStudents.find(s => String(s._id) === id);
+        return student ? student._id : id;
+      });
       
       if (students.length !== validStudents.length) {
-        console.warn(`⚠️ Có ${students.length - validStudents.length} bản ghi không có studentCode (có thể không phải học sinh)`);
+        console.warn(`⚠️ Có ${students.length - validStudents.length} học sinh không hợp lệ (không có studentCode hoặc currentYear không đúng)`);
       }
       
-      console.log(`📊 Khảo sát ${survey._id}: Tìm thấy ${validClassIds.length}/${classIds.length} lớp đúng năm học ${surveyYear}, ${allowedStudentIds.length} học sinh trong các lớp đó`);
+      // ✅ Debug: Kiểm tra học sinh có currentYear không đúng
+      const studentsWithWrongYear = students.filter(s => s.currentYear && String(s.currentYear) !== String(surveyYear));
+      if (studentsWithWrongYear.length > 0) {
+        console.warn(`⚠️ Có ${studentsWithWrongYear.length} học sinh có currentYear không đúng:`, studentsWithWrongYear.map(s => ({ id: s._id, currentYear: s.currentYear, expected: surveyYear })));
+      }
+      
+      console.log(`📊 Khảo sát ${survey._id}: Tìm thấy ${validClassIds.length}/${classIds.length} lớp đúng năm học ${surveyYear}, ${students.length} học sinh query được (currentYear=${surveyYear}), ${validStudents.length} học sinh hợp lệ, ${allowedStudentIds.length} học sinh sau khi loại trùng`);
     } else {
-      // Tất cả học sinh ĐANG HỌC (CHỈ LẤY HỌC SINH, KHÔNG LẤY GIÁO VIÊN)
+      // ✅ Tất cả học sinh ĐANG HỌC - QUAN TRỌNG: Lấy theo currentYear (niên khóa) từ thông tin học sinh
       // Nếu không có allowedClasses, có thể là khảo sát cho tất cả học sinh đang học
       // ✅ CHỈ QUERY TỪ STUDENT MODEL - KHÔNG QUERY TỪ TEACHER MODEL
       // ✅ CHỈ LẤY HỌC SINH ĐANG HỌC (status = 'active')
-      const students = await Student.find({
+      // ✅ QUAN TRỌNG NHẤT: Phải filter theo currentYear và lớp thuộc năm học đó
+      const query = {
         status: 'active', // ✅ CHỈ LẤY HỌC SINH ĐANG HỌC
         isDeleted: { $ne: true },
         studentCode: { $exists: true, $ne: null } // ✅ Đảm bảo có studentCode (học sinh mới có field này)
-        // ✅ Không có field teacherCode, departmentId -> đảm bảo chỉ lấy học sinh
-      }).select('_id currentYear classId studentCode status').lean(); // ✅ Select status để validate
+      };
       
-      // ✅ Validate: Đảm bảo tất cả đều có studentCode và status = 'active'
-      let validStudents = students.filter(s => {
-        return s.studentCode && s.status === 'active'; // ✅ Chỉ lấy học sinh đang học
-      });
-      
-      // ✅ Nếu có surveyYear, filter theo currentYear hoặc theo lớp có year trùng
+      // ✅ QUAN TRỌNG: Nếu có surveyYear, phải filter theo currentYear và lớp thuộc năm học đó
       if (surveyYear) {
+        query.currentYear = surveyYear; // ✅ Lấy theo niên khóa hiện tại từ thông tin học sinh
+        
+        // ✅ Lấy tất cả lớp thuộc năm học này để filter học sinh
         const Class = require('../../models/class/class');
         const classesInYear = await Class.find({
           year: surveyYear,
           isDeleted: { $ne: true }
         }).select('_id').lean();
+        
         const classIdsInYear = classesInYear.map(c => c._id);
         
-        validStudents = validStudents.filter(s => {
-          // Học sinh có currentYear trùng với surveyYear
-          if (s.currentYear === surveyYear) return true;
-          // Hoặc học sinh trong lớp có year trùng với surveyYear
-          if (s.classId) {
-            const studentClassId = typeof s.classId === 'object' && s.classId !== null 
-              ? String(s.classId._id || s.classId) 
-              : String(s.classId);
-            if (classIdsInYear.some(cid => String(cid) === studentClassId)) return true;
-          }
-          return false;
-        });
+        // ✅ Chỉ lấy học sinh có lớp thuộc năm học này
+        if (classIdsInYear.length > 0) {
+          query.classId = { $in: classIdsInYear };
+        } else {
+          // Nếu không có lớp nào, trả về rỗng
+          allowedStudentIds = [];
+          console.log(`📊 Khảo sát ${survey._id}: Không có lớp nào thuộc năm học ${surveyYear}`);
+          return res.json({
+            survey: {
+              _id: survey._id,
+              title: survey.title,
+              status: survey.status
+            },
+            totalAllowed: 0,
+            totalCount: 0,
+            submittedCount: 0,
+            notSubmittedCount: 0,
+            completionRate: 0,
+            notSubmittedStudents: []
+          });
+        }
       }
       
-      allowedStudentIds = validStudents.map(s => s._id);
-      console.log(`📊 Khảo sát ${survey._id}: Không có allowedClasses/allowedStudents, lấy ${allowedStudentIds.length}/${students.length} học sinh ĐANG HỌC (filter theo năm học ${surveyYear || 'tất cả'})`);
+      const students = await Student.find(query)
+        .select('_id currentYear classId studentCode status')
+        .populate({
+          path: 'classId',
+          select: '_id year',
+          match: surveyYear ? { year: surveyYear } : {} // ✅ Đảm bảo lớp thuộc năm học đúng
+        })
+        .lean();
+      
+      // ✅ Debug: Kiểm tra học sinh có currentYear không đúng hoặc null
+      if (surveyYear) {
+        const studentsWithNullYear = students.filter(s => !s.currentYear);
+        const studentsWithWrongYear = students.filter(s => s.currentYear && String(s.currentYear) !== String(surveyYear));
+        const studentsWithCorrectYear = students.filter(s => s.currentYear && String(s.currentYear) === String(surveyYear));
+        
+        if (studentsWithNullYear.length > 0) {
+          console.warn(`⚠️ Có ${studentsWithNullYear.length} học sinh có currentYear = null/undefined (surveyYear=${surveyYear}):`, studentsWithNullYear.slice(0, 3).map(s => ({ id: s._id, studentCode: s.studentCode })));
+        }
+        if (studentsWithWrongYear.length > 0) {
+          console.warn(`⚠️ Có ${studentsWithWrongYear.length} học sinh có currentYear không đúng (surveyYear=${surveyYear}):`, studentsWithWrongYear.slice(0, 5).map(s => ({ id: s._id, studentCode: s.studentCode, currentYear: s.currentYear, expected: surveyYear })));
+        }
+        console.log(`🔍 Debug: ${studentsWithCorrectYear.length} học sinh có currentYear đúng, ${studentsWithNullYear.length} học sinh có currentYear null, ${studentsWithWrongYear.length} học sinh có currentYear sai`);
+      }
+      
+      // ✅ Validate: Đảm bảo tất cả đều có studentCode, status = 'active', currentYear đúng, và lớp hợp lệ
+      let validStudents = students.filter(s => {
+        if (!s.studentCode) {
+          console.warn(`⚠️ Học sinh ${s._id} không có studentCode`);
+          return false;
+        }
+        if (s.status !== 'active') {
+          console.warn(`⚠️ Học sinh ${s._id} (${s.studentCode}) có status=${s.status} không phải 'active'`);
+          return false;
+        }
+        // ✅ QUAN TRỌNG: Kiểm tra currentYear có trùng với surveyYear không
+        if (surveyYear) {
+          if (!s.currentYear) {
+            console.warn(`⚠️ Học sinh ${s._id} (${s.studentCode}) không có currentYear (surveyYear=${surveyYear})`);
+            return false;
+          }
+          if (String(s.currentYear) !== String(surveyYear)) {
+            console.warn(`⚠️ Học sinh ${s._id} (${s.studentCode}) có currentYear=${s.currentYear} không khớp với surveyYear=${surveyYear}`);
+            return false;
+          }
+          // ✅ QUAN TRỌNG: Kiểm tra lớp có thuộc năm học không
+          if (!s.classId || !s.classId._id) {
+            console.warn(`⚠️ Học sinh ${s._id} (${s.studentCode}) không có lớp hoặc lớp không hợp lệ`);
+            return false;
+          }
+          // ✅ Kiểm tra year của lớp có trùng với surveyYear không
+          if (s.classId.year && String(s.classId.year) !== String(surveyYear)) {
+            console.warn(`⚠️ Học sinh ${s._id} (${s.studentCode}) có lớp thuộc năm học ${s.classId.year} không khớp với surveyYear=${surveyYear}`);
+            return false;
+          }
+        }
+        return true;
+      });
+      
+      // ✅ Loại bỏ trùng lặp (nếu có) - đảm bảo mỗi học sinh chỉ được đếm 1 lần
+      const uniqueStudentIds = [...new Set(validStudents.map(s => String(s._id)))];
+      allowedStudentIds = uniqueStudentIds.map(id => {
+        const student = validStudents.find(s => String(s._id) === id);
+        return student ? student._id : id;
+      });
+      
+      if (students.length !== validStudents.length) {
+        console.warn(`⚠️ Có ${students.length - validStudents.length} học sinh không hợp lệ (không có studentCode, status không phải 'active', hoặc currentYear không đúng)`);
+      }
+      
+      if (validStudents.length !== allowedStudentIds.length) {
+        console.warn(`⚠️ Có ${validStudents.length - allowedStudentIds.length} học sinh trùng lặp đã được loại bỏ`);
+      }
+      
+      console.log(`📊 Khảo sát ${survey._id}: Không có allowedClasses/allowedStudents, query được ${students.length} học sinh (currentYear=${surveyYear || 'tất cả'}), ${validStudents.length} học sinh hợp lệ, ${allowedStudentIds.length} học sinh sau khi loại trùng`);
     }
 
     // ✅ Lấy danh sách học sinh đã submit (CHỈ LẤY PHẢN HỒI TỪ HỌC SINH, KHÔNG LẤY TỪ GIÁO VIÊN)

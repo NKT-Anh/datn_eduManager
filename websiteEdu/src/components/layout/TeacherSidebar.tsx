@@ -16,7 +16,8 @@ import {
   Calendar,
   ClipboardList,
   GraduationCap,
-  User
+  User,
+  Clock
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -34,6 +35,7 @@ export function TeacherSidebar() {
     { title: "Dashboard", url: `${prefix}`, icon: Home },
     { title: "Lớp của tôi", url: `${prefix}/my-classes`, icon: School },
     { title: "Thời khóa biểu", url: `${prefix}/schedule`, icon: Calendar },
+    { title: "Lịch rảnh", url: `${prefix}/availability`, icon: Clock },
     { title: "Quản lý điểm", url: `${prefix}/grades`, icon: ClipboardList },
     { title: "Điểm danh", url: `${prefix}/attendance`, icon: GraduationCap },
     { title: "Hồ sơ", url: `${prefix}/profile`, icon: User },

@@ -22,7 +22,9 @@ import {
   BookOpen,
   MessageSquare,
   Edit,
-  ExternalLink
+  ExternalLink,
+  Eye,
+  List,
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -114,6 +116,7 @@ export default function HomeroomClassPage() {
   const [selectedSemester, setSelectedSemester] = useState<'HK1' | 'HK2' | 'CN'>('CN');
   const [yearNote, setYearNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
+  const [viewMode, setViewMode] = useState<'overview' | 'detail'>('overview');
   const navigate = useNavigate();
 
   // ✅ Lấy tất cả lớp chủ nhiệm qua các năm học
@@ -458,7 +461,35 @@ export default function HomeroomClassPage() {
             <>
               {/* ✅ Ô tìm kiếm học sinh */}
               <Card>
-                <CardContent className="p-4">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2">
+                      <Users className="h-5 w-5" />
+                      Danh sách học sinh
+                    </CardTitle>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant={viewMode === 'overview' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setViewMode('overview')}
+                        className="flex items-center gap-2"
+                      >
+                        <List className="h-4 w-4" />
+                        Tổng quát
+                      </Button>
+                      <Button
+                        variant={viewMode === 'detail' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setViewMode('detail')}
+                        className="flex items-center gap-2"
+                      >
+                        <Eye className="h-4 w-4" />
+                        Chi tiết
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
                   <div className="flex items-center gap-2">
                     <Search className="h-4 w-4 text-muted-foreground" />
                     <Input
@@ -485,212 +516,324 @@ export default function HomeroomClassPage() {
                 </CardContent>
               </Card>
 
-              <div className="grid gap-4">
-                {filteredStudents.length === 0 ? (
-                  <Card>
-                    <CardContent className="p-8 text-center">
-                      <p className="text-muted-foreground">
-                        Không tìm thấy học sinh nào với từ khóa "{studentSearchTerm}"
-                      </p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  filteredStudents.map((student) => (
-                <Card key={student._id}>
-                  <CardHeader>
-                    <div className="flex items-center gap-4">
-                      <Avatar className="h-16 w-16">
-                        <AvatarImage src={student.avatarUrl} alt={student.name} />
-                        <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1">
-                        <CardTitle className="text-xl">{student.name}</CardTitle>
-                        <p className="text-sm text-muted-foreground">
-                          Mã HS: {student.studentCode}
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        {student.academicLevel && getAcademicLevelBadge(student.academicLevel)}
-                        {student.conduct && getConductBadge(student.conduct)}
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => navigate(`/gvcn/students/${student._id}`)}
-                          title="Xem chi tiết học sinh"
-                        >
-                          <ExternalLink className="h-4 w-4 mr-1" />
-                          Chi tiết
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            // Load nhận xét hiện có từ yearRecords
-                            const yearRecord = student.yearRecords?.year;
-                            const hk1Record = student.yearRecords?.hk1;
-                            const hk2Record = student.yearRecords?.hk2;
-                            
-                            // Mặc định chọn cuối năm và load nhận xét cuối năm
-                            setSelectedSemester('CN');
-                            setYearNote(yearRecord?.note || '');
-                            setSelectedStudentForNote(student);
-                            setNoteDialogOpen(true);
-                          }}
-                          title="Nhận xét học kỳ và cuối năm"
-                        >
-                          <MessageSquare className="h-4 w-4 mr-1" />
-                          Nhận xét
-                        </Button>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid md:grid-cols-2 gap-6">
-                      {/* Thông tin cá nhân */}
-                      <div className="space-y-3">
-                        <h3 className="font-semibold flex items-center gap-2">
-                          <User className="h-4 w-4" />
-                          Thông tin cá nhân
-                        </h3>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex items-center gap-2">
-                            <Calendar className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-muted-foreground">Ngày sinh:</span>
-                            <span>{student.dob ? new Date(student.dob).toLocaleDateString('vi-VN') : 'Chưa có'}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-muted-foreground">Giới tính:</span>
-                            <span>{getGenderLabel(student.gender)}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-muted-foreground">Mã học sinh:</span>
-                            <span className="font-medium">{student.studentCode}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Thông tin liên lạc */}
-                      <div className="space-y-3">
-                        <h3 className="font-semibold flex items-center gap-2">
-                          <Phone className="h-4 w-4" />
-                          Thông tin liên lạc
-                        </h3>
-                        <div className="space-y-2 text-sm">
-                          {student.address && (
-                            <div className="flex items-start gap-2">
-                              <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
-                              <div>
-                                <span className="text-muted-foreground">Địa chỉ: </span>
-                                <span>{student.address}</span>
-                              </div>
-                            </div>
-                          )}
-                          {student.phone && (
-                            <div className="flex items-center gap-2">
-                              <Phone className="h-4 w-4 text-muted-foreground" />
-                              <span className="text-muted-foreground">SĐT học sinh: </span>
-                              <span>{student.phone}</span>
-                            </div>
-                          )}
-                          {student.email && (
-                            <div className="flex items-center gap-2">
-                              <Mail className="h-4 w-4 text-muted-foreground" />
-                              <span className="text-muted-foreground">Email: </span>
-                              <span>{student.email}</span>
-                            </div>
-                          )}
-                          {student.parents && student.parents.length > 0 && (
-                            <div className="space-y-1">
-                              <span className="text-muted-foreground">Phụ huynh:</span>
-                              {student.parents.map((parent, idx) => (
-                                <div key={parent._id || idx} className="flex items-center gap-2 ml-4">
-                                  <span className="text-sm">
-                                    {parent.name} {parent.relation && `(${parent.relation})`}
-                                    {parent.phone && ` - ${parent.phone}`}
-                                  </span>
+              {filteredStudents.length === 0 ? (
+                <Card>
+                  <CardContent className="p-8 text-center">
+                    <p className="text-muted-foreground">
+                      Không tìm thấy học sinh nào với từ khóa "{studentSearchTerm}"
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : viewMode === 'overview' ? (
+                // Chế độ tổng quát: Bảng
+                <Card>
+                  <CardContent className="p-0">
+                    <div className="overflow-auto max-h-[calc(100vh-300px)]">
+                      <div className="relative">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="sticky top-0 z-20 bg-background border-b shadow-sm">
+                              <TableHead className="sticky left-0 z-30 bg-background border-r w-16 shadow-[2px_0_4px_rgba(0,0,0,0.1)]">STT</TableHead>
+                              <TableHead className="sticky left-16 z-30 bg-background border-r min-w-[150px] shadow-[2px_0_4px_rgba(0,0,0,0.1)]">Họ và tên</TableHead>
+                              <TableHead className="sticky left-[214px] z-30 bg-background border-r min-w-[100px] shadow-[2px_0_4px_rgba(0,0,0,0.1)]">Mã HS</TableHead>
+                              <TableHead className="text-center bg-background">ĐTB HK1</TableHead>
+                              <TableHead className="text-center bg-background">Học lực HK1</TableHead>
+                              <TableHead className="text-center bg-background">Hạnh kiểm HK1</TableHead>
+                              <TableHead className="text-center bg-background">ĐTB HK2</TableHead>
+                              <TableHead className="text-center bg-background">Học lực HK2</TableHead>
+                              <TableHead className="text-center bg-background">Hạnh kiểm HK2</TableHead>
+                              <TableHead className="text-center bg-background">ĐTB Cả năm</TableHead>
+                              <TableHead className="text-center bg-background">Học lực CN</TableHead>
+                              <TableHead className="text-center bg-background">Hạnh kiểm CN</TableHead>
+                              <TableHead className="text-center bg-background">Hành động</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                        <TableBody>
+                          {filteredStudents.map((student, index) => (
+                            <TableRow key={student._id}>
+                              <TableCell className="sticky left-0 z-10 bg-background border-r font-medium">{index + 1}</TableCell>
+                              <TableCell className="sticky left-16 z-10 bg-background border-r font-medium min-w-[150px]">{student.name}</TableCell>
+                              <TableCell className="sticky left-[214px] z-10 bg-background border-r min-w-[100px]">{student.studentCode}</TableCell>
+                              {/* HK1 */}
+                              <TableCell className="text-center">
+                                {student.grades?.hk1Average !== null && student.grades?.hk1Average !== undefined
+                                  ? student.grades.hk1Average.toFixed(2)
+                                  : '-'}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {student.yearRecords?.hk1?.academicLevel 
+                                  ? getAcademicLevelBadge(student.yearRecords.hk1.academicLevel) 
+                                  : '-'}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {student.yearRecords?.hk1?.conduct 
+                                  ? getConductBadge(student.yearRecords.hk1.conduct) 
+                                  : '-'}
+                              </TableCell>
+                              {/* HK2 */}
+                              <TableCell className="text-center">
+                                {student.grades?.hk2Average !== null && student.grades?.hk2Average !== undefined
+                                  ? student.grades.hk2Average.toFixed(2)
+                                  : '-'}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {student.yearRecords?.hk2?.academicLevel 
+                                  ? getAcademicLevelBadge(student.yearRecords.hk2.academicLevel) 
+                                  : '-'}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {student.yearRecords?.hk2?.conduct 
+                                  ? getConductBadge(student.yearRecords.hk2.conduct) 
+                                  : '-'}
+                              </TableCell>
+                              {/* Cả năm */}
+                              <TableCell className="text-center font-semibold">
+                                {student.grades?.yearAverage !== null && student.grades?.yearAverage !== undefined
+                                  ? student.grades.yearAverage.toFixed(2)
+                                  : '-'}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {student.yearRecords?.year?.academicLevel || student.academicLevel
+                                  ? getAcademicLevelBadge(student.yearRecords?.year?.academicLevel || student.academicLevel)
+                                  : '-'}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {student.yearRecords?.year?.conduct || student.conduct
+                                  ? getConductBadge(student.yearRecords?.year?.conduct || student.conduct)
+                                  : '-'}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2 justify-center">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => navigate(`/gvcn/students/${student._id}`)}
+                                    title="Xem chi tiết học sinh"
+                                  >
+                                    <ExternalLink className="h-4 w-4 mr-1" />
+                                    Chi tiết
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      const yearRecord = student.yearRecords?.year;
+                                      setSelectedSemester('CN');
+                                      setYearNote(yearRecord?.note || '');
+                                      setSelectedStudentForNote(student);
+                                      setNoteDialogOpen(true);
+                                    }}
+                                    title="Nhận xét học kỳ và cuối năm"
+                                  >
+                                    <MessageSquare className="h-4 w-4 mr-1" />
+                                    Nhận xét
+                                  </Button>
                                 </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Thông tin học tập */}
-                      <div className="space-y-3">
-                        <h3 className="font-semibold flex items-center gap-2">
-                          <BookOpen className="h-4 w-4" />
-                          Thông tin học tập
-                        </h3>
-                        <div className="space-y-2 text-sm">
-                          <div>
-                            <span className="text-muted-foreground">Lớp hiện tại: </span>
-                            <span className="font-medium">
-                              {student.classId?.className || 'Chưa có'}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">Năm học: </span>
-                            <span>{student.classId?.year || currentYearData?.name || currentYear}</span>
-                          </div>
-                          {student.grades && (
-                            <div className="space-y-1">
-                              <div>
-                                <span className="text-muted-foreground">ĐTB HKI: </span>
-                                <span className="font-medium">
-                                  {student.grades.hk1Average !== null 
-                                    ? student.grades.hk1Average.toFixed(2) 
-                                    : 'Chưa có'}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">ĐTB HKII: </span>
-                                <span className="font-medium">
-                                  {student.grades.hk2Average !== null 
-                                    ? student.grades.hk2Average.toFixed(2) 
-                                    : 'Chưa có'}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">ĐTB cả năm: </span>
-                                <span className="font-medium">
-                                  {student.grades.yearAverage !== null 
-                                    ? student.grades.yearAverage.toFixed(2) 
-                                    : 'Chưa có'}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Khen thưởng - Kỷ luật */}
-                      <div className="space-y-3">
-                        <h3 className="font-semibold flex items-center gap-2">
-                          <Award className="h-4 w-4" />
-                          Khen thưởng - Kỷ luật
-                        </h3>
-                        <div className="space-y-2 text-sm">
-                          <div>
-                            <span className="text-muted-foreground">Học lực: </span>
-                            {student.academicLevel ? getAcademicLevelBadge(student.academicLevel) : <span>Chưa có</span>}
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">Hạnh kiểm: </span>
-                            {student.conduct ? getConductBadge(student.conduct) : <span>Chưa có</span>}
-                          </div>
-                          <div className="text-muted-foreground text-xs">
-                            (Thông tin khen thưởng và kỷ luật chi tiết sẽ được bổ sung sau)
-                          </div>
-                        </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
-                  ))
-                )}
-              </div>
+              ) : (
+                // Chế độ chi tiết: Card
+                <div className="grid gap-4">
+                  {filteredStudents.map((student) => (
+                    <Card key={student._id}>
+                      <CardHeader>
+                        <div className="flex items-center gap-4">
+                          <Avatar className="h-16 w-16">
+                            <AvatarImage src={student.avatarUrl} alt={student.name} />
+                            <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1">
+                            <CardTitle className="text-xl">{student.name}</CardTitle>
+                            <p className="text-sm text-muted-foreground">
+                              Mã HS: {student.studentCode}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            {student.academicLevel && getAcademicLevelBadge(student.academicLevel)}
+                            {student.conduct && getConductBadge(student.conduct)}
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => navigate(`/gvcn/students/${student._id}`)}
+                              title="Xem chi tiết học sinh"
+                            >
+                              <ExternalLink className="h-4 w-4 mr-1" />
+                              Chi tiết
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                // Load nhận xét hiện có từ yearRecords
+                                const yearRecord = student.yearRecords?.year;
+                                const hk1Record = student.yearRecords?.hk1;
+                                const hk2Record = student.yearRecords?.hk2;
+                                
+                                // Mặc định chọn cuối năm và load nhận xét cuối năm
+                                setSelectedSemester('CN');
+                                setYearNote(yearRecord?.note || '');
+                                setSelectedStudentForNote(student);
+                                setNoteDialogOpen(true);
+                              }}
+                              title="Nhận xét học kỳ và cuối năm"
+                            >
+                              <MessageSquare className="h-4 w-4 mr-1" />
+                              Nhận xét
+                            </Button>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid md:grid-cols-2 gap-6">
+                          {/* Thông tin cá nhân */}
+                          <div className="space-y-3">
+                            <h3 className="font-semibold flex items-center gap-2">
+                              <User className="h-4 w-4" />
+                              Thông tin cá nhân
+                            </h3>
+                            <div className="space-y-2 text-sm">
+                              <div className="flex items-center gap-2">
+                                <Calendar className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-muted-foreground">Ngày sinh:</span>
+                                <span>{student.dob ? new Date(student.dob).toLocaleDateString('vi-VN') : 'Chưa có'}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground">Giới tính:</span>
+                                <span>{getGenderLabel(student.gender)}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground">Mã học sinh:</span>
+                                <span className="font-medium">{student.studentCode}</span>
+                              </div>
+                            </div>
+                          </div>
+                          {/* Thông tin liên lạc */}
+                          <div className="space-y-3">
+                            <h3 className="font-semibold flex items-center gap-2">
+                              <Phone className="h-4 w-4" />
+                              Thông tin liên lạc
+                            </h3>
+                            <div className="space-y-2 text-sm">
+                              {student.address && (
+                                <div className="flex items-start gap-2">
+                                  <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
+                                  <div>
+                                    <span className="text-muted-foreground">Địa chỉ: </span>
+                                    <span>{student.address}</span>
+                                  </div>
+                                </div>
+                              )}
+                              {student.phone && (
+                                <div className="flex items-center gap-2">
+                                  <Phone className="h-4 w-4 text-muted-foreground" />
+                                  <span className="text-muted-foreground">SĐT học sinh: </span>
+                                  <span>{student.phone}</span>
+                                </div>
+                              )}
+                              {student.email && (
+                                <div className="flex items-center gap-2">
+                                  <Mail className="h-4 w-4 text-muted-foreground" />
+                                  <span className="text-muted-foreground">Email: </span>
+                                  <span>{student.email}</span>
+                                </div>
+                              )}
+                              {student.parents && student.parents.length > 0 && (
+                                <div className="space-y-1">
+                                  <span className="text-muted-foreground">Phụ huynh:</span>
+                                  {student.parents.map((parent, idx) => (
+                                    <div key={parent._id || idx} className="flex items-center gap-2 ml-4">
+                                      <span className="text-sm">
+                                        {parent.name} {parent.relation && `(${parent.relation})`}
+                                        {parent.phone && ` - ${parent.phone}`}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          {/* Thông tin học tập */}
+                          <div className="space-y-3">
+                            <h3 className="font-semibold flex items-center gap-2">
+                              <BookOpen className="h-4 w-4" />
+                              Thông tin học tập
+                            </h3>
+                            <div className="space-y-2 text-sm">
+                              <div>
+                                <span className="text-muted-foreground">Lớp hiện tại: </span>
+                                <span className="font-medium">
+                                  {student.classId?.className || 'Chưa có'}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Năm học: </span>
+                                <span>{student.classId?.year || currentYearData?.name || currentYear}</span>
+                              </div>
+                              {student.grades && (
+                                <div className="space-y-1">
+                                  <div>
+                                    <span className="text-muted-foreground">ĐTB HKI: </span>
+                                    <span className="font-medium">
+                                      {student.grades.hk1Average !== null 
+                                        ? student.grades.hk1Average.toFixed(2) 
+                                        : 'Chưa có'}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">ĐTB HKII: </span>
+                                    <span className="font-medium">
+                                      {student.grades.hk2Average !== null 
+                                        ? student.grades.hk2Average.toFixed(2) 
+                                        : 'Chưa có'}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">ĐTB cả năm: </span>
+                                    <span className="font-medium">
+                                      {student.grades.yearAverage !== null 
+                                        ? student.grades.yearAverage.toFixed(2) 
+                                        : 'Chưa có'}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          {/* Khen thưởng - Kỷ luật */}
+                          <div className="space-y-3">
+                            <h3 className="font-semibold flex items-center gap-2">
+                              <Award className="h-4 w-4" />
+                              Khen thưởng - Kỷ luật
+                            </h3>
+                            <div className="space-y-2 text-sm">
+                              <div>
+                                <span className="text-muted-foreground">Học lực: </span>
+                                {student.academicLevel ? getAcademicLevelBadge(student.academicLevel) : <span>Chưa có</span>}
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Hạnh kiểm: </span>
+                                {student.conduct ? getConductBadge(student.conduct) : <span>Chưa có</span>}
+                              </div>
+                              <div className="text-muted-foreground text-xs">
+                                (Thông tin khen thưởng và kỷ luật chi tiết sẽ được bổ sung sau)
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
             </>
           )}
         </TabsContent>
@@ -904,4 +1047,3 @@ export default function HomeroomClassPage() {
     </div>
   );
 }
-

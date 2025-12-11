@@ -85,6 +85,25 @@ export const teacherApi = {
       return res.data;
     },
 
+  // ✅ Lấy lịch rảnh của chính mình - Giáo viên
+  getMyAvailability: async (): Promise<{ availableMatrix: boolean[][]; teacherId: string }> => {
+    const res = await api.get<{ availableMatrix: boolean[][]; teacherId: string }>(
+      `${BASE}/me/availability`
+    );
+    return res.data;
+  },
+
+  // ✅ Cập nhật lịch rảnh của chính mình - Giáo viên
+  updateMyAvailability: async (
+    matrix: boolean[][]
+  ): Promise<{ message: string; teacher: Teacher }> => {
+    const res = await api.put<{ message: string; teacher: Teacher }>(
+      `${BASE}/me/availability`,
+      { availableMatrix: matrix }
+    );
+    return res.data;
+  },
+
   // ✅ Lấy ban giám hiệu (public, không cần auth)
   getLeadership: async (): Promise<Array<{
     _id: string;

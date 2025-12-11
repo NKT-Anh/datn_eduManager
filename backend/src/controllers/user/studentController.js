@@ -331,7 +331,8 @@ exports.getStudentYearDetail = async (req, res) => {
     // Lấy GradeItem để có điểm chi tiết
     const allGradeItems = await GradeItem.find({
       studentId: id,
-      schoolYear: year
+      schoolYear: year,
+      isDeleted: { $ne: true } // ✅ Chỉ lấy điểm chưa bị xóa
     })
       .sort({ subjectId: 1, semester: 1, component: 1, attempt: 1 })
       .lean();

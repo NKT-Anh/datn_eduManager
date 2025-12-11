@@ -21,7 +21,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import settingApi from "@/services/settingApi";
-import { Clock, Lock } from "lucide-react";
+import { Clock, Lock, CheckCircle2 } from "lucide-react";
+// @ts-ignore - sweetalert2 types are included in the package
+import Swal from 'sweetalert2';
 
 const TeacherEnterGradesPage: React.FC = () => {
   const { backendUser, loading: authLoading } = useAuth();
@@ -50,6 +52,7 @@ const TeacherEnterGradesPage: React.FC = () => {
   const [errors, setErrors] = useState<Record<string, Record<string, boolean>>>({});
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [publishingStudentId, setPublishingStudentId] = useState<string | null>(null);
   // Bỏ ĐTB HK khỏi trang giáo viên bộ môn
 
   // ✅ Cấu hình điểm từ admin
@@ -446,6 +449,9 @@ const TeacherEnterGradesPage: React.FC = () => {
             averages: st.averages || {},
             // ✅ Lấy gradeItems từ backend (mảng điểm riêng lẻ cho mỗi component)
             gradeItems: st.gradeItems || {},
+            // ✅ Lấy trạng thái công bố điểm
+            isOfficial: st.isOfficial === true,
+            officialAt: st.officialAt || null,
           };
         });
         
@@ -713,10 +719,16 @@ const TeacherEnterGradesPage: React.FC = () => {
         });
         const updatedStudent = res.data?.find((st: any) => st.studentId === studentId || st._id === studentId);
         if (updatedStudent) {
-          // Cập nhật điểm TB trong danh sách học sinh
+          // Cập nhật điểm TB và trạng thái công bố trong danh sách học sinh
           setStudents(prev => prev.map(st => 
             st._id === studentId 
-              ? { ...st, average: updatedStudent.average, averages: updatedStudent.averages || {} }
+              ? { 
+                  ...st, 
+                  average: updatedStudent.average, 
+                  averages: updatedStudent.averages || {},
+                  isOfficial: updatedStudent.isOfficial === true,
+                  officialAt: updatedStudent.officialAt || null,
+                }
               : st
           ));
         }
@@ -820,8 +832,26 @@ const TeacherEnterGradesPage: React.FC = () => {
     }
     const subjectName = subjects.find(s => s._id === selectedSubject)?.name || 'môn học';
     const className = classes.find(c => c._id === selectedClass)?.className || 'lớp';
-    const ok = window.confirm(`Công bố điểm ${subjectName} cho ${className} - năm ${selectedYear}, học kỳ ${selectedSemester}?\nSau khi công bố, học sinh và GVCN sẽ nhìn thấy điểm chính thức.`);
-    if (!ok) return;
+    const result = await Swal.fire({
+      title: 'Xác nhận công bố điểm',
+      html: `
+        <div style="text-align: left;">
+          <p><strong>Môn học:</strong> ${subjectName}</p>
+          <p><strong>Lớp:</strong> ${className}</p>
+          <p><strong>Năm học:</strong> ${selectedYear}</p>
+          <p><strong>Học kỳ:</strong> ${selectedSemester}</p>
+          <p style="margin-top: 15px; color: #666;">Sau khi công bố, học sinh và GVCN sẽ nhìn thấy điểm chính thức.</p>
+        </div>
+      `,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Công bố',
+      cancelButtonText: 'Hủy',
+      confirmButtonColor: '#3085d6',
+      cancelButtonColor: '#d33',
+      width: '500px'
+    });
+    if (!result.isConfirmed) return;
     try {
       setPublishing(true);
       await gradesApi.publishSubject({
@@ -852,6 +882,8 @@ const TeacherEnterGradesPage: React.FC = () => {
           average: st.average,
           averages: st.averages || {},
           gradeItems: st.gradeItems || {},
+          isOfficial: st.isOfficial === true,
+          officialAt: st.officialAt || null,
         }));
         setStudents(formattedData);
       } catch (e) {
@@ -862,6 +894,97 @@ const TeacherEnterGradesPage: React.FC = () => {
       toast.error(msg);
     } finally {
       setPublishing(false);
+    }
+  };
+
+  // 🔹 Công bố điểm cho 1 học sinh
+  const handlePublishStudent = async (studentId: string) => {
+    if (!selectedClass || !selectedSubject || !selectedYear || !selectedSemester) {
+      toast.error("Vui lòng chọn đủ thông tin lớp, môn, năm học, học kỳ");
+      return;
+    }
+
+    if (!isGradeEntryAllowed) {
+      toast.error(timeInfo?.message || 'Không trong thời gian cho phép nhập điểm');
+      return;
+    }
+
+    const student = students.find(s => s._id === studentId);
+    const studentName = student?.name || 'học sinh';
+    const studentCode = student?.studentCode || '';
+    const subjectName = subjects.find(s => s._id === selectedSubject)?.name || 'môn học';
+    const result = await Swal.fire({
+      title: 'Xác nhận công bố điểm',
+      html: `
+        <div style="text-align: left;">
+          <p><strong>Học sinh:</strong> ${studentName}${studentCode ? ` (${studentCode})` : ''}</p>
+          <p><strong>Môn học:</strong> ${subjectName}</p>
+          <p><strong>Năm học:</strong> ${selectedYear}</p>
+          <p><strong>Học kỳ:</strong> ${selectedSemester}</p>
+          <p style="margin-top: 15px; color: #666;">Sau khi công bố, học sinh và GVCN sẽ nhìn thấy điểm chính thức.</p>
+        </div>
+      `,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Công bố',
+      cancelButtonText: 'Hủy',
+      confirmButtonColor: '#3085d6',
+      cancelButtonColor: '#d33',
+      width: '500px'
+    });
+    if (!result.isConfirmed) return;
+
+    try {
+      setPublishingStudentId(studentId);
+      await gradesApi.publishStudentGrade({
+        studentId,
+        subjectId: selectedSubject,
+        schoolYear: selectedYear,
+        semester: String(selectedSemester),
+      });
+      toast.success(`✅ Đã công bố điểm ${subjectName} cho ${studentName} (HK${selectedSemester})`, {
+        duration: 3000,
+      });
+      // Reload dữ liệu điểm để phản ánh trạng thái mới
+      try {
+        const res = await gradesApi.getClassSubjectSummary({
+          classId: selectedClass,
+          subjectId: selectedSubject,
+          schoolYear: selectedYear,
+          semester: String(selectedSemester),
+        });
+        const data = res.data || [];
+        const formattedData = data.map((st: any) => ({
+          _id: st.studentId || st._id,
+          name: st.name || st.studentId?.name || 'Chưa có tên',
+          studentCode: st.studentCode || st.studentId?.studentCode || '',
+          oral: st.averages?.oral ?? st.oral ?? undefined,
+          quiz15: st.averages?.quiz15 ?? st.quiz15 ?? undefined,
+          quiz45: st.averages?.quiz45 ?? st.quiz45 ?? undefined,
+          midterm: st.averages?.midterm ?? st.midterm ?? undefined,
+          final: st.averages?.final ?? st.final ?? undefined,
+          average: st.average,
+          averages: st.averages || {},
+          gradeItems: st.gradeItems || {},
+          isOfficial: st.isOfficial === true,
+          officialAt: st.officialAt || null,
+        }));
+        setStudents(formattedData);
+      } catch (e) {
+        // Nếu reload thất bại, cập nhật trạng thái local
+        setStudents(prev => prev.map(st => 
+          st._id === studentId 
+            ? { ...st, isOfficial: true, officialAt: new Date() }
+            : st
+        ));
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Công bố điểm thất bại';
+      toast.error(`❌ ${msg}`, {
+        duration: 3000,
+      });
+    } finally {
+      setPublishingStudentId(null);
     }
   };
 
@@ -1165,7 +1288,8 @@ const TeacherEnterGradesPage: React.FC = () => {
                       </th>
                     );
                   })}
-                  <th className="p-2 border sticky right-0 z-30 bg-gray-100 min-w-[110px] text-center">ĐTB môn</th>
+                  <th className="p-2 border sticky right-[120px] z-30 bg-gray-100 min-w-[110px] text-center">ĐTB môn</th>
+                  <th className="p-2 border sticky right-0 z-30 bg-gray-100 min-w-[120px] text-center">Công bố</th>
                 </tr>
               </thead>
               <tbody>
@@ -1269,7 +1393,7 @@ const TeacherEnterGradesPage: React.FC = () => {
                         ));
                       })}
                       {/* ✅ Hiển thị điểm trung bình môn với màu sắc */}
-                      <td className={`p-2 border text-center font-semibold sticky right-0 bg-background z-10 min-w-[110px] ${getAverageColorClass(average)}`}>
+                      <td className={`p-2 border text-center font-semibold sticky right-[120px] bg-background z-10 min-w-[110px] ${getAverageColorClass(average)}`}>
                         {average !== null ? (
                           <div className="flex items-center justify-center gap-1">
                             <span>{average.toFixed(1)}</span>
@@ -1291,6 +1415,32 @@ const TeacherEnterGradesPage: React.FC = () => {
                           </div>
                         ) : (
                           '-'
+                        )}
+                      </td>
+                      {/* ✅ Nút công bố điểm cho từng học sinh */}
+                      <td className="p-2 border text-center sticky right-0 bg-background z-10 min-w-[120px]">
+                        {st.isOfficial ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <Badge variant="default" className="bg-green-600 text-white">
+                              <CheckCircle2 className="h-3 w-3 mr-1" />
+                              Đã công bố
+                            </Badge>
+                            {st.officialAt && (
+                              <span className="text-xs text-muted-foreground">
+                                {new Date(st.officialAt).toLocaleDateString('vi-VN')}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handlePublishStudent(st._id)}
+                            disabled={publishingStudentId === st._id || publishing || !average || !isGradeEntryAllowed}
+                            className="text-xs"
+                          >
+                            {publishingStudentId === st._id ? 'Đang công bố...' : '📢 Công bố'}
+                          </Button>
                         )}
                       </td>
                       {/* Bỏ cột ĐTB HK ở trang giáo viên bộ môn */}

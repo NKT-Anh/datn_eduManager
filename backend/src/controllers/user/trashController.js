@@ -158,15 +158,41 @@ exports.restoreMultiple = async (req, res) => {
           default: throw new Error(`Loại dữ liệu không hợp lệ: ${item.type}`);
         }
 
-        const doc = await Model.findById(item.id);
-        if (doc && doc.isDeleted) {
-          doc.isDeleted = false;
-          if (doc.status === 'inactive') doc.status = 'active'; // Khôi phục status
-          await doc.save();
-          results.restored.push(item);
-        } else {
-          results.failed.push({ ...item, reason: 'Không tìm thấy hoặc chưa bị xóa' });
+        // ✅ Hỗ trợ cả item.id và item._id
+        const itemId = item.id || item._id;
+        if (!itemId) {
+          results.failed.push({ ...item, reason: 'Thiếu ID' });
+          continue;
         }
+
+        const doc = await Model.findById(itemId);
+        if (!doc) {
+          results.failed.push({ ...item, reason: 'Không tìm thấy dữ liệu' });
+          continue;
+        }
+
+        if (!doc.isDeleted) {
+          results.failed.push({ ...item, reason: 'Dữ liệu chưa bị xóa mềm' });
+          continue;
+        }
+
+        // ✅ Khôi phục: set isDeleted = false
+        doc.isDeleted = false;
+        
+        // ✅ Xóa thời gian xóa nếu có field deletedAt
+        if (doc.deletedAt !== undefined) {
+          doc.deletedAt = undefined;
+        }
+        
+        // ✅ Khôi phục status nếu đang inactive hoặc deleted
+        if (doc.status === 'inactive' || doc.status === 'deleted') {
+          doc.status = 'active';
+        }
+        
+        // ✅ Lưu lại
+        await doc.save();
+        
+        results.restored.push({ type: item.type, id: itemId });
       } catch (error) {
         results.failed.push({ ...item, reason: error.message });
       }

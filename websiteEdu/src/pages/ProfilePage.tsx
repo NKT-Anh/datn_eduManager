@@ -437,7 +437,7 @@ case "teacher":
     <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {renderInput("Họ và tên", "name", profile, setProfile, isEditing)}
       {renderInput("Số điện thoại", "phone", profile, setProfile, isEditing)}
-      {renderInput("Email", "email", profile, setProfile, isEditing)}
+      {renderReadonly("Email", profile.email)}
       {renderInput("Địa chỉ", "address", profile, setProfile, isEditing)}
       {renderInput("Ghi chú", "notes", profile, setProfile, isEditing)}
     </CardContent>
@@ -454,7 +454,7 @@ case "teacher":
     <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {renderInput("Họ và tên", "name", profile, setProfile, isEditing)}
       {renderInput("Số điện thoại", "phone", profile, setProfile, isEditing)}
-      {renderInput("Email", "email", profile, setProfile, isEditing)}
+      {renderReadonly("Email", profile.email)}
 
     </CardContent>
   </Card>
@@ -526,7 +526,11 @@ case "teacher":
       {renderInput("Bằng cấp / Trình độ", "qualification", profile, setProfile, isEditing)}
       {renderInput("Chuyên ngành đào tạo", "specialization", profile, setProfile, isEditing)}
 
-      {renderInput("Môn giảng dạy chính", "mainSubject", profile, setProfile, isEditing)}
+      {renderReadonly("Môn giảng dạy chính", formatMainSubjectDisplay(profile))}
+      <div className="md:col-span-2">
+        <Label>Môn đang giảng dạy</Label>
+        {renderSubjectsDisplay((profile as any).subjects)}
+      </div>
       {renderInput("Chứng chỉ / khóa đào tạo", "certifications", profile, setProfile, isEditing)}
 
       {renderInput("Số tiết/tuần", "weeklyLessons", profile, setProfile, isEditing)}
@@ -670,7 +674,14 @@ function renderInput(
   editable: boolean,
   onChangeCustom?: (v: any) => void
 ) {
-  const value = getNested(profile, field);
+  const rawValue = getNested(profile, field);
+
+  const value =
+    rawValue === null || rawValue === undefined
+      ? ""
+      : typeof rawValue === "object"
+      ? rawValue.name ?? rawValue.label ?? rawValue.code ?? JSON.stringify(rawValue)
+      : String(rawValue);
 
   // Giới hạn độ dài
   const maxLength =
@@ -685,7 +696,7 @@ function renderInput(
         type={field.includes("phone") || field === "idNumber" ? "tel" : "text"}
         pattern="[0-9]*"
         inputMode={field.includes("phone") || field === "idNumber" ? "numeric" : undefined}
-        value={value ?? ""}
+        value={value}
         maxLength={maxLength}
         disabled={!editable}
         onChange={(e) => {
@@ -741,6 +752,84 @@ function renderReadonly(label: string, value: any) {
       <Input value={value ?? "Chưa cập nhật"} disabled className="bg-muted" />
     </div>
   );
+}
+
+function renderSubjectsDisplay(subjects: any[]) {
+  if (!Array.isArray(subjects) || subjects.length === 0) {
+    return <Input value="Chưa cập nhật" disabled className="bg-muted mt-1" />;
+  }
+
+  return (
+    <div className="mt-1 flex flex-wrap gap-2">
+      {subjects.map((subjectEntry, idx) => {
+        const subject = subjectEntry?.subjectId || subjectEntry;
+        const name =
+          subject?.name ||
+          subject?.label ||
+          subject?.code ||
+          (typeof subject === "string" ? subject : `Môn ${idx + 1}`);
+
+        const grades = Array.isArray(subjectEntry?.grades)
+          ? Array.from(new Set(subjectEntry.grades.map((g: any) => String(g)))).join(", ")
+          : "";
+
+        return (
+          <Badge
+            key={
+              subject?._id ||
+              subject?.id ||
+              subject?.code ||
+              `${name}-${grades}-${idx}`
+            }
+            variant="secondary"
+            className="text-sm"
+          >
+            {name}
+            {grades ? ` • Khối ${grades}` : ""}
+          </Badge>
+        );
+      })}
+    </div>
+  );
+}
+
+function formatMainSubjectDisplay(profile: any) {
+  const subject = profile?.mainSubject;
+  if (!subject) return undefined;
+
+  const subjectName =
+    subject.name ||
+    subject.label ||
+    subject.code ||
+    (typeof subject === "string" ? subject : "");
+
+  const subjects = profile?.subjects;
+  let grades: string[] | undefined;
+
+  if (Array.isArray(subjects)) {
+    const mainId =
+      typeof subject === "string"
+        ? subject
+        : subject._id || subject.id || subject.code;
+
+    const matched = subjects.find((entry: any) => {
+      const entryId = entry?.subjectId;
+      const entryValue =
+        typeof entryId === "string"
+          ? entryId
+          : entryId?._id || entryId?.id || entryId?.code;
+      return entryValue && mainId && entryValue === mainId;
+    });
+
+    if (matched?.grades?.length) {
+      grades = matched.grades.map((g: any) => String(g));
+    }
+  }
+
+  const gradeText =
+    grades && grades.length ? ` - Khối ${Array.from(new Set(grades)).join(", ")}` : "";
+
+  return subjectName ? `${subjectName}${gradeText}` : undefined;
 }
 
 /* ---------------- small helpers ---------------- */

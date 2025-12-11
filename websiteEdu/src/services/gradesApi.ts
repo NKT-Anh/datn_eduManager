@@ -35,6 +35,11 @@ interface GradesApi {
     schoolYear: string;
     semester: string; // '1' | '2' | 'CN'
   }) => Promise<any>;
+  evaluateStudentAcademic: (payload: {
+    studentId: string;
+    schoolYear: string;
+    semester: string; // '1' | '2' | 'CN'
+  }) => Promise<any>;
   exportStudentReportCard: (params: {
     studentId: string;
     classId: string;
@@ -48,6 +53,12 @@ interface GradesApi {
   }) => Promise<Blob>;
   publishSubject: (payload: {
     classId: string;
+    subjectId: string;
+    schoolYear: string;
+    semester: string;
+  }) => Promise<any>;
+  publishStudentGrade: (payload: {
+    studentId: string;
     subjectId: string;
     schoolYear: string;
     semester: string;
@@ -314,6 +325,16 @@ const gradesApi: GradesApi = {
     return res.data;
   },
 
+  // ✅ Admin/BGH: Xét học lực cho một học sinh
+  evaluateStudentAcademic: async (payload: {
+    studentId: string;
+    schoolYear: string;
+    semester: string; // '1' | '2' | 'CN'
+  }) => {
+    const res = await axiosClient.post('/grades/evaluate-student-academic', payload);
+    return res.data;
+  },
+
   // ✅ GVCN tải phiếu kết quả học tập dạng PDF cho học sinh
   exportStudentReportCard: async ({ studentId, classId, schoolYear, semester }: {
     studentId: string;
@@ -349,6 +370,15 @@ const gradesApi: GradesApi = {
     semester: string;
   }) => {
     const res = await axiosClient.post('/grades/publish', payload);
+    return res.data;
+  },
+  publishStudentGrade: async (payload: {
+    studentId: string;
+    subjectId: string;
+    schoolYear: string;
+    semester: string;
+  }) => {
+    const res = await axiosClient.post('/grades/publish-student', payload);
     return res.data;
   },
 };

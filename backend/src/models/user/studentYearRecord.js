@@ -5,7 +5,7 @@ const studentYearRecordSchema = new mongoose.Schema({
   studentId: { type: mongoose.Schema.Types.ObjectId, ref: "Student", required: true },
   classId: { type: mongoose.Schema.Types.ObjectId, ref: "Class", required: true },
   year: { type: String, required: true }, // "2025-2026"
-  semester: { type: String, enum: ["HK1", "HK2", "CN"], default: "CN" }, // CN = cả năm
+  semester: { type: String, enum: ["HK1", "HK2", "CN"], required: true }, // CN = cả năm
 
   gpa: { type: Number, default: 0 }, // điểm TB học kỳ hoặc cả năm
   conduct: { type: String, enum: ["Tốt", "Khá", "Trung bình", "Yếu"], default: null },

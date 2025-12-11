@@ -507,8 +507,10 @@ exports.getConductBlockStatistics = async (req, res) => {
       return res.status(400).json({ message: "Missing academic year" });
     }
 
-    // Lấy tất cả lớp trong năm học
-    const classes = await Class.find({ year }).lean();
+    // Lấy tất cả lớp trong năm học (populate grade nếu cần)
+    const classes = await Class.find({ year, isDeleted: { $ne: true } })
+      .select('_id className grade year')
+      .lean();
     if (!classes.length) return res.json({ year, semester, totalBlocks: 0, data: [] });
 
     const classIds = classes.map(cls => cls._id);
@@ -557,7 +559,19 @@ exports.getConductBlockStatistics = async (req, res) => {
     // Gom theo khối, đồng thời tạo mảng classes cho từng khối
     const grouped = {};
     for (const cls of classes) {
-      const grade = parseInt(cls.className.slice(0, 2));
+      // ✅ Sử dụng field grade từ Class model (là String '10', '11', '12'), fallback về parse từ className nếu không có
+      let grade = cls.grade;
+      if (!grade) {
+        // Fallback: parse từ className (ví dụ: "10A1" -> 10)
+        grade = parseInt(cls.className.slice(0, 2));
+      } else {
+        // Convert String grade sang number nếu cần
+        grade = parseInt(grade);
+      }
+      if (isNaN(grade) || !grade) {
+        console.warn(`[getConductBlockStatistics] Không thể xác định khối cho lớp ${cls.className} (ID: ${cls._id})`);
+        continue; // Bỏ qua lớp không có khối hợp lệ
+      }
       if (!grouped[grade]) {
         grouped[grade] = {
           grade,

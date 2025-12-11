@@ -69,6 +69,32 @@ const TrashPage: React.FC = () => {
     }
   };
 
+  // ✅ Hàm xử lý thay đổi selection cho một bảng cụ thể
+  const handleTableSelectionChange = (
+    newSelectedRowKeys: React.Key[], 
+    selectedRowsData: any[], 
+    tableType: string,
+    tableItems: any[]
+  ) => {
+    // ✅ Lấy các items đã chọn từ bảng này (từ selectedRowsData callback)
+    const currentSelected = (selectedRowsData || []).map((row: any) => ({ 
+      type: tableType, 
+      id: row._id || row.id 
+    }));
+    
+    // ✅ Xóa tất cả items của type này khỏi selectedRows state hiện tại
+    const otherSelected = selectedRows.filter(s => s.type !== tableType);
+    
+    // ✅ Thêm các items mới được chọn (chỉ items của type này)
+    setSelectedRows([...otherSelected, ...currentSelected]);
+    
+    // ✅ Cập nhật selectedRowKeys: giữ lại keys của các type khác, thay thế keys của type này
+    const otherKeys = selectedRowKeys.filter(key => 
+      !tableItems.some(item => item._id === key)
+    );
+    setSelectedRowKeys([...otherKeys, ...newSelectedRowKeys] as React.Key[]);
+  };
+
   useEffect(() => {
     fetchTrashData();
   }, [selectedType, currentPage]);
@@ -102,14 +128,33 @@ const TrashPage: React.FC = () => {
   };
 
   const handleRestore = async (items: any[]) => {
+    if (!items || items.length === 0) {
+      message.warning('Vui lòng chọn ít nhất một mục để khôi phục');
+      return;
+    }
+
     try {
-      await adminApi.restoreMultiple(items);
-      message.success('Đã khôi phục thành công');
+      const response = await adminApi.restoreMultiple(items);
+      const results = response.data?.results || { restored: [], failed: [] };
+      
+      if (results.restored.length > 0 && results.failed.length === 0) {
+        message.success(`Đã khôi phục thành công ${results.restored.length} mục`);
+      } else if (results.restored.length > 0 && results.failed.length > 0) {
+        message.warning(
+          `Đã khôi phục ${results.restored.length} mục, ${results.failed.length} mục thất bại. ` +
+          results.failed.map((f: any) => `${f.type} (${f.id || f._id}): ${f.reason}`).join(', ')
+        );
+      } else {
+        message.error('Không thể khôi phục bất kỳ mục nào. ' + 
+          results.failed.map((f: any) => `${f.type} (${f.id || f._id}): ${f.reason}`).join(', '));
+      }
+      
       fetchTrashData();
       setSelectedRows([]);
       setSelectedRowKeys([]);
-    } catch (error) {
-      message.error('Lỗi khi khôi phục dữ liệu');
+    } catch (error: any) {
+      console.error('Lỗi khi khôi phục:', error);
+      message.error(error.response?.data?.message || 'Lỗi khi khôi phục dữ liệu');
     }
   };
 
@@ -329,16 +374,8 @@ const TrashPage: React.FC = () => {
                 selectedRowKeys: selectedRowKeys.filter(key => 
                   data.items.some(item => item._id === key)
                 ),
-                onChange: (newSelectedRowKeys, selectedRows) => {
-                  // ✅ Lấy các items đã chọn từ bảng này
-                  const currentSelected = selectedRows.map(row => ({ type: data.type, id: row._id }));
-                  
-                  // ✅ Xóa các items của type này khỏi selectedRows
-                  const otherSelected = selectedRows.filter(s => s.type !== data.type);
-                  
-                  // ✅ Thêm các items mới được chọn
-                  setSelectedRows([...otherSelected, ...currentSelected]);
-                  setSelectedRowKeys(newSelectedRowKeys as React.Key[]);
+                onChange: (newSelectedRowKeys, selectedRowsData) => {
+                  handleTableSelectionChange(newSelectedRowKeys, selectedRowsData, data.type, data.items);
                 },
               }}
             />
@@ -374,15 +411,8 @@ const TrashPage: React.FC = () => {
                 selectedRowKeys: selectedRowKeys.filter(key => 
                   data.items.some(item => item._id === key)
                 ),
-                onChange: (newSelectedRowKeys, selectedRows) => {
-                  const currentSelected = selectedRows.map(row => ({ type: selectedType, id: row._id }));
-                  
-                  // ✅ Xóa các items của type này khỏi selectedRows
-                  const otherSelected = selectedRows.filter(s => s.type !== selectedType);
-                  
-                  // ✅ Thêm các items mới được chọn
-                  setSelectedRows([...otherSelected, ...currentSelected]);
-                  setSelectedRowKeys(newSelectedRowKeys as React.Key[]);
+                onChange: (newSelectedRowKeys, selectedRowsData) => {
+                  handleTableSelectionChange(newSelectedRowKeys, selectedRowsData, selectedType, data.items);
                 },
               }}
             />

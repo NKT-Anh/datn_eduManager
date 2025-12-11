@@ -14,7 +14,6 @@ import {
   TrendingDown,
   Minus,
   Award,
-  Download,
   Loader2,
   GraduationCap,
   Info
@@ -446,10 +445,13 @@ const StudentGradesPage = () => {
     }).filter((g): g is GradeSummary => g !== null);
   }, [hk1Grades, hk2Grades, displayYear]);
 
-  // Tính điểm trung bình chung cho từng học kỳ
+  // Tính điểm trung bình chung cho từng học kỳ (chỉ tính từ các môn đã được công bố)
   const calculateOverallAverage = (gradesList: GradeSummary[]) => {
+    // ✅ Chỉ tính từ các môn đã được công bố (isOfficial === true)
     const validGrades = gradesList.filter(g => 
-      g.subject.includeInAverage !== false && g.average !== null
+      g.subject.includeInAverage !== false && 
+      g.average !== null && 
+      g.isOfficial === true
     );
     if (validGrades.length === 0) return null;
     const sum = validGrades.reduce((acc, g) => acc + (g.average || 0), 0);
@@ -457,8 +459,9 @@ const StudentGradesPage = () => {
   };
 
   // Tính điểm TB tất cả các môn cho từng học kỳ
-  const overallHk1Average = gpaHK1;
-  const overallHk2Average = gpaHK2;
+  // ✅ Ưu tiên dùng GPA từ backend (đã kiểm tra isOfficial), nếu không có thì tính từ các môn đã công bố
+  const overallHk1Average = gpaHK1 !== null ? gpaHK1 : calculateOverallAverage(hk1Grades);
+  const overallHk2Average = gpaHK2 !== null ? gpaHK2 : calculateOverallAverage(hk2Grades);
 
   // Tính điểm TB tất cả các môn cả năm = (TB HK1 + TB HK2) / 2
   const overallYearAverage = useMemo(() => {
@@ -1147,16 +1150,10 @@ const StudentGradesPage = () => {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Điểm số của tôi</h1>
           <p className="text-muted-foreground">Xem điểm số các môn học theo học kỳ và năm học</p>
         </div>
-        <Button variant="outline" size="sm" className="w-full sm:w-auto">
-          <Download className="h-4 w-4 mr-2" />
-          Xuất bảng điểm
-        </Button>
-      </div>
       </div>
 
       {/* Filters - Bảng điểm: năm học + học kỳ */}

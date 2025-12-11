@@ -1,8 +1,18 @@
 // services/userApi.ts
 import api from './axiosInstance';
 export default {
-  createBatchStudents: (data: any) =>
-    api.post('/batch/students', data).then(res => res.data),
+  createBatchStudents: (data: any, exportFile: boolean = false) => {
+    // Backend sẽ tự động đọc passwordGenerationMethod từ Settings
+    // Không cần truyền useRandomPassword nữa
+    if (exportFile) {
+      // Nếu export file, response sẽ là blob
+      return api.post('/batch/students', data, {
+        params: { exportFile: 'true' },
+        responseType: 'blob',
+      }).then(res => res.data);
+    }
+    return api.post('/batch/students', data).then(res => res.data);
+  },
 
   createBatchTeachers: (data: any) =>
     api.post('/batch/teachers', data).then(res => res.data),

@@ -9,6 +9,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -116,6 +123,7 @@ const SettingsPage = () => {
     },
     studentEmailDomain: '',
     teacherEmailDomain: '',
+    passwordGenerationMethod: 'random', // 'default' hoặc 'random'
     schoolLogo: { ...defaultLogoState }
   });
 
@@ -714,17 +722,69 @@ const SettingsPage = () => {
   </CardHeader>
   <CardContent className="space-y-4">
     <div>
-      <Label>Mật khẩu mặc định</Label>
-      <Input
-        type="text"
-        value={settings.defaultPassword || '123456'}
-        onChange={(e) => handleChange('defaultPassword', e.target.value)}
-        placeholder="Nhập mật khẩu mặc định (VD: 123456)"
-      />
-      <p className="text-sm text-muted-foreground mt-1">
-        Dùng khi tạo tài khoản tự động cho học sinh và giáo viên.
+      <Label>Phương thức tạo mật khẩu</Label>
+      <Select
+        value={settings.passwordGenerationMethod || 'random'}
+        onValueChange={(value) => handleChange('passwordGenerationMethod', value)}
+      >
+        <SelectTrigger className="w-full">
+          <SelectValue placeholder="Chọn phương thức" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="random">
+            <div className="flex flex-col">
+              <span className="font-medium">Tạo ngẫu nhiên</span>
+              <span className="text-xs text-muted-foreground">
+                Mỗi học sinh/giáo viên sẽ có mật khẩu riêng, an toàn hơn
+              </span>
+            </div>
+          </SelectItem>
+          <SelectItem value="default">
+            <div className="flex flex-col">
+              <span className="font-medium">Dùng mật khẩu mặc định</span>
+              <span className="text-xs text-muted-foreground">
+                Tất cả tài khoản dùng chung một mật khẩu
+              </span>
+            </div>
+          </SelectItem>
+        </SelectContent>
+      </Select>
+      <p className="text-sm text-muted-foreground mt-2">
+        Phương thức được sử dụng khi tạo tài khoản tự động cho học sinh và giáo viên.
       </p>
     </div>
+    
+    {settings.passwordGenerationMethod === 'default' && (
+      <div>
+        <Label>Mật khẩu mặc định</Label>
+        <Input
+          type="text"
+          value={settings.defaultPassword || '123456'}
+          onChange={(e) => handleChange('defaultPassword', e.target.value)}
+          placeholder="Nhập mật khẩu mặc định (VD: 123456)"
+        />
+        <p className="text-sm text-muted-foreground mt-1">
+          Tất cả tài khoản mới sẽ sử dụng mật khẩu này.
+        </p>
+      </div>
+    )}
+    
+    {settings.passwordGenerationMethod === 'random' && (
+      <div className="p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md">
+        <div className="flex items-start space-x-2">
+          <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm text-blue-900 dark:text-blue-100 font-medium">
+              Mật khẩu ngẫu nhiên
+            </p>
+            <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+              Mỗi tài khoản sẽ được tạo với mật khẩu ngẫu nhiên riêng (10 ký tự, bao gồm chữ hoa, chữ thường và số). 
+              File Excel chứa thông tin đăng nhập sẽ được tải xuống sau khi tạo tài khoản.
+            </p>
+          </div>
+        </div>
+      </div>
+    )}
   </CardContent>
 </Card>
 {/* Email Domain & Test */}

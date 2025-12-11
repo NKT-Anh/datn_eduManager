@@ -8,7 +8,7 @@ const Student = require('./src/models/user/student');
 require("dotenv").config();
 
 // Kết nối MongoDB
-mongoose.connect(process.env.MONGODB_URI, {
+mongoose.connect(process.env.MONGODB_URI || process.env.MONGODB_URI1, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })

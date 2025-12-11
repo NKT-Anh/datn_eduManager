@@ -32,6 +32,7 @@ import { Teacher } from '@/types/auth';
 import { useToast } from '@/hooks/use-toast';
 import { teacherApi } from '@/services/teacherApi';
 import { roomApi, Room } from '@/services/roomApi';
+import { classApi } from '@/services/classApi';
 
 const classSchema = z.object({
   className: z.string().min(1, 'Tên lớp là bắt buộc'),
@@ -85,32 +86,34 @@ export const ClassForm = ({ open, onOpenChange, classData, onSubmit }: ClassForm
 
   // ✅ Reset lại form khi classData thay đổi (fix lỗi khi chỉnh sửa)
   useEffect(() => {
-    if (classData && teachers.length > 0) {
-      form.reset({
-        className: classData.className,
-        grade: classData.grade,
-        teacherId: classData.teacherId?._id || '',
-        capacity: classData.capacity,
-        year: classData.year || getCurrentSchoolYear(),
-        roomId: (classData.roomId as any)?._id || (typeof classData.roomId === 'string' ? classData.roomId : '') || '',
-      });
-    } else {
-      form.reset({
-        className: '',
-        grade: '10',
-        teacherId: '',
-        capacity: 45,
-        year: getCurrentSchoolYear(),
-        roomId: '',
-      });
+    if (open) {
+      if (classData && teachers.length > 0) {
+        form.reset({
+          className: classData.className,
+          grade: classData.grade,
+          teacherId: classData.teacherId?._id || '',
+          capacity: classData.capacity,
+          year: classData.year || getCurrentSchoolYear(),
+          roomId: (classData.roomId as any)?._id || (typeof classData.roomId === 'string' ? classData.roomId : '') || '',
+        });
+      } else {
+        form.reset({
+          className: '',
+          grade: '10',
+          teacherId: '',
+          capacity: 45,
+          year: getCurrentSchoolYear(),
+          roomId: '',
+        });
+      }
     }
-  }, [classData, teachers, form]);
+  }, [open, classData?._id, teachers.length]);
 
   const handleSubmit = async (data: ClassFormData) => {
     setIsLoading(true);
     try {
-      // Lấy danh sách lớp để kiểm tra trùng
-      const allClasses = await fetch(`${import.meta.env.VITE_API_BASE_URL}/class`).then((r) => r.json());
+      // Lấy danh sách lớp để kiểm tra trùng (dùng classApi có token)
+      const allClasses = await classApi.getAll();
 
       // ✅ Kiểm tra trùng tên lớp trong cùng năm học và khối
       const duplicateName = allClasses.find(

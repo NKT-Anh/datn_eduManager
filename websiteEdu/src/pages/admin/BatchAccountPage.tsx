@@ -457,7 +457,67 @@ const handleDeleteAccounts = async () => {
         const selectedStudents = students.filter((s) =>
           selectedIds.includes(s._id)
         );
-        res = await userApi.createBatchStudents({ students: selectedStudents });
+        // 📤 Tự động xuất file Excel sau khi tạo tài khoản
+        try {
+          const response = await api.post('/batch/students', 
+            { students: selectedStudents, useRandomPassword: true }, 
+            { params: { exportFile: 'true' }, responseType: 'blob' }
+          );
+          
+          // Kiểm tra nếu response là JSON (khi không có tài khoản mới)
+          const contentType = response.headers['content-type'] || '';
+          if (contentType.includes('application/json')) {
+            // Response là JSON - không có tài khoản mới
+            const text = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.readAsText(response.data);
+            });
+            const jsonData = JSON.parse(text);
+            setResult(jsonData);
+            setAlert({
+              type: 'info',
+              title: 'Thông báo',
+              message: jsonData.message || 'Không có tài khoản mới nào được tạo',
+            });
+            toast({
+              title: 'Thông báo',
+              description: jsonData.message || 'Tất cả học sinh đã có tài khoản',
+            });
+          } else {
+            // Response là file Excel
+            const blob = new Blob([response.data], {
+              type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            });
+            
+            // Tạo link download file Excel
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            const fileName = `Tai_khoan_hoc_sinh_${new Date().toISOString().split('T')[0]}_${Date.now()}.xlsx`;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+            
+            toast({
+              title: 'Thành công',
+              description: `Đã tạo tài khoản và tải xuống file Excel chứa thông tin đăng nhập`,
+            });
+          }
+        } catch (err: any) {
+          // Nếu lỗi khi export file, thử lại với JSON response
+          console.error('Lỗi khi xuất file:', err);
+          res = await userApi.createBatchStudents({ students: selectedStudents }, false);
+          setResult(res);
+          setAlert({
+            type: res.createdCount > 0 ? 'success' : 'info',
+            title: res.createdCount > 0 ? 'Thành công' : 'Thông báo',
+            message: res.message || `Đã tạo ${res.createdCount || 0} tài khoản mới`,
+          });
+        }
+        
         await userApi.getAllAccounts().then((res) => setAccounts(res.data || []));
       } else if (activeTab === 'teacher') {
         const selectedTeachers = teachers.filter((t) =>

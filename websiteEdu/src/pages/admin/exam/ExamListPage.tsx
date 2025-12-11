@@ -261,6 +261,8 @@ const fetchExams = async (page = pagination.current, limit = pagination.pageSize
     regular: "Chính thức",
     mock: "Thử",
     graduation: "Tốt nghiệp",
+    midterm: "Giữa kỳ",
+    final: "Cuối kỳ",
   };
 
   const statusConfig: Record<string, { color: string; label: string; icon: React.ReactNode }> = {
@@ -549,6 +551,8 @@ try {
           regular: { label: "Chính thức", color: "green" },
           mock: { label: "Thử", color: "blue" },
           graduation: { label: "Tốt nghiệp", color: "purple" },
+          midterm: { label: "Giữa kỳ", color: "orange" },
+          final: { label: "Cuối kỳ", color: "red" },
         };
         const info = map[v] || { label: "Không xác định", color: "default" };
         return <Tag color={info.color}>{info.label}</Tag>;

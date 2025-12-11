@@ -92,6 +92,14 @@ const DEFAULT_WEIGHTS: GradeWeights = {
   final: 3,
 };
 
+const DEFAULT_COLUMN_COUNTS: ColumnCounts = {
+  oral: 3,
+  quiz15: 3,
+  quiz45: 1,
+  midterm: 1,
+  final: 1,
+};
+
 const DEFAULT_CLASSIFICATION: ClassificationConfig = {
   excellent: {
     minAverage: 8.0,
@@ -222,19 +230,10 @@ export default function GradeConfigPage() {
         }
       }
       
-      // Nếu API trả về data theo schoolYear và semester
-      const defaultColumnCounts = {
-        oral: 3,
-        quiz15: 3,
-        quiz45: 1,
-        midterm: 1,
-        final: 1,
-      };
-      
       if (res && res.weights && res.rounding) {
         setConfig({
           weights: res.weights,
-          columnCounts: res.columnCounts || defaultColumnCounts,
+          columnCounts: res.columnCounts || { ...DEFAULT_COLUMN_COUNTS },
           rounding: res.rounding,
           completionPolicy: res.completionPolicy || 'at-least-one',
           classification: res.classification || { ...DEFAULT_CLASSIFICATION },
@@ -245,7 +244,7 @@ export default function GradeConfigPage() {
       } else if (res && res.data) {
         setConfig({
           weights: res.data.weights || { ...DEFAULT_WEIGHTS },
-          columnCounts: res.data.columnCounts || defaultColumnCounts,
+          columnCounts: res.data.columnCounts || { ...DEFAULT_COLUMN_COUNTS },
           rounding: res.data.rounding || 'half-up',
           completionPolicy: res.data.completionPolicy || 'at-least-one',
           classification: res.data.classification || { ...DEFAULT_CLASSIFICATION },
@@ -257,7 +256,7 @@ export default function GradeConfigPage() {
         // Nếu không có config, dùng mặc định
         setConfig({
           weights: { ...DEFAULT_WEIGHTS },
-          columnCounts: defaultColumnCounts,
+          columnCounts: { ...DEFAULT_COLUMN_COUNTS },
           rounding: 'half-up',
           completionPolicy: 'at-least-one',
           classification: { ...DEFAULT_CLASSIFICATION },
@@ -278,6 +277,7 @@ export default function GradeConfigPage() {
       }
       setConfig({
         weights: { ...DEFAULT_WEIGHTS },
+        columnCounts: { ...DEFAULT_COLUMN_COUNTS },
         rounding: 'half-up',
         completionPolicy: 'at-least-one',
         classification: { ...DEFAULT_CLASSIFICATION },
@@ -723,10 +723,14 @@ export default function GradeConfigPage() {
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 {Object.entries(config.weights).map(([key, value]) => {
                   const isEnabled = value > 0;
+                  const columnCount = config.columnCounts?.[key] ?? DEFAULT_COLUMN_COUNTS[key] ?? 1;
                   return (
-                    <div key={key} className={`space-y-2 p-3 rounded-lg border transition-all ${
-                      isEnabled ? 'border-border bg-background' : 'border-muted bg-muted/30 opacity-60'
-                    }`}>
+                    <div
+                      key={key}
+                      className={`space-y-3 p-3 rounded-lg border transition-all ${
+                        isEnabled ? 'border-border bg-background' : 'border-muted bg-muted/30 opacity-60'
+                      }`}
+                    >
                       <div className="flex items-center justify-between">
                         <Label className="text-sm font-medium flex items-center gap-2">
                           {LABEL_MAP[key] || key}
@@ -751,36 +755,43 @@ export default function GradeConfigPage() {
                         </Button>
                       </div>
                       {isEnabled ? (
-                        <Input
-                          type="text"
-                          value={value !== undefined && value !== null ? String(value) : ''}
-                          disabled={loading}
-                          onChange={(e) => {
-                            // ✅ Cho phép nhập tự nhiên (4.6, 7.8, 8, ...)
-                            const inputValue = e.target.value;
-                            
-                            // ✅ Chỉ cho phép số, dấu chấm, dấu phẩy
-                            const validPattern = /^[\d.,]*$/;
-                            if (!validPattern.test(inputValue) && inputValue !== '') {
-                              return; // Không cho nhập ký tự không hợp lệ
-                            }
-                            
-                            // ✅ Normalize dấu phẩy thành dấu chấm để lưu vào state
-                            const normalized = normalizeInput(inputValue);
-                            
-                            // ✅ Nếu rỗng hoặc chỉ có dấu chấm, lưu 0
-                            if (normalized === '' || normalized === '.' || normalized === ',') {
-                              setConfig({
-                                ...config,
-                                weights: {
-                                  ...config.weights,
-                                  [key]: 0,
-                                },
-                              });
-                            } else {
-                              // ✅ Parse và lưu vào state (có thể là số hoặc số thập phân đang nhập)
-                              const parsed = parseFloat(normalized);
-                              if (!isNaN(parsed)) {
+                        <div className="space-y-3">
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Trọng số</Label>
+                            <Input
+                              type="text"
+                              value={value !== undefined && value !== null ? String(value) : ''}
+                              disabled={loading}
+                              onChange={(e) => {
+                                const inputValue = e.target.value;
+                                const validPattern = /^[\d.,]*$/;
+                                if (!validPattern.test(inputValue) && inputValue !== '') {
+                                  return;
+                                }
+                                const normalized = normalizeInput(inputValue);
+                                if (normalized === '' || normalized === '.' || normalized === ',') {
+                                  setConfig({
+                                    ...config,
+                                    weights: {
+                                      ...config.weights,
+                                      [key]: 0,
+                                    },
+                                  });
+                                } else {
+                                  const parsed = parseFloat(normalized);
+                                  if (!isNaN(parsed)) {
+                                    setConfig({
+                                      ...config,
+                                      weights: {
+                                        ...config.weights,
+                                        [key]: parsed,
+                                      },
+                                    });
+                                  }
+                                }
+                              }}
+                              onBlur={(e) => {
+                                const parsed = parseScoreInput(e.target.value);
                                 setConfig({
                                   ...config,
                                   weights: {
@@ -788,91 +799,45 @@ export default function GradeConfigPage() {
                                     [key]: parsed,
                                   },
                                 });
-                              } else {
-                                // ✅ Nếu parse lỗi nhưng có giá trị (ví dụ: đang nhập "4."), lưu giá trị cuối cùng hợp lệ
-                                // Không làm gì, giữ nguyên giá trị hiện tại
-                              }
-                            }
-                          }}
-                          onBlur={(e) => {
-                            // ✅ Format về 1 chữ số thập phân khi blur (8 -> 8.0, 4.6 -> 4.6)
-                            const parsed = parseScoreInput(e.target.value);
-                            setConfig({
-                              ...config,
-                              weights: {
-                                ...config.weights,
-                                [key]: parsed,
-                              },
-                            });
-                          }}
-                          className="text-center font-semibold"
-                          placeholder="1.0"
-                        />
+                              }}
+                              className="text-center font-semibold"
+                              placeholder="1.0"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Số cột điểm</Label>
+                            <Input
+                              type="number"
+                              min="1"
+                              max="10"
+                              value={columnCount}
+                              disabled={loading}
+                              onChange={(e) => {
+                                const valueNumber = Number(e.target.value);
+                                const safeValue = Number.isNaN(valueNumber)
+                                  ? 1
+                                  : Math.max(1, Math.min(10, Math.floor(valueNumber)));
+                                setConfig({
+                                  ...config,
+                                  columnCounts: {
+                                    ...(config.columnCounts || { ...DEFAULT_COLUMN_COUNTS }),
+                                    [key]: safeValue,
+                                  },
+                                });
+                              }}
+                              className="text-center font-semibold"
+                              placeholder="1"
+                            />
+                          </div>
+                        </div>
                       ) : (
-                        <div className="text-center text-sm text-muted-foreground py-2">
+                        <div className="text-center text-sm text-muted-foreground py-6">
                           Đã tắt
                         </div>
                       )}
                     </div>
                   );
                 })}
-              </div>
-
-              {/* ✅ Cấu hình số cột điểm cho mỗi component */}
-              <div className="pt-4 border-t">
-                <Label className="text-base font-semibold mb-4 block flex items-center gap-2">
-                  <BarChart3 className="h-5 w-5" />
-                  Số cột điểm cho mỗi loại
-                </Label>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Cấu hình số cột điểm sẽ được hiển thị cho mỗi loại điểm (ví dụ: 3 cột miệng, 3 cột 15 phút)
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                  {Object.entries(config.weights).map(([key, weightValue]) => {
-                    const isEnabled = weightValue > 0;
-                    const columnCount = config.columnCounts?.[key] || 1;
-                    return (
-                      <div key={key} className={`space-y-2 p-3 rounded-lg border transition-all ${
-                        isEnabled ? 'border-border bg-background' : 'border-muted bg-muted/30 opacity-60'
-                      }`}>
-                        <Label className="text-sm font-medium flex items-center gap-2">
-                          {LABEL_MAP[key] || key}
-                        </Label>
-                        {isEnabled ? (
-                          <Input
-                            type="number"
-                            min="1"
-                            max="10"
-                            value={columnCount}
-                            disabled={loading}
-                            onChange={(e) => {
-                              const value = parseInt(e.target.value) || 1;
-                              setConfig({
-                                ...config,
-                                columnCounts: {
-                                  ...(config.columnCounts || {
-                                    oral: 3,
-                                    quiz15: 3,
-                                    quiz45: 1,
-                                    midterm: 1,
-                                    final: 1,
-                                  }),
-                                  [key]: Math.max(1, Math.min(10, value)),
-                                },
-                              });
-                            }}
-                            className="text-center font-semibold"
-                            placeholder="1"
-                          />
-                        ) : (
-                          <div className="text-center text-sm text-muted-foreground py-2">
-                            Đã tắt
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
               </div>
 
               {/* ✅ Chính sách hoàn tất điểm trung bình môn */}

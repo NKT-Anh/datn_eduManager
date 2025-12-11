@@ -46,7 +46,6 @@ const StudentConductPage = () => {
   
   const [conductRecord, setConductRecord] = useState<ConductRecord | null>(null);
   const [attendanceStats, setAttendanceStats] = useState<AttendanceStats | null>(null);
-  const [trainingScore, setTrainingScore] = useState<number>(85);
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [behaviorStats, setBehaviorStats] = useState({
     excellent: 0,
@@ -77,20 +76,6 @@ const StudentConductPage = () => {
         if (res.success && res.data && res.data.length > 0) {
           const record = res.data[0];
           setConductRecord(record);
-          
-          // Tính điểm rèn luyện từ hạnh kiểm và điểm danh
-          // Công thức: 100 - (số buổi vắng * 2) - (số buổi muộn * 1) + bonus từ hạnh kiểm
-          let score = 100;
-          if (record.totalAbsent) score -= record.totalAbsent * 2;
-          if (record.totalLate) score -= record.totalLate * 1;
-          
-          // Bonus từ hạnh kiểm
-          if (record.conduct === 'Tốt') score += 5;
-          else if (record.conduct === 'Khá') score += 3;
-          else if (record.conduct === 'Trung bình') score += 1;
-          
-          score = Math.max(0, Math.min(100, score));
-          setTrainingScore(Math.round(score));
         }
       } catch (error: any) {
         console.error('Error fetching conduct:', error);
@@ -198,16 +183,9 @@ const StudentConductPage = () => {
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <p className="text-sm font-medium mb-2">Xếp loại hạnh kiểm</p>
-              <h2 className="text-4xl font-bold mb-4">
+              <h2 className="text-4xl font-bold">
                 {conductRecord?.conduct || 'Chưa có'}
               </h2>
-              <p className="text-lg mb-4">Điểm rèn luyện: {trainingScore}/100</p>
-              <div className="w-full h-2 bg-white/30 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-white rounded-full transition-all"
-                  style={{ width: `${trainingScore}%` }}
-                />
-              </div>
             </div>
             <div className="flex items-center justify-center w-16 h-16 bg-white/20 rounded-full">
               <Star className="h-8 w-8 text-white" />

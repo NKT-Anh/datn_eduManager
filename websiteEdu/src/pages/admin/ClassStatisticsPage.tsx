@@ -1,9 +1,14 @@
 import React, { useEffect, useState } from "react";
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ProgressBar } from "@/components/ui";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { schoolYearApi } from "@/services/schoolYearApi";
+import { useSchoolYears } from "@/hooks";
 import { getConductBlockStatisticsByClass } from "@/services/conductApi";
+import { AlertCircle, School, Users, CheckCircle2, XCircle } from "lucide-react";
 
 const COLUMNS = [
   { key: "className", label: "Lớp" },
@@ -18,12 +23,12 @@ const COLUMNS = [
 ];
 
 export default function ClassStatisticsPage() {
-  const [schoolYears, setSchoolYears] = useState([]);
   const [year, setYear] = useState("");
-  const [semester, setSemester] = useState("HK1");
+  const [semester, setSemester] = useState("");
   const [classStats, setClassStats] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const { schoolYears: allSchoolYears, currentYearData } = useSchoolYears();
 
   const getCurrentSemester = () => {
     const m = new Date().getMonth() + 1;
@@ -32,21 +37,18 @@ export default function ClassStatisticsPage() {
     return "CN";
   };
 
+  // Set năm học mặc định
   useEffect(() => {
-    const fetchYears = async () => {
-      try {
-        const years = await schoolYearApi.getAll();
-        setSchoolYears(years);
-        const active = years.find(y => y.isActive) || years[0];
-        if (active) setYear(active.code);
-        setSemester(getCurrentSemester());
-      } catch (err) {
-        console.error(err);
-        setError("Không tải được danh sách năm học");
-      }
-    };
-    fetchYears();
-  }, []);
+    if (currentYearData?.code && !year) {
+      setYear(currentYearData.code);
+    } else if (allSchoolYears.length > 0 && !year) {
+      const active = allSchoolYears.find(y => y.isActive) || allSchoolYears[0];
+      if (active) setYear(active.code);
+    }
+    if (!semester) {
+      setSemester(getCurrentSemester());
+    }
+  }, [currentYearData, allSchoolYears, year, semester]);
 
   useEffect(() => {
     if (!year || !semester) return;
@@ -84,84 +86,165 @@ export default function ClassStatisticsPage() {
   }, [year, semester]);
 
   return (
-    <div>
-      <h2 className="text-xl font-semibold mb-4">Danh sách lớp học</h2>
-
-      <div className="flex gap-4 mb-4">
-        <div className="w-48">
-          <label className="text-sm font-semibold mb-1 block">Năm học</label>
-          <Select value={year} onValueChange={setYear}>
-            <SelectTrigger>
-              <SelectValue placeholder="Chọn năm học" />
-            </SelectTrigger>
-            <SelectContent>
-              {schoolYears.map(y => (
-                <SelectItem key={y.code} value={y.code}>{y.name || y.code}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="w-48">
-          <label className="text-sm font-semibold mb-1 block">Học kỳ</label>
-          <Select value={semester} onValueChange={setSemester}>
-            <SelectTrigger>
-              <SelectValue placeholder="Chọn học kỳ" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="HK1">Học kỳ 1</SelectItem>
-              <SelectItem value="HK2">Học kỳ 2</SelectItem>
-              <SelectItem value="CN">Cuối năm</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold">Thống kê hạnh kiểm theo lớp</h1>
+        <p className="text-muted-foreground mt-1">
+          Xem chi tiết hạnh kiểm học sinh theo từng lớp học
+        </p>
       </div>
 
-      {loading && <p className="text-gray-600 italic">Đang tải...</p>}
-      {error && <p className="text-red-500">{error}</p>}
+      {/* Filters */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="grid md:grid-cols-2 gap-4 max-w-2xl">
+            <div>
+              <Label>Năm học</Label>
+              <Select value={year} onValueChange={setYear}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Chọn năm học" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allSchoolYears.map(y => (
+                    <SelectItem key={y.code} value={y.code}>
+                      {y.name} {currentYearData?.code === y.code && "(Hiện tại)"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            {COLUMNS.map(col => <TableHead key={col.key}>{col.label}</TableHead>)}
-          </TableRow>
-        </TableHeader>
+            <div>
+              <Label>Học kỳ</Label>
+              <Select value={semester} onValueChange={setSemester}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Chọn học kỳ" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="HK1">Học kỳ 1</SelectItem>
+                  <SelectItem value="HK2">Học kỳ 2</SelectItem>
+                  <SelectItem value="CN">Cả năm</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-        <TableBody>
-          {classStats.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={COLUMNS.length} className="text-center py-4">
-                Không có dữ liệu
-              </TableCell>
-            </TableRow>
-          ) : classStats.map(row => (
-            <TableRow key={row.classId}>
-              <TableCell>{row.className}</TableCell>
-              <TableCell>{row.teacherName}</TableCell>
-              <TableCell>{row.studentCount}</TableCell>
-              <TableCell>{row.TOT}</TableCell>
-              <TableCell>{row.KHA}</TableCell>
-              <TableCell>{row.TB}</TableCell>
-              <TableCell>{row.YEU}</TableCell>
-              <TableCell>
-                <div className="flex items-center gap-2">
-                  <ProgressBar value={row.progress} max={100} />
-                  <span className="text-xs text-gray-600">{row.progressText}</span>
-                </div>
-              </TableCell>
-              <TableCell>
-                <span
-                  className={`px-2 py-1 rounded text-xs font-medium ${
-                    row.status === "Đã hoàn thành" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-                  }`}
-                >
-                  {row.status}
-                </span>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      {/* Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <School className="h-5 w-5" />
+            Danh sách lớp học ({classStats.length})
+          </CardTitle>
+          <CardDescription>
+            Thống kê hạnh kiểm và tiến độ hoàn thành của từng lớp
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+            </div>
+          ) : error ? (
+            <div className="flex items-center gap-3 text-destructive p-6">
+              <AlertCircle className="h-5 w-5" />
+              <p>{error}</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {COLUMNS.map(col => <TableHead key={col.key}>{col.label}</TableHead>)}
+                  </TableRow>
+                </TableHeader>
+
+                <TableBody>
+                  {classStats.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={COLUMNS.length} className="text-center py-12">
+                        <div className="flex flex-col items-center gap-3">
+                          <School className="h-12 w-12 text-muted-foreground" />
+                          <p className="text-lg font-medium text-muted-foreground">Không có dữ liệu</p>
+                          <p className="text-sm text-muted-foreground">
+                            Vui lòng chọn năm học và học kỳ để xem thống kê
+                          </p>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : classStats.map(row => (
+                    <TableRow key={row.classId}>
+                      <TableCell className="font-medium">{row.className}</TableCell>
+                      <TableCell>{row.teacherName}</TableCell>
+                      <TableCell className="text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <Users className="h-4 w-4 text-muted-foreground" />
+                          <span>{row.studentCount}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                          {row.TOT}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                          {row.KHA}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
+                          {row.TB}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+                          {row.YEU}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2 min-w-[120px]">
+                          <ProgressBar 
+                            value={row.progress} 
+                            max={100} 
+                            className="flex-1"
+                          />
+                          <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+                            {row.progressText}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={row.status === "Đã hoàn thành" ? "default" : "secondary"}
+                          className={
+                            row.status === "Đã hoàn thành"
+                              ? "bg-green-100 text-green-700 hover:bg-green-100"
+                              : "bg-yellow-100 text-yellow-700 hover:bg-yellow-100"
+                          }
+                        >
+                          {row.status === "Đã hoàn thành" ? (
+                            <CheckCircle2 className="h-3 w-3 mr-1" />
+                          ) : (
+                            <XCircle className="h-3 w-3 mr-1" />
+                          )}
+                          {row.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

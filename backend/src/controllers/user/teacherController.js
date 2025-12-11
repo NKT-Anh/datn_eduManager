@@ -338,6 +338,27 @@ exports.updateAvailability = async (req, res) => {
   try {
     const { id } = req.params;
     const { availableMatrix } = req.body;
+    const userInfo = req.user;
+
+    // ✅ Kiểm tra nếu giáo viên đang cập nhật lịch rảnh của chính mình
+    // Nếu không phải admin và id không khớp với teacherId của user, kiểm tra quyền
+    if (userInfo.role !== 'admin') {
+      const Teacher = require('../models/user/teacher');
+      const teacher = await Teacher.findOne({ accountId: userInfo.accountId });
+      
+      if (!teacher) {
+        return res.status(403).json({ 
+          message: 'Bạn không phải giáo viên hoặc không có quyền cập nhật lịch rảnh.' 
+        });
+      }
+
+      // Kiểm tra nếu giáo viên đang cập nhật lịch rảnh của chính mình
+      if (String(teacher._id) !== String(id)) {
+        return res.status(403).json({ 
+          message: 'Bạn chỉ có thể cập nhật lịch rảnh của chính mình.' 
+        });
+      }
+    }
 
     // 🔍 Kiểm tra dữ liệu hợp lệ (6 ngày × 10 tiết)
     if (
@@ -377,6 +398,102 @@ exports.updateAvailability = async (req, res) => {
     });
   }
 };
+
+// ✅ Lấy lịch rảnh của chính mình - Giáo viên
+exports.getMyAvailability = async (req, res) => {
+  try {
+    const userInfo = req.user;
+
+    // ✅ Kiểm tra user có phải giáo viên không
+    if (!['teacher', 'gvcn', 'gvbm', 'qlbm', 'bgh'].includes(userInfo.role)) {
+      return res.status(403).json({ 
+        message: 'Chỉ giáo viên mới có thể xem lịch rảnh.' 
+      });
+    }
+
+    // ✅ Tìm teacher theo accountId
+    const teacher = await Teacher.findOne({ accountId: userInfo.accountId });
+    
+    if (!teacher) {
+      return res.status(404).json({ 
+        message: 'Không tìm thấy thông tin giáo viên.' 
+      });
+    }
+
+    res.json({ 
+      availableMatrix: teacher.availableMatrix || [],
+      teacherId: teacher._id
+    });
+  } catch (error) {
+    console.error('Lỗi khi lấy lịch rảnh:', error);
+    res.status(500).json({
+      message: '❌ Đã xảy ra lỗi khi lấy lịch rảnh.',
+      error: error.message
+    });
+  }
+};
+
+// ✅ Cập nhật lịch rảnh của chính mình - Giáo viên
+exports.updateMyAvailability = async (req, res) => {
+  try {
+    const { availableMatrix } = req.body;
+    const userInfo = req.user;
+
+    // ✅ Kiểm tra user có phải giáo viên không
+    if (!['teacher', 'gvcn', 'gvbm', 'qlbm', 'bgh'].includes(userInfo.role)) {
+      return res.status(403).json({ 
+        message: 'Chỉ giáo viên mới có thể cập nhật lịch rảnh.' 
+      });
+    }
+
+    // ✅ Tìm teacher theo accountId
+    const teacher = await Teacher.findOne({ accountId: userInfo.accountId });
+    
+    if (!teacher) {
+      return res.status(404).json({ 
+        message: 'Không tìm thấy thông tin giáo viên.' 
+      });
+    }
+
+    // 🔍 Kiểm tra dữ liệu hợp lệ (6 ngày × 10 tiết)
+    if (
+      !Array.isArray(availableMatrix) ||
+      availableMatrix.length !== 6 ||
+      !availableMatrix.every(
+        (row) => Array.isArray(row) && row.length === 10 && row.every(v => typeof v === 'boolean')
+      )
+    ) {
+      return res.status(400).json({
+        message: 'Cấu trúc availableMatrix không hợp lệ. Phải là ma trận 6x10 kiểu boolean.'
+      });
+    }
+
+    // 🧠 Cập nhật lịch rảnh
+    const updatedTeacher = await populatedTeacher(
+      Teacher.findByIdAndUpdate(
+        teacher._id,
+        { availableMatrix },
+        { new: true, runValidators: true }
+      )
+    );
+
+    if (!updatedTeacher) {
+      return res.status(404).json({ message: 'Không tìm thấy giáo viên để cập nhật.' });
+    }
+
+    res.json({
+      message: '✅ Cập nhật lịch rảnh thành công.',
+      teacher: updatedTeacher
+    });
+  } catch (error) {
+    console.error('Lỗi khi cập nhật lịch rảnh:', error);
+    res.status(500).json({
+      message: '❌ Đã xảy ra lỗi khi cập nhật lịch rảnh.',
+      error: error.message
+    });
+  }
+};
+
 exports.getAvailability = async (req, res) => {
   try {
     const teacher = await Teacher.findById(req.params.id);

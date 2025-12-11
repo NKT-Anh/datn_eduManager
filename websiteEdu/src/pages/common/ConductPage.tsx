@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { isAdminOrBGH, isGVCN } from "@/utils/permissions";
@@ -9,11 +10,12 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { PERMISSIONS } from "@/utils/permissions";
 import conductApi from "@/services/conductApi";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ClipboardList, Edit } from "lucide-react";
+import { ClipboardList, Edit, Search } from "lucide-react";
 import { useSchoolYears } from "@/hooks";
+import { useClasses } from "@/hooks/classes/useClasses";
 import schoolConfigApi from "@/services/schoolConfigApi";
 
 interface Conduct {
@@ -47,11 +49,17 @@ export default function ConductPage() {
   const { toast } = useToast();
   const { hasPermission } = usePermissions();
   const { currentYearData, currentYear, schoolYears: allSchoolYears } = useSchoolYears();
+  const { classes } = useClasses();
   const [conducts, setConducts] = useState<Conduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState<string>("");
   const [selectedSemester, setSelectedSemester] = useState<string>("");
   const [semesters, setSemesters] = useState<{ code: string; name: string }[]>([]);
+  // ✅ Filters (chỉ cho admin/BGH)
+  const [filterClassId, setFilterClassId] = useState<string>("all");
+  const [filterGrade, setFilterGrade] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [searchKeyword, setSearchKeyword] = useState<string>("");
   const [editingConduct, setEditingConduct] = useState<Conduct | null>(null);
   const [editConduct, setEditConduct] = useState<string>("");
   const [editConductNote, setEditConductNote] = useState<string>("");
@@ -94,7 +102,7 @@ export default function ConductPage() {
     if (selectedYear) {
       fetchConducts();
     }
-  }, [selectedYear, selectedSemester]);
+  }, [selectedYear, selectedSemester, filterClassId]);
 
   const fetchConducts = async () => {
     if (!selectedYear) return;
@@ -103,6 +111,10 @@ export default function ConductPage() {
       const params: any = { year: selectedYear };
       if (selectedSemester) {
         params.semester = selectedSemester === '1' ? 'HK1' : selectedSemester === '2' ? 'HK2' : selectedSemester;
+      }
+      // ✅ Admin/BGH có thể filter theo classId
+      if (isAdminOrBGH(backendUser) && filterClassId && filterClassId !== "all") {
+        params.classId = filterClassId;
       }
       const res = await conductApi.getConducts(params);
       const records: Conduct[] = res.data || [];
@@ -145,6 +157,55 @@ export default function ConductPage() {
       setLoading(false);
     }
   };
+
+  // ✅ Filter và search client-side
+  const filteredConducts = useMemo(() => {
+    let result = [...conducts];
+    
+    // Filter theo khối (chỉ cho admin/BGH)
+    if (isAdminOrBGH(backendUser) && filterGrade && filterGrade !== "all") {
+      result = result.filter(c => c.classId?.grade === filterGrade);
+    }
+    
+    // Filter theo trạng thái
+    if (filterStatus && filterStatus !== "all") {
+      result = result.filter(c => c.conductStatus === filterStatus);
+    }
+    
+    // Search theo keyword
+    if (searchKeyword.trim()) {
+      const keyword = searchKeyword.toLowerCase();
+      result = result.filter(c => 
+        c.studentId?.name?.toLowerCase().includes(keyword) ||
+        c.studentId?.studentCode?.toLowerCase().includes(keyword) ||
+        c.classId?.className?.toLowerCase().includes(keyword)
+      );
+    }
+    
+    return result;
+  }, [conducts, filterGrade, filterStatus, searchKeyword, backendUser]);
+
+  // ✅ Lấy danh sách khối từ classes
+  const availableGrades = useMemo(() => {
+    if (!isAdminOrBGH(backendUser)) return [];
+    const grades = new Set<string>();
+    classes.forEach(c => {
+      if (c.grade && (!selectedYear || String(c.year) === String(selectedYear))) {
+        grades.add(String(c.grade));
+      }
+    });
+    return Array.from(grades).sort();
+  }, [classes, selectedYear, backendUser]);
+
+  // ✅ Lấy danh sách lớp từ classes (filter theo năm học và khối)
+  const availableClasses = useMemo(() => {
+    if (!isAdminOrBGH(backendUser)) return [];
+    return classes.filter(c => {
+      if (selectedYear && String(c.year) !== String(selectedYear)) return false;
+      if (filterGrade && String(c.grade) !== String(filterGrade)) return false;
+      return true;
+    }).sort((a, b) => a.className.localeCompare(b.className));
+  }, [classes, selectedYear, filterGrade, backendUser]);
 
   const handleUpdateConduct = async (mode: 'save' | 'submit' = 'save') => {
     if (!editingConduct || !editConduct) return;
@@ -224,35 +285,100 @@ export default function ConductPage() {
       {/* ✅ Bộ lọc năm học và học kỳ */}
       <Card>
         <CardContent className="p-4">
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <Label>Năm học</Label>
-              <Select value={selectedYear} onValueChange={setSelectedYear}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Chọn năm học" />
-                </SelectTrigger>
-                <SelectContent>
-                  {allSchoolYears.map(y => (
-                    <SelectItem key={y.code} value={y.code}>
-                      {y.name} {currentYearData?.code === y.code && "(Hiện tại)"}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <div className="space-y-4">
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <Label>Năm học</Label>
+                <Select value={selectedYear} onValueChange={setSelectedYear}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Chọn năm học" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allSchoolYears.map(y => (
+                      <SelectItem key={y.code} value={y.code}>
+                        {y.name} {currentYearData?.code === y.code && "(Hiện tại)"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Học kỳ</Label>
+                <Select value={selectedSemester} onValueChange={setSelectedSemester}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Chọn học kỳ" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {semesters.map(s => (
+                      <SelectItem key={s.code} value={s.code}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div>
-              <Label>Học kỳ</Label>
-              <Select value={selectedSemester} onValueChange={setSelectedSemester}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Chọn học kỳ" />
-                </SelectTrigger>
-                <SelectContent>
-                  {semesters.map(s => (
-                    <SelectItem key={s.code} value={s.code}>{s.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            
+            {/* ✅ Filters cho Admin/BGH */}
+            {isAdminOrBGH(backendUser) && (
+              <>
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div>
+                    <Label>Khối</Label>
+                    <Select value={filterGrade} onValueChange={setFilterGrade}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Tất cả khối" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Tất cả khối</SelectItem>
+                        {availableGrades.map(g => (
+                          <SelectItem key={g} value={g}>Khối {g}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Lớp</Label>
+                    <Select value={filterClassId} onValueChange={setFilterClassId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Tất cả lớp" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Tất cả lớp</SelectItem>
+                        {availableClasses.map(c => (
+                          <SelectItem key={c._id} value={c._id}>{c.className}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Trạng thái</Label>
+                    <Select value={filterStatus} onValueChange={setFilterStatus}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Tất cả trạng thái" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Tất cả trạng thái</SelectItem>
+                        <SelectItem value="draft">Bản nháp</SelectItem>
+                        <SelectItem value="pending">Chờ phê duyệt</SelectItem>
+                        <SelectItem value="approved">Đã phê duyệt</SelectItem>
+                        <SelectItem value="locked">Đã khóa</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div>
+                  <Label>Tìm kiếm</Label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Tìm theo tên, mã học sinh hoặc lớp..."
+                      value={searchKeyword}
+                      onChange={(e) => setSearchKeyword(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -262,11 +388,25 @@ export default function ConductPage() {
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle>Tổng số: {conducts.length} bản ghi</CardTitle>
+            <CardTitle>
+              Tổng số: {filteredConducts.length} / {conducts.length} bản ghi
+              {isAdminOrBGH(backendUser) && (filterGrade || filterClassId || filterStatus || searchKeyword) && (
+                <span className="text-sm text-muted-foreground font-normal ml-2">
+                  (đã lọc)
+                </span>
+              )}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {conducts.map((conduct) => (
+              {filteredConducts.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  {conducts.length === 0 
+                    ? "Không có dữ liệu hạnh kiểm" 
+                    : "Không tìm thấy kết quả phù hợp với bộ lọc"}
+                </div>
+              ) : (
+                filteredConducts.map((conduct) => (
                 <div
                   key={conduct._id}
                   className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
@@ -329,6 +469,9 @@ export default function ConductPage() {
                       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                         <DialogHeader>
                           <DialogTitle>Sửa hạnh kiểm</DialogTitle>
+                          <DialogDescription>
+                            Cập nhật thông tin hạnh kiểm cho học sinh
+                          </DialogDescription>
                         </DialogHeader>
                         <div className="space-y-4">
                           <div>
@@ -452,7 +595,7 @@ export default function ConductPage() {
                     </Dialog>
                   )}
                 </div>
-              ))}
+              )))}
             </div>
           </CardContent>
         </Card>

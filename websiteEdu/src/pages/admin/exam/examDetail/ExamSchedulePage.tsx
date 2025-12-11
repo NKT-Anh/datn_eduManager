@@ -79,7 +79,7 @@ export default function ExamSchedulePage({ examId, exam }: ExamSchedulePageProps
 
   const examGrades = exam?.grades || [10, 11, 12];
 const [selectedGrade, setSelectedGrade] = useState<number>(0);
-  const [selectedExamType, setSelectedExamType] = useState<string>("midterm");
+  const [selectedExamType, setSelectedExamType] = useState<string>(exam?.type || "midterm");
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [deleting, setDeleting] = useState(false);
 
@@ -125,6 +125,12 @@ const fetchSchedules = async () => {
 useEffect(() => {
   if (examId) fetchSchedules();
 }, [examId, selectedGrade]);
+
+useEffect(() => {
+  if (exam?.type) {
+    setSelectedExamType(exam.type);
+  }
+}, [exam?.type]);
 
 
   /* =========================================================
@@ -248,7 +254,7 @@ const exportToPDF = async () => {
       { text: `${item.startTime} – ${item.endTime || "?"}`, alignment: "center" },
       { text: `${item.duration} phút`, alignment: "center" },
       {
-        text: item.examType === "final" ? "Cuối kỳ" : "Giữa kỳ",
+        text: exam?.type === "final" ? "Cuối kỳ" : exam?.type === "midterm" ? "Giữa kỳ" : "Khác",
         alignment: "center",
       },
       {
@@ -634,12 +640,16 @@ const exportToPDF = async () => {
       title: "Loại",
       dataIndex: "examType",
       align: "center" as const,
-      render: (v: string) =>
-        v === "final" ? (
+      render: () => {
+        const examType = exam?.type;
+        return examType === "final" ? (
           <Tag color="red">Cuối kỳ</Tag>
+        ) : examType === "midterm" ? (
+          <Tag color="orange">Giữa kỳ</Tag>
         ) : (
-          <Tag color="green">Giữa kỳ</Tag>
-        ),
+          <Tag color="default">Khác</Tag>
+        );
+      },
     },
     {
       title: "Trạng thái",
@@ -1022,7 +1032,7 @@ const exportToPDF = async () => {
     <Input type="number" placeholder="VD: 90" />
   </Form.Item>
 
-  <Form.Item name="examType" label="Loại bài thi" initialValue="midterm">
+  <Form.Item name="examType" label="Loại bài thi" initialValue={exam?.type || "midterm"}>
     <Select>
       <Option value="midterm">Giữa kỳ</Option>
       <Option value="final">Cuối kỳ</Option>
