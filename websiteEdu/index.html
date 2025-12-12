@@ -7,12 +7,161 @@
     <meta name="description" content="Hệ thống quản lý trường học toàn diện cho học sinh, giáo viên và quản trị viên" />
     <meta name="author" content="EduManage Team" />
 
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+    <link rel="shortcut icon" href="/favicon.png" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
     <meta property="og:title" content="Hệ thống quản lý trường học - EduManage" />
     <meta property="og:description" content="Hệ thống quản lý trường học toàn diện cho học sinh, giáo viên và quản trị viên" />
-    <meta property="og:type" content="website" />
-   
+    <meta property="og:image" content="/favicon.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:url" content="" />
 
+    <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Hệ thống quản lý trường học - EduManage" />
+    <meta name="twitter:description" content="Hệ thống quản lý trường học toàn diện cho học sinh, giáo viên và quản trị viên" />
+    <meta name="twitter:image" content="/favicon.png" />
+
+    <!-- Script để cập nhật favicon và meta tags từ settings sau khi load -->
+    <script>
+      // Cập nhật favicon và meta tags từ settings sau khi app load
+      (function() {
+        // Hàm cập nhật favicon với logo trường học
+        function updateFavicon(logoUrl) {
+          if (!logoUrl) {
+            console.log('[Logo Loader] updateFavicon: Không có logoUrl');
+            return;
+          }
+          
+          console.log('[Logo Loader] updateFavicon: Cập nhật favicon với logo trường học:', logoUrl);
+          
+          // Thêm timestamp để tránh cache
+          const timestamp = new Date().getTime();
+          const logoUrlWithCache = logoUrl + (logoUrl.includes('?') ? '&' : '?') + '_t=' + timestamp;
+          
+          // Xóa các favicon cũ
+          const oldIcons = document.querySelectorAll("link[rel='icon'], link[rel='shortcut icon'], link[rel='apple-touch-icon']");
+          oldIcons.forEach(icon => icon.remove());
+          
+          // Tạo link mới cho favicon với logo trường học
+          const link = document.createElement("link");
+          link.rel = "icon";
+          link.type = "image/png";
+          link.href = logoUrlWithCache;
+          document.head.appendChild(link);
+          
+          // Cập nhật shortcut icon
+          const shortcutLink = document.createElement("link");
+          shortcutLink.rel = "shortcut icon";
+          shortcutLink.href = logoUrlWithCache;
+          document.head.appendChild(shortcutLink);
+          
+          // Cập nhật apple-touch-icon
+          const appleLink = document.createElement("link");
+          appleLink.rel = "apple-touch-icon";
+          appleLink.href = logoUrlWithCache;
+          document.head.appendChild(appleLink);
+          
+          console.log('[Logo Loader] updateFavicon: Đã cập nhật favicon với logo trường học');
+        }
+        
+        // Hàm cập nhật meta tags
+        function updateMetaTags(logoUrl, schoolName) {
+          if (!logoUrl) return;
+          
+          // Cập nhật Open Graph image
+          let ogImage = document.querySelector("meta[property='og:image']");
+          if (!ogImage) {
+            ogImage = document.createElement("meta");
+            ogImage.setAttribute("property", "og:image");
+            document.head.appendChild(ogImage);
+          }
+          ogImage.setAttribute("content", logoUrl);
+          
+          // Cập nhật Twitter image
+          let twitterImage = document.querySelector("meta[name='twitter:image']");
+          if (!twitterImage) {
+            twitterImage = document.createElement("meta");
+            twitterImage.setAttribute("name", "twitter:image");
+            document.head.appendChild(twitterImage);
+          }
+          twitterImage.setAttribute("content", logoUrl);
+          
+          // Cập nhật title nếu có tên trường
+          if (schoolName) {
+            const title = document.querySelector("title");
+            if (title) {
+              title.textContent = schoolName + " - Hệ thống quản lý trường học";
+            }
+            
+            // Cập nhật OG title
+            let ogTitle = document.querySelector("meta[property='og:title']");
+            if (!ogTitle) {
+              ogTitle = document.createElement("meta");
+              ogTitle.setAttribute("property", "og:title");
+              document.head.appendChild(ogTitle);
+            }
+            ogTitle.setAttribute("content", schoolName + " - Hệ thống quản lý trường học");
+          }
+        }
+        
+        // Lấy thông tin từ settings API
+        async function loadSchoolLogo() {
+          try {
+            // Tự động detect API URL từ origin hoặc dùng mặc định
+            const origin = window.location.origin;
+            // Thử các URL có thể có
+            const possibleUrls = [
+              origin + '/api',  // Nếu API ở cùng domain
+              'http://localhost:3000/api',  // Development mặc định
+              'https://api.edumanage.com/api'  // Production (nếu có)
+            ];
+            
+            let apiUrl = possibleUrls[0];
+            // Nếu có window.API_BASE_URL từ main.tsx thì dùng
+            if (window.API_BASE_URL) {
+              apiUrl = window.API_BASE_URL;
+            }
+            
+            const response = await fetch(apiUrl + '/settings/public');
+            if (response.ok) {
+              const data = await response.json();
+              console.log('[Logo Loader] Data từ API:', data);
+              
+              // Lấy logo trường học từ schoolLogo.url (logo lớn, không phải icon)
+              // schoolLogo có cấu trúc: { url: string, publicId: string, format: string }
+              if (data.schoolLogo && data.schoolLogo.url) {
+                const logoUrl = data.schoolLogo.url;
+                console.log('[Logo Loader] Đang cập nhật với logo trường học:', logoUrl);
+                
+                // Cập nhật favicon và meta tags với logo trường học
+                updateFavicon(logoUrl);
+                updateMetaTags(logoUrl, data.schoolName);
+              } else {
+                console.log('[Logo Loader] Không có logo trường học trong settings');
+              }
+            } else {
+              console.log('[Logo Loader] API response không OK:', response.status);
+            }
+          } catch (error) {
+            // Silently fail - sử dụng favicon mặc định
+            console.debug('Không thể load logo trường học từ settings:', error);
+          }
+        }
+        
+        // Chờ DOM load xong rồi mới gọi API
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', loadSchoolLogo);
+        } else {
+          loadSchoolLogo();
+        }
+      })();
+    </script>
     
   </head>
 

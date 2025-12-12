@@ -44,6 +44,9 @@ const replyRoutes = require('./notification/replyRoutes');
 const conductRoutes = require('./conduct/conductRoutes');
 const conductConfigRoutes = require('./conduct/conductConfigRoutes');
 const schoolYearRoutes = require('./schoolYearRoutes');
+// ✅ Sử dụng AI module mới
+const aiRouter = require('../ai/ai.router');
+// Giữ backward compatibility với route cũ
 const aiChatRoutes = require('./aiChatRoutes');
 const permissionRoutes = require('./permissionRoutes');
 const auditLogRoutes = require('./auditLogRoutes');
@@ -97,7 +100,8 @@ const routers = [
     { group: 'conducts', router: conductRoutes, description: 'Quản lý hạnh kiểm' },
     { group: 'conduct-config', router: conductConfigRoutes, description: 'Cấu hình hạnh kiểm' },
     { group: 'school-years', router: schoolYearRoutes, description: 'Quản lý năm học' },
-    { group: 'ai-chat', router: aiChatRoutes, description: 'AI Chat hỗ trợ' },
+    { group: 'ai', router: aiRouter, description: 'AI Chat hỗ trợ (Module mới)' },
+    { group: 'ai-chat', router: aiChatRoutes, description: 'AI Chat hỗ trợ (Legacy - sẽ deprecated)' },
     { group: 'permissions', router: permissionRoutes, description: 'Quản lý phân quyền' },
     { group: 'audit-logs', router: auditLogRoutes, description: 'Log hoạt động hệ thống' },
     { group: 'email-logs', router: emailLogRoutes, description: 'Lịch sử email' },

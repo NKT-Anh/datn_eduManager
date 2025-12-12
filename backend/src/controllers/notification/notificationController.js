@@ -336,6 +336,7 @@ exports.createNotification = async (req, res) => {
     let finalRecipientRole = null;
     let finalRecipientId = null;
     let finalClassId = null;
+    let finalDepartmentId = null; // ✅ Cho QLBM gửi cho giáo viên trong tổ
     
     // ✅ Xác định quyền - ƯU TIÊN BGH và Admin TRƯỚC
     const teacherFlags = req.user.teacherFlags || {};
@@ -347,34 +348,91 @@ exports.createNotification = async (req, res) => {
       isSubjectTeacher,
     } = buildTeacherContext(role, teacherFlags);
     const isAdmin = role === 'admin';
-    const canSendAll = isAdmin || (isTeacherRole && (isLeader || isDepartmentHead));
-    const isGVCN = isTeacherRole && isHomeroom && !canSendAll;
-    const isGVBM = isTeacherRole && isSubjectTeacher && !canSendAll;
+    const isBGH = isTeacherRole && isLeader;
+    const isQLBM = isTeacherRole && isDepartmentHead && !isBGH;
+    const isGVCN = isTeacherRole && isHomeroom && !isBGH && !isQLBM;
+    const isGVBM = isTeacherRole && isSubjectTeacher && !isBGH && !isQLBM && !isGVCN;
     
     // ✅ Kiểm tra quyền gửi theo recipientType
-    // BGH và Admin LUÔN được phép gửi all hoặc role, bỏ qua validation
-    if (canSendAll) {
-      // BGH và Admin được phép gửi tất cả, không cần kiểm tra thêm
-      console.log('✅ [Backend] BGH/Admin được phép gửi thông báo');
-    } else if (isGVCN || isGVBM) {
-      // GVCN và GVBM (KHÔNG phải BGH): KHÔNG được gửi toàn trường (all) hoặc theo role
+    // Admin và BGH: được phép gửi tất cả
+    if (isAdmin || isBGH) {
+      console.log('✅ [Backend] Admin/BGH được phép gửi thông báo tất cả');
+    } else if (isQLBM) {
+      // QLBM: Quyền như GVBM + thêm quyền gửi cho các giáo viên trong tổ bộ môn
+      // Có thể gửi: class (lớp đang dạy), user (giáo viên trong tổ), role='teacher' (chỉ giáo viên trong tổ)
+      if (finalRecipientType === 'all') {
+        return res.status(403).json({ error: 'Bạn không có quyền gửi thông báo toàn trường' });
+      }
+      // QLBM có thể gửi role='teacher' nhưng chỉ cho giáo viên trong tổ (sẽ kiểm tra sau)
+      if (finalRecipientType === 'role' && recipientRole !== 'teacher') {
+        return res.status(403).json({ error: 'Bạn chỉ được gửi thông báo cho giáo viên trong tổ bộ môn' });
+      }
+    } else if (isGVCN) {
+      // GVCN: Quyền như GVBM + thêm quyền gửi cho lớp chủ nhiệm
+      // Có thể gửi: class (lớp đang dạy + lớp chủ nhiệm), user
       if (finalRecipientType === 'all' || finalRecipientType === 'role') {
         return res.status(403).json({ error: 'Bạn không có quyền gửi thông báo toàn trường hoặc theo vai trò' });
       }
-      
-      // Chỉ được gửi class hoặc user
       if (finalRecipientType !== 'class' && finalRecipientType !== 'user') {
-        finalRecipientType = 'class'; // Mặc định là class nếu không chỉ định
+        finalRecipientType = 'class'; // Mặc định là class
+      }
+    } else if (isGVBM) {
+      // GVBM: Chỉ được gửi cho lớp đang giảng dạy
+      // Có thể gửi: class (lớp đang dạy), user
+      if (finalRecipientType === 'all' || finalRecipientType === 'role') {
+        return res.status(403).json({ error: 'Bạn không có quyền gửi thông báo toàn trường hoặc theo vai trò' });
+      }
+      if (finalRecipientType !== 'class' && finalRecipientType !== 'user') {
+        finalRecipientType = 'class'; // Mặc định là class
       }
     }
     
     // ✅ Xử lý theo recipientType
     if (finalRecipientType === 'role') {
       finalRecipientRole = recipientRole;
+      
+      // ✅ QLBM: Chỉ được gửi cho giáo viên trong tổ bộ môn
+      if (isQLBM && finalRecipientRole === 'teacher') {
+        const teacher = await Teacher.findOne({ accountId: req.user.accountId })
+          .select('departmentId')
+          .lean();
+        if (!teacher || !teacher.departmentId) {
+          return res.status(403).json({ error: 'Bạn không thuộc tổ bộ môn nào' });
+        }
+        // Kiểm tra sẽ được thực hiện khi gửi thông báo (chỉ gửi cho giáo viên trong tổ)
+        // Không cần validate ở đây vì sẽ filter khi gửi
+      }
     } else if (finalRecipientType === 'user') {
       finalRecipientId = recipientId;
       if (!finalRecipientId) {
         return res.status(400).json({ error: 'Cần nhập ID người nhận' });
+      }
+      
+      // ✅ QLBM: Kiểm tra nếu gửi cho giáo viên thì phải trong tổ bộ môn
+      if (isQLBM) {
+        const teacher = await Teacher.findOne({ accountId: req.user.accountId })
+          .select('departmentId')
+          .lean();
+        if (!teacher || !teacher.departmentId) {
+          return res.status(403).json({ error: 'Bạn không thuộc tổ bộ môn nào' });
+        }
+        // Lấy Account của recipient
+        const Account = require('../../models/user/account');
+        const recipientAccount = await Account.findById(finalRecipientId)
+          .select('_id')
+          .lean();
+        if (!recipientAccount) {
+          return res.status(404).json({ error: 'Không tìm thấy người nhận' });
+        }
+        // Kiểm tra recipient có phải giáo viên trong tổ không
+        const recipientTeacher = await Teacher.findOne({ 
+          accountId: finalRecipientId,
+          departmentId: teacher.departmentId,
+          isDeleted: { $ne: true }
+        }).lean();
+        if (!recipientTeacher) {
+          return res.status(403).json({ error: 'Bạn chỉ được gửi thông báo cho giáo viên trong tổ bộ môn của mình' });
+        }
       }
     } else if (finalRecipientType === 'class') {
       finalClassId = classId;
@@ -383,29 +441,48 @@ exports.createNotification = async (req, res) => {
       }
       
       // ✅ Kiểm tra quyền gửi cho lớp
+      const teacher = await Teacher.findOne({ accountId: req.user.accountId })
+        .select('_id homeroomClassIds currentHomeroomClassId departmentId')
+        .lean();
+      if (!teacher) {
+        return res.status(403).json({ error: 'Không tìm thấy thông tin giáo viên' });
+      }
+      
       if (isGVCN) {
-        // GVCN: Chỉ được gửi cho lớp chủ nhiệm
-        const teacher = await Teacher.findOne({ accountId: req.user.accountId })
-          .populate('homeroomClassIds');
-        if (!teacher || !teacher.homeroomClassIds || 
-            !teacher.homeroomClassIds.some(c => String(c._id || c) === String(finalClassId))) {
-          return res.status(403).json({ error: 'Bạn chỉ được gửi thông báo cho lớp chủ nhiệm của mình' });
+        // GVCN: Được gửi cho lớp đang dạy + lớp chủ nhiệm
+        const TeachingAssignment = require('../../models/subject/teachingAssignment');
+        const currentYear = await getCurrentSchoolYear();
+        
+        // Kiểm tra lớp chủ nhiệm
+        const isHomeroomClass = teacher.currentHomeroomClassId && 
+          String(teacher.currentHomeroomClassId) === String(finalClassId);
+        const isInHomeroomHistory = teacher.homeroomClassIds && 
+          teacher.homeroomClassIds.some(c => String(c) === String(finalClassId));
+        
+        // Kiểm tra lớp đang dạy
+        const assignments = await TeachingAssignment.find({
+          teacherId: teacher._id,
+          classId: finalClassId,
+          year: currentYear || new Date().getFullYear(),
+          isDeleted: { $ne: true }
+        }).lean();
+        
+        const isTeachingClass = assignments && assignments.length > 0;
+        
+        if (!isHomeroomClass && !isInHomeroomHistory && !isTeachingClass) {
+          return res.status(403).json({ 
+            error: 'Bạn chỉ được gửi thông báo cho lớp đang dạy hoặc lớp chủ nhiệm của mình' 
+          });
         }
-      } else if (isGVBM) {
-        // GVBM: Chỉ được gửi cho lớp đang dạy
-        const teacher = await Teacher.findOne({ accountId: req.user.accountId })
-          .select('_id')
-          .lean();
-        if (!teacher) {
-          return res.status(403).json({ error: 'Không tìm thấy thông tin giáo viên' });
-        }
-        // ✅ Lấy danh sách lớp đang dạy từ TeachingAssignment
+      } else if (isGVBM || isQLBM) {
+        // GVBM và QLBM: Chỉ được gửi cho lớp đang dạy
         const TeachingAssignment = require('../../models/subject/teachingAssignment');
         const currentYear = await getCurrentSchoolYear();
         const assignments = await TeachingAssignment.find({
           teacherId: teacher._id,
           classId: finalClassId,
-          year: currentYear || new Date().getFullYear()
+          year: currentYear || new Date().getFullYear(),
+          isDeleted: { $ne: true }
         }).lean();
         
         if (!assignments || assignments.length === 0) {
@@ -426,6 +503,7 @@ exports.createNotification = async (req, res) => {
       recipientRole: finalRecipientRole,
       recipientId: finalRecipientId,
       classId: finalClassId,
+      departmentId: finalDepartmentId, // ✅ Lưu departmentId cho QLBM
       createdBy: req.user.accountId,
       attachments: attachments || [] // ✅ Tệp đính kèm
     });

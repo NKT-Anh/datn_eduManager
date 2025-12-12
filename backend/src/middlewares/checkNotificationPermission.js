@@ -34,26 +34,60 @@ module.exports = (action = 'create') => {
         const isQLBM = req.user.teacherFlags?.isDepartmentHead && !isBGH; // BGH có thể có isDepartmentHead nhưng vẫn được phép
         const isGVBM = !req.user.teacherFlags?.isHomeroom && !isBGH && !req.user.teacherFlags?.isDepartmentHead;
         
-        // ✅ BGH và QLBM: Được phép gửi tất cả (all, role, class, user)
-        if (isBGH || isQLBM) {
+        // ✅ BGH: Được phép gửi tất cả (all, role, class, user)
+        if (isBGH) {
           return next();
         }
         
         // ✅ Kiểm tra recipientType nếu có trong body
         const recipientType = req.body.recipientType || 'all';
         
-        // ✅ GVCN và GVBM (KHÔNG phải BGH, KHÔNG phải QLBM): Không được gửi all/role, chỉ được gửi class/user
-        if ((isGVCN || isGVBM) && (recipientType === 'all' || recipientType === 'role')) {
-          return res.status(403).json({ 
-            error: 'Bạn không có quyền gửi thông báo toàn trường hoặc theo vai trò' 
-          });
+        // ✅ QLBM: Quyền như GVBM + thêm quyền gửi cho giáo viên trong tổ bộ môn
+        // Có thể gửi: class (lớp đang dạy), user (giáo viên trong tổ), role='teacher' (chỉ giáo viên trong tổ)
+        if (isQLBM) {
+          if (recipientType === 'all') {
+            return res.status(403).json({ 
+              error: 'Bạn không có quyền gửi thông báo toàn trường' 
+            });
+          }
+          if (recipientType === 'role' && req.body.recipientRole !== 'teacher') {
+            return res.status(403).json({ 
+              error: 'Bạn chỉ được gửi thông báo cho giáo viên trong tổ bộ môn' 
+            });
+          }
+          return next(); // QLBM có thể gửi class, user, hoặc role='teacher'
         }
         
-        // ✅ GVCN và GVBM: Chỉ được gửi class hoặc user
-        if ((isGVCN || isGVBM) && recipientType !== 'class' && recipientType !== 'user') {
-          return res.status(400).json({ 
-            error: 'Bạn chỉ được gửi thông báo cho lớp học hoặc người cụ thể' 
-          });
+        // ✅ GVCN: Quyền như GVBM + thêm quyền gửi cho lớp chủ nhiệm
+        // Có thể gửi: class (lớp đang dạy + lớp chủ nhiệm), user
+        if (isGVCN) {
+          if (recipientType === 'all' || recipientType === 'role') {
+            return res.status(403).json({ 
+              error: 'Bạn không có quyền gửi thông báo toàn trường hoặc theo vai trò' 
+            });
+          }
+          if (recipientType !== 'class' && recipientType !== 'user') {
+            return res.status(400).json({ 
+              error: 'Bạn chỉ được gửi thông báo cho lớp học hoặc người cụ thể' 
+            });
+          }
+          return next();
+        }
+        
+        // ✅ GVBM: Chỉ được gửi cho lớp đang giảng dạy
+        // Có thể gửi: class (lớp đang dạy), user
+        if (isGVBM) {
+          if (recipientType === 'all' || recipientType === 'role') {
+            return res.status(403).json({ 
+              error: 'Bạn không có quyền gửi thông báo toàn trường hoặc theo vai trò' 
+            });
+          }
+          if (recipientType !== 'class' && recipientType !== 'user') {
+            return res.status(400).json({ 
+              error: 'Bạn chỉ được gửi thông báo cho lớp học hoặc người cụ thể' 
+            });
+          }
+          return next();
         }
         
         // ✅ Tất cả giáo viên đều có quyền tạo

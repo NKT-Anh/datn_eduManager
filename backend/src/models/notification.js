@@ -51,6 +51,9 @@ const notificationSchema = new mongoose.Schema({
   // Nếu gửi riêng người cụ thể
   recipientId: { type: mongoose.Schema.Types.ObjectId, ref: 'Account' },
 
+  // ✅ Nếu QLBM gửi cho giáo viên trong tổ bộ môn (recipientType='role', recipientRole='teacher')
+  departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', default: null },
+
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', required: true },
 
   // ✅ Track ai đã đọc thông báo

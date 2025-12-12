@@ -7,8 +7,154 @@ const { Exam, ExamSchedule, ExamStudent } = require('../models/exam/examIndex');
 const RoomAssignment = require('../models/exam/roomAssignment');
 const TeachingAssignment = require('../models/subject/teachingAssignment');
 const Schedule = require('../models/subject/schedule');
-const { chatWithAI, isAvailable: isOpenAIAvailable } = require('../services/openaiService');
+// ✅ Sử dụng AI service mới với function calling
+const aiService = require('../ai/ai.service');
 const { getCurrentSchoolYear } = require('../utils/schoolYearHelper');
+
+/* =========================================================
+   🔐 KIỂM TRA QUYỀN HẠN CHO CHATBOT
+========================================================= */
+
+/**
+ * Kiểm tra xem role có quyền thực hiện hành động không
+ */
+function hasPermissionForAction(role, teacherFlags, action) {
+  // Admin có tất cả quyền
+  if (role === 'admin') {
+    return true;
+  }
+
+  // BGH (isLeader) - Xem tất cả, không được tạo/sửa/xóa
+  if (role === 'bgh' || teacherFlags?.isLeader) {
+    // BGH chỉ có quyền xem, không có quyền tạo/sửa/xóa
+    const readOnlyActions = ['view', 'xem', 'tìm', 'tra cứu', 'hiển thị', 'danh sách'];
+    const writeActions = ['tạo', 'sửa', 'xóa', 'thêm', 'cập nhật', 'xóa', 'delete', 'create', 'update'];
+    
+    if (writeActions.some(w => action.includes(w))) {
+      return false; // BGH không có quyền tạo/sửa/xóa
+    }
+    return true; // BGH có quyền xem
+  }
+
+  // QLBM (isDepartmentHead) - Quản lý bộ môn
+  if (role === 'qlbm' || teacherFlags?.isDepartmentHead) {
+    // QLBM có quyền quản lý giáo viên trong tổ, môn học trong bộ môn
+    const allowedActions = ['xem', 'tìm', 'tra cứu', 'quản lý', 'phân công', 'bộ môn', 'tổ', 'giáo viên trong tổ'];
+    return allowedActions.some(a => action.includes(a)) || action.includes('thông báo');
+  }
+
+  // GVCN (isHomeroom) - Quản lý lớp chủ nhiệm
+  if (role === 'gvcn' || teacherFlags?.isHomeroom) {
+    // GVCN có quyền quản lý lớp chủ nhiệm, gửi thông báo cho lớp
+    const allowedActions = ['xem', 'tìm', 'tra cứu', 'lớp chủ nhiệm', 'học sinh', 'thông báo', 'nhập điểm', 'lớp dạy'];
+    return allowedActions.some(a => action.includes(a));
+  }
+
+  // GVBM - Giáo viên bộ môn
+  if (role === 'gvbm' || role === 'teacher') {
+    // GVBM có quyền xem lớp đang dạy, nhập điểm, thời khóa biểu
+    const allowedActions = ['xem', 'tìm', 'tra cứu', 'lớp dạy', 'nhập điểm', 'thời khóa biểu', 'lịch dạy'];
+    return allowedActions.some(a => action.includes(a));
+  }
+
+  // Student - Chỉ xem thông tin của bản thân
+  if (role === 'student') {
+    const allowedActions = ['xem', 'tìm', 'email', 'mã số', 'lịch thi', 'phòng học', 'điểm', 'của tôi', 'bản thân'];
+    const restrictedActions = ['tất cả', 'tất cả học sinh', 'tất cả giáo viên', 'tạo', 'sửa', 'xóa'];
+    
+    // Nếu có từ khóa bị hạn chế, không cho phép
+    if (restrictedActions.some(r => action.includes(r))) {
+      return false;
+    }
+    return allowedActions.some(a => action.includes(a));
+  }
+
+  return false;
+}
+
+/**
+ * Kiểm tra quyền trước khi trả lời câu hỏi
+ */
+function checkQueryPermission(query, role, teacherFlags) {
+  const queryLower = query.toLowerCase();
+  
+  // Các hành động cần kiểm tra quyền
+  const restrictedActions = {
+    // Tạo/Sửa/Xóa - Chỉ Admin
+    'tạo': ['admin'],
+    'sửa': ['admin'],
+    'xóa': ['admin'],
+    'xóa': ['admin'],
+    'thêm': ['admin'],
+    'cập nhật': ['admin'],
+    'create': ['admin'],
+    'update': ['admin'],
+    'delete': ['admin'],
+    
+    // Tìm tất cả học sinh/giáo viên - Admin, BGH, QLBM
+    'tất cả học sinh': ['admin', 'bgh'],
+    'tất cả giáo viên': ['admin', 'bgh', 'qlbm'],
+    'danh sách học sinh': ['admin', 'bgh', 'gvcn'],
+    'danh sách giáo viên': ['admin', 'bgh', 'qlbm'],
+    
+    // Phân phòng thi - Chỉ Admin
+    'phân phòng thi': ['admin'],
+    'chia phòng': ['admin'],
+    'gợi ý phòng': ['admin'],
+    
+    // Quản lý hệ thống - Chỉ Admin
+    'tạo học kỳ': ['admin'],
+    'quản lý năm học': ['admin'],
+    'cài đặt hệ thống': ['admin'],
+  };
+
+  // Kiểm tra từng hành động bị hạn chế
+  for (const [action, allowedRoles] of Object.entries(restrictedActions)) {
+    if (queryLower.includes(action)) {
+      // Kiểm tra xem role hiện tại có trong danh sách được phép không
+      const effectiveRole = getEffectiveRole(role, teacherFlags);
+      if (!allowedRoles.includes(effectiveRole) && !allowedRoles.includes('admin')) {
+        return {
+          allowed: false,
+          message: `Bạn không có quyền thực hiện hành động này. Chỉ ${allowedRoles.join(', ')} mới có quyền.`
+        };
+      }
+    }
+  }
+
+  return { allowed: true };
+}
+
+/**
+ * Lấy role thực tế dựa trên teacherFlags
+ */
+function getEffectiveRole(role, teacherFlags = {}) {
+  if (role === 'teacher') {
+    if (teacherFlags?.isLeader) return 'bgh';
+    if (teacherFlags?.isDepartmentHead) return 'qlbm';
+    if (teacherFlags?.isHomeroom) return 'gvcn';
+    return 'gvbm';
+  }
+  return role;
+}
+
+/**
+ * Lấy route path dựa trên effectiveRole
+ */
+function getRoutePath(effectiveRole, route) {
+  const routeMap = {
+    'gvbm': '/gvbm',
+    'gvcn': '/gvcn',
+    'qlbm': '/qlbm',
+    'bgh': '/bgh',
+    'admin': '/admin',
+    'student': '/student',
+    'teacher': '/teacher' // Fallback nếu không xác định được
+  };
+  
+  const prefix = routeMap[effectiveRole] || '/teacher';
+  return `${prefix}${route}`;
+}
 
 /* =========================================================
    🤖 AI CHAT CONTROLLER
@@ -20,7 +166,7 @@ const { getCurrentSchoolYear } = require('../utils/schoolYearHelper');
  */
 exports.chat = async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message, conversationHistory } = req.body; // ✅ Thêm conversationHistory
     const user = req.user; // Từ authMiddleware
     const { role, accountId } = user;
 
@@ -31,32 +177,18 @@ exports.chat = async (req, res) => {
     const query = message.toLowerCase().trim();
     let response = null;
 
-    // Xử lý câu chào hỏi chung cho tất cả roles
-    if (isGreeting(query)) {
-      response = handleGreeting(role);
-    }
-    // Phân loại và xử lý theo role
-    else if (role === 'student') {
-      response = await handleStudentQuery(query, user);
-    } else if (role === 'teacher' || role === 'gvbm' || role === 'gvcn') {
-      response = await handleTeacherQuery(query, user);
-    } else if (role === 'admin' || role === 'bgh' || role === 'qlbm') {
-      response = await handleAdminQuery(query, user);
-    } else {
-      response = {
-        text: 'Xin lỗi, tôi chỉ hỗ trợ học sinh, giáo viên và admin.',
-        type: 'text'
-      };
-    }
+    // ✅ Xác định role thực tế dựa trên teacherFlags
+    const teacherFlags = user.teacherFlags || {};
+    const effectiveRole = getEffectiveRole(role, teacherFlags);
 
-    // Nếu không tìm thấy intent, sử dụng OpenAI nếu có
-    if (!response) {
-      if (isOpenAIAvailable()) {
-        try {
-          // Lấy thông tin context chi tiết để AI hiểu rõ hơn
-          const account = await Account.findById(user.accountId);
-          let context = {};
-          
+    // ✅ ƯU TIÊN: Sử dụng AI Service để trả lời tự nhiên
+    // Chỉ fallback về rule-based khi AI không available hoặc có lỗi nghiêm trọng
+    if (aiService.isAvailable()) {
+      try {
+        // Lấy thông tin context chi tiết để AI hiểu rõ hơn
+        const account = await Account.findById(user.accountId);
+        let context = {};
+        
           if (role === 'student') {
             const student = await Student.findOne({ accountId: account?._id })
               .populate('classId', 'className grade');
@@ -65,67 +197,130 @@ exports.chat = async (req, res) => {
               context.className = student.classId?.className;
               context.grade = student.grade || student.classId?.grade;
               context.studentCode = student.studentCode;
+              context.studentId = student._id.toString(); // ✅ Thêm studentId để dùng trong getMyExamSchedule
             }
-          } else if (role === 'teacher' || role === 'gvbm' || role === 'gvcn') {
-            const teacher = await Teacher.findOne({ accountId: account?._id })
-              .populate('subjects.subjectId', 'name');
+          } else if (effectiveRole === 'teacher' || effectiveRole === 'gvbm' || effectiveRole === 'gvcn' || effectiveRole === 'bgh' || effectiveRole === 'qlbm') {
+          const teacher = await Teacher.findOne({ accountId: account?._id })
+            .populate('subjects.subjectId', 'name');
+          
+          if (teacher) {
+            context.userName = teacher.name;
             
-            if (teacher) {
-              context.userName = teacher.name;
+            // ✅ Lấy teacherFlags từ req.user (đã được set trong authMiddleware)
+            const teacherFlags = user.teacherFlags || {};
+            context.isLeader = teacherFlags.isLeader || false;
+            context.isDepartmentHead = teacherFlags.isDepartmentHead || false;
+            context.isHomeroom = teacherFlags.isHomeroom || false;
+            context.role = effectiveRole; // Role thực tế (bgh, qlbm, gvcn, gvbm)
+            
+            // ✅ Lấy các môn giáo viên đang dạy
+            const currentYear = await getCurrentSchoolYear() || '2025-2026';
+            const now = new Date();
+            const month = now.getMonth() + 1;
+            const semester = (month >= 8 || month <= 1) ? '1' : '2';
+            
+            const assignments = await TeachingAssignment.find({
+              teacherId: teacher._id,
+              year: currentYear,
+              semester: semester
+            })
+              .populate('subjectId', 'name')
+              .populate('classId', 'className');
+            
+            if (assignments.length > 0) {
+              const subjectsSet = new Set();
+              const classesSet = new Set();
               
-              // ✅ Lấy các môn giáo viên đang dạy
-              const currentYear = await getCurrentSchoolYear() || '2025-2026';
-              const now = new Date();
-              const month = now.getMonth() + 1;
-              const semester = (month >= 8 || month <= 1) ? '1' : '2';
+              assignments.forEach(ass => {
+                if (ass.subjectId?.name) subjectsSet.add(ass.subjectId.name);
+                if (ass.classId?.className) classesSet.add(ass.classId.className);
+              });
               
-              const assignments = await TeachingAssignment.find({
-                teacherId: teacher._id,
-                year: currentYear,
-                semester: semester
-              })
-                .populate('subjectId', 'name')
-                .populate('classId', 'className');
-              
-              if (assignments.length > 0) {
-                const subjectsSet = new Set();
-                const classesSet = new Set();
-                
-                assignments.forEach(ass => {
-                  if (ass.subjectId?.name) subjectsSet.add(ass.subjectId.name);
-                  if (ass.classId?.className) classesSet.add(ass.classId.className);
-                });
-                
-                context.subjects = Array.from(subjectsSet);
-                context.classes = Array.from(classesSet);
+              context.subjects = Array.from(subjectsSet);
+              context.classes = Array.from(classesSet);
+            }
+            
+            // ✅ Lấy lớp chủ nhiệm nếu là GVCN
+            if (teacherFlags.isHomeroom && teacherFlags.currentHomeroomClassId) {
+              const Class = require('../models/class/class');
+              const homeroomClass = await Class.findById(teacherFlags.currentHomeroomClassId)
+                .select('className grade');
+              if (homeroomClass) {
+                context.homeroomClass = homeroomClass.className;
+                context.homeroomGrade = homeroomClass.grade;
               }
             }
-          } else if (role === 'admin' || role === 'bgh' || role === 'qlbm') {
-            const adminUser = await Admin.findOne({ accountId: account?._id });
-            if (adminUser) {
-              context.userName = adminUser.name;
-            }
           }
+        } else if (effectiveRole === 'admin') {
+          const adminUser = await Admin.findOne({ accountId: account?._id });
+          if (adminUser) {
+            context.userName = adminUser.name;
+          }
+        }
 
-          const aiResponse = await chatWithAI(message, role, context);
+        // ✅ Sử dụng AI Service mới với function calling
+        // userId để lưu memory
+        const userId = user.uid || accountId?.toString();
+        
+        // ✅ Convert conversationHistory format nếu cần
+        const formattedHistory = (conversationHistory || []).map(msg => ({
+          role: msg.role || (msg.isUser ? 'user' : 'assistant'),
+          text: msg.text || msg.content || msg.message,
+          isUser: msg.isUser
+        }));
+
+        const aiResponse = await aiService.chat(
+          message,
+          effectiveRole,
+          context,
+          formattedHistory,
+          userId
+        );
+
+        // ✅ AI Service trả về object { text, type, toolCalls? }
+        response = aiResponse;
+      } catch (error) {
+        console.error('❌ [AI Service Error]:', error);
+        
+        // ✅ Xử lý lỗi quota hoặc rate limit - fallback về rule-based
+        if (error.status === 429 || error.code === 'insufficient_quota' || error.code === 'rate_limit_exceeded') {
+          console.log('⚠️ [AI] Quota exceeded, falling back to rule-based');
+          // Fallback về rule-based
+          response = null; // Để tiếp tục xử lý rule-based
+        } else {
+          // Lỗi khác - fallback về rule-based
+          console.log('⚠️ [AI] Error occurred, falling back to rule-based');
+          response = null; // Để tiếp tục xử lý rule-based
+        }
+      }
+    }
+
+    // ✅ FALLBACK: Sử dụng rule-based nếu AI không available hoặc có lỗi
+    if (!response) {
+      // Xử lý câu chào hỏi chung cho tất cả roles
+      if (isGreeting(query)) {
+        response = handleGreeting(effectiveRole);
+      }
+      
+      // Phân loại và xử lý theo role (rule-based fallback)
+      if (!response) {
+        if (effectiveRole === 'student') {
+          response = await handleStudentQuery(query, user);
+        } else if (effectiveRole === 'teacher' || effectiveRole === 'gvbm' || effectiveRole === 'gvcn') {
+          response = await handleTeacherQuery(query, user, effectiveRole, teacherFlags);
+        } else if (effectiveRole === 'admin' || effectiveRole === 'bgh' || effectiveRole === 'qlbm') {
+          response = await handleAdminQuery(query, user, effectiveRole, teacherFlags);
+        } else {
           response = {
-            text: aiResponse,
-            type: 'text'
-          };
-        } catch (error) {
-          console.error('❌ [OpenAI Fallback Error]:', error);
-          // Fallback về câu trả lời mặc định nếu OpenAI lỗi
-          response = {
-            text: 'Xin lỗi, tôi chưa hiểu câu hỏi của bạn. Vui lòng thử lại với câu hỏi khác.\n\n💡 Bạn có thể hỏi:\n- Tìm học sinh, giáo viên\n- Xem lịch thi, thời khóa biểu\n- Xem điểm số\n- Hướng dẫn sử dụng hệ thống',
+            text: 'Xin lỗi, tôi chỉ hỗ trợ học sinh, giáo viên và admin.',
             type: 'text'
           };
         }
-      } else {
-        // Nếu không có OpenAI, trả về câu trả lời mặc định
-        response = {
-          text: 'Xin lỗi, tôi chưa hiểu câu hỏi của bạn. Vui lòng thử lại với câu hỏi khác.\n\n💡 Bạn có thể hỏi:\n- Tìm học sinh, giáo viên\n- Xem lịch thi, thời khóa biểu\n- Xem điểm số\n- Hướng dẫn sử dụng hệ thống',
-          type: 'text'
-        };
+      }
+
+      // Nếu vẫn không có response, trả về thông báo mặc định theo role
+      if (!response) {
+        response = getDefaultErrorMessage(effectiveRole);
       }
     }
 
@@ -138,6 +333,41 @@ exports.chat = async (req, res) => {
     });
   }
 };
+
+/* =========================================================
+   💬 THÔNG BÁO LỖI MẶC ĐỊNH THEO ROLE
+========================================================= */
+
+function getDefaultErrorMessage(role) {
+  const messages = {
+    student: {
+      text: 'Xin lỗi, tôi chưa hiểu câu hỏi của bạn. Vui lòng thử lại với câu hỏi khác.\n\n💡 Bạn có thể hỏi:\n- "Lịch học hôm nay" - Xem lịch học hôm nay\n- "Thời khóa biểu" - Xem thời khóa biểu\n- "Lịch thi" - Xem lịch thi và phòng thi\n- "Điểm số" - Xem điểm các môn học\n- "Email" - Xem email trường\n- "Mã số" - Xem mã số học sinh\n- "Hướng dẫn sử dụng" - Hướng dẫn cách sử dụng hệ thống\n- "Giải thích bài..." - Giải thích bài học, công thức\n- "Cách làm bài..." - Gợi ý cách làm bài tập',
+      type: 'text'
+    },
+    gvbm: {
+      text: 'Xin lỗi, tôi chưa hiểu câu hỏi của bạn. Vui lòng thử lại với câu hỏi khác.\n\n💡 Bạn có thể hỏi:\n- "Lớp đang dạy" - Xem danh sách lớp đang dạy\n- "Lịch dạy" - Xem thời khóa biểu\n- "Cách nhập điểm" - Hướng dẫn nhập điểm\n- "Học sinh lớp X" - Tra cứu học sinh trong lớp\n- "Lịch rảnh" - Xem và cập nhật lịch rảnh\n- "Lịch coi thi" - Xem lịch coi thi\n- "Hướng dẫn sử dụng" - Hướng dẫn cách sử dụng hệ thống',
+      type: 'text'
+    },
+    gvcn: {
+      text: 'Xin lỗi, tôi chưa hiểu câu hỏi của bạn. Vui lòng thử lại với câu hỏi khác.\n\n💡 Bạn có thể hỏi:\n- "Lớp chủ nhiệm" - Xem thông tin lớp chủ nhiệm\n- "Học sinh lớp CN" - Xem danh sách học sinh lớp chủ nhiệm\n- "Bảng điểm lớp CN" - Xem bảng điểm lớp chủ nhiệm\n- "Điểm danh" - Hướng dẫn điểm danh\n- "Lịch dạy" - Xem thời khóa biểu\n- "Cách nhập điểm" - Hướng dẫn nhập điểm\n- "Gửi thông báo" - Hướng dẫn gửi thông báo cho lớp\n- "Hướng dẫn sử dụng" - Hướng dẫn cách sử dụng hệ thống',
+      type: 'text'
+    },
+    qlbm: {
+      text: 'Xin lỗi, tôi chưa hiểu câu hỏi của bạn. Vui lòng thử lại với câu hỏi khác.\n\n💡 Bạn có thể hỏi:\n- "Giáo viên trong tổ" - Xem danh sách giáo viên trong tổ\n- "Đề xuất phân công" - Hướng dẫn tạo đề xuất phân công\n- "Phân công giảng dạy" - Xem phân công giảng dạy của tổ\n- "Lịch dạy" - Xem thời khóa biểu\n- "Cách nhập điểm" - Hướng dẫn nhập điểm\n- "Gửi thông báo" - Hướng dẫn gửi thông báo cho tổ\n- "Hướng dẫn sử dụng" - Hướng dẫn cách sử dụng hệ thống',
+      type: 'text'
+    },
+    bgh: {
+      text: 'Xin lỗi, tôi chưa hiểu câu hỏi của bạn. Vui lòng thử lại với câu hỏi khác.\n\n💡 Bạn có thể hỏi:\n- "Tìm học sinh" - Tìm học sinh theo lớp, tên\n- "Tìm giáo viên" - Tìm giáo viên theo môn, lớp\n- "Thống kê" - Xem thống kê hệ thống\n- "Lịch thi" - Xem lịch thi\n- "Thời khóa biểu" - Xem thời khóa biểu\n- "Hướng dẫn sử dụng" - Hướng dẫn cách sử dụng hệ thống',
+      type: 'text'
+    },
+    admin: {
+      text: 'Xin lỗi, tôi chưa hiểu câu hỏi của bạn. Vui lòng thử lại với câu hỏi khác.\n\n💡 Bạn có thể hỏi:\n- "Tìm học sinh" - Tìm học sinh theo lớp, tên, mã số\n- "Tìm giáo viên" - Tìm giáo viên theo môn, lớp, tên\n- "Kiểm tra trùng phòng thi" - Kiểm tra xung đột phòng thi\n- "Gợi ý phân phòng thi" - Gợi ý phân phòng thi tự động\n- "Gợi ý xếp TKB" - Gợi ý tạo thời khóa biểu\n- "Thống kê hệ thống" - Xem thống kê tổng quan\n- "Hướng dẫn sử dụng" - Hướng dẫn cách sử dụng hệ thống',
+      type: 'text'
+    }
+  };
+
+  return messages[role] || messages.student;
+}
 
 /* =========================================================
    👋 XỬ LÝ CÂU CHÀO HỎI
@@ -156,6 +386,10 @@ function handleGreeting(role) {
   const roleMessages = {
     student: 'Xin chào! Tôi có thể giúp bạn tìm email, mã số, lịch thi, phòng học, xem điểm. Bạn cần hỗ trợ gì?',
     teacher: 'Xin chào! Tôi có thể giúp bạn xem lớp dạy, thời khóa biểu, hướng dẫn nhập điểm, tra cứu học sinh. Bạn cần hỗ trợ gì?',
+    gvbm: 'Xin chào! Tôi có thể giúp bạn xem lớp dạy, thời khóa biểu, hướng dẫn nhập điểm, tra cứu học sinh. Bạn cần hỗ trợ gì?',
+    gvcn: 'Xin chào! Tôi có thể giúp bạn xem lớp chủ nhiệm, lớp dạy, thời khóa biểu, hướng dẫn nhập điểm, tra cứu học sinh, gửi thông báo cho lớp. Bạn cần hỗ trợ gì?',
+    qlbm: 'Xin chào! Tôi có thể giúp bạn quản lý tổ bộ môn, xem lớp dạy, thời khóa biểu, hướng dẫn nhập điểm, tra cứu học sinh, gửi thông báo cho tổ. Bạn cần hỗ trợ gì?',
+    bgh: 'Xin chào! Tôi có thể giúp bạn quản lý hệ thống, gợi ý phân phòng thi, kiểm tra lỗi, hướng dẫn sử dụng hệ thống, tìm học sinh/giáo viên. Bạn cần hỗ trợ gì?',
     admin: 'Xin chào! Tôi có thể giúp bạn gợi ý phân phòng thi, kiểm tra lỗi, hướng dẫn sử dụng hệ thống, tìm học sinh/giáo viên. Bạn cần hỗ trợ gì?'
   };
   
@@ -178,6 +412,13 @@ async function handleStudentQuery(query, user) {
   // Tìm mã học sinh
   if (query.includes('mã') || query.includes('mã số') || query.includes('studentcode')) {
     return await findStudentCode(user);
+  }
+
+  // Xem lịch học / thời khóa biểu
+  if (query.includes('lịch học') || query.includes('thời khóa biểu') || query.includes('tkb') || 
+      (query.includes('lịch') && (query.includes('hôm nay') || query.includes('học'))) ||
+      (query.includes('hôm nay') && (query.includes('học') || query.includes('tiết')))) {
+    return await findStudentSchedule(user, query);
   }
 
   // Xem lịch thi
@@ -405,6 +646,136 @@ async function findStudentClassroom(user) {
   }
 }
 
+async function findStudentSchedule(user, query) {
+  try {
+    const account = await Account.findById(user.accountId);
+    if (!account) {
+      return {
+        text: 'Không tìm thấy tài khoản của bạn.',
+        type: 'text'
+      };
+    }
+    
+    const student = await Student.findOne({ accountId: account._id })
+      .populate('classId', 'className grade');
+    
+    if (!student || !student.classId) {
+      return {
+        text: 'Không tìm thấy thông tin lớp học của bạn.',
+        type: 'text'
+      };
+    }
+
+    const classId = student.classId._id;
+    const className = student.classId.className;
+    const currentYear = await getCurrentSchoolYear() || '2025-2026';
+    const now = new Date();
+    const month = now.getMonth() + 1;
+    const semester = (month >= 8 || month <= 1) ? '1' : '2';
+
+    // Lấy thời khóa biểu (chỉ lấy lịch đã khóa - công bố)
+    const schedule = await Schedule.findOne({
+      classId: classId,
+      year: currentYear,
+      semester: semester,
+      isLocked: true, // Chỉ lấy lịch đã công bố
+      isDeleted: { $ne: true }
+    })
+      .populate('timetable.periods.subject', 'name code')
+      .populate('timetable.periods.teacher', 'name')
+      .lean();
+
+    if (!schedule || !schedule.timetable) {
+      return {
+        text: `📅 **Thời khóa biểu lớp ${className}:**
+
+Thời khóa biểu của lớp bạn chưa được công bố. Vui lòng liên hệ giáo viên chủ nhiệm hoặc quản trị viên.
+
+💡 Bạn có thể xem thời khóa biểu chi tiết tại trang **Thời khóa biểu** trong menu khi lịch đã được công bố.`,
+        type: 'text'
+      };
+    }
+
+    // Kiểm tra xem có hỏi về "hôm nay" không
+    const isToday = query.includes('hôm nay') || query.includes('hôm nay học');
+    
+    if (isToday) {
+      // Lấy lịch học hôm nay
+      const jsDay = new Date().getDay();
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const todayEnglishName = dayNames[jsDay];
+      
+      const normalizeDayName = (dayName) => {
+        if (!dayName) return '';
+        return dayName.trim().toLowerCase().slice(0, 3);
+      };
+      
+      const todayNormalized = normalizeDayName(todayEnglishName);
+      const todayEntry = schedule.timetable.find((day) => {
+        const dayName = day.day || '';
+        return normalizeDayName(dayName) === todayNormalized;
+      });
+
+      if (todayEntry && todayEntry.periods && todayEntry.periods.length > 0) {
+        const validPeriods = todayEntry.periods.filter(p => p.subject && p.period);
+        if (validPeriods.length > 0) {
+          let text = `📅 **Lịch học hôm nay (${todayEntry.day}):**\n\n`;
+          validPeriods
+            .sort((a, b) => (a.period || 0) - (b.period || 0))
+            .forEach((period, idx) => {
+              const subject = typeof period.subject === 'string' ? period.subject : period.subject?.name || 'N/A';
+              const teacher = typeof period.teacher === 'string' ? period.teacher : period.teacher?.name || 'N/A';
+              text += `**Tiết ${period.period}:** ${subject} - GV: ${teacher}\n`;
+            });
+          text += `\n💡 Để xem thời khóa biểu đầy đủ, vui lòng vào trang **Thời khóa biểu** trong menu.`;
+          
+          return {
+            text,
+            type: 'text',
+            data: { className, day: todayEntry.day, periods: validPeriods }
+          };
+        }
+      }
+
+      return {
+        text: `📅 **Lịch học hôm nay:**
+
+Hôm nay (${todayEnglishName}) lớp ${className} không có tiết học nào.
+
+💡 Để xem thời khóa biểu đầy đủ, vui lòng vào trang **Thời khóa biểu** trong menu.`,
+        type: 'text'
+      };
+    }
+
+    // Trả về thông tin tổng quan về thời khóa biểu
+    const dayCount = schedule.timetable.length;
+    const totalPeriods = schedule.timetable.reduce((sum, day) => {
+      return sum + (day.periods?.filter(p => p.subject).length || 0);
+    }, 0);
+
+    return {
+      text: `📅 **Thời khóa biểu lớp ${className}:**
+
+**Năm học:** ${currentYear}
+**Học kỳ:** ${semester}
+**Số ngày học:** ${dayCount} ngày/tuần
+**Tổng số tiết:** ${totalPeriods} tiết/tuần
+
+💡 Để xem thời khóa biểu chi tiết, vui lòng vào trang **Thời khóa biểu** trong menu.
+
+💬 Bạn có thể hỏi "lịch học hôm nay" để xem lịch học cụ thể hôm nay.`,
+      type: 'text',
+      data: { className, year: currentYear, semester, dayCount, totalPeriods }
+    };
+  } catch (error) {
+    console.error('Error finding student schedule:', error);
+    return {
+      text: 'Không thể tải thời khóa biểu. Vui lòng thử lại sau hoặc vào trang **Thời khóa biểu** trong menu.',
+      type: 'text'
+    };
+  }
+}
+
 async function findStudentGrades(query, user) {
   try {
     const account = await Account.findById(user.accountId);
@@ -458,7 +829,8 @@ ${subjectName ? `\n💡 Bạn có thể xem điểm môn **${subjectName.toUpper
    👨‍🏫 XỬ LÝ CÂU HỎI GIÁO VIÊN
 ========================================================= */
 
-async function handleTeacherQuery(query, user) {
+async function handleTeacherQuery(query, user, effectiveRole, teacherFlags) {
+  // ✅ Kiểm tra quyền cho từng loại câu hỏi
   // Xem danh sách lớp dạy
   if (query.includes('lớp') && (query.includes('dạy') || query.includes('giảng'))) {
     return await findTeacherClasses(user);
@@ -471,6 +843,21 @@ async function handleTeacherQuery(query, user) {
 
   // Hướng dẫn nhập điểm
   if (query.includes('nhập điểm') || query.includes('điểm')) {
+    // ✅ BGH chỉ xem điểm, không nhập điểm
+    if (effectiveRole === 'bgh') {
+      return {
+        text: `📊 **Xem bảng điểm:**
+
+1. Vào menu **Điểm số** → Chọn lớp và môn học
+2. Xem điểm của học sinh trong các lớp
+
+💡 Bạn có quyền xem tất cả bảng điểm trong trường.`,
+        type: 'text',
+        action: 'navigate',
+        data: { path: getRoutePath(effectiveRole, '/grades') }
+      };
+    }
+    
     return {
       text: `📝 **Hướng dẫn nhập điểm:**
 
@@ -486,12 +873,20 @@ async function handleTeacherQuery(query, user) {
 💡 Bạn chỉ có thể nhập điểm trong thời gian cho phép.`,
       type: 'text',
       action: 'navigate',
-      data: { path: '/teacher/grades' }
+      data: { path: getRoutePath(effectiveRole, '/grades') }
     };
   }
 
   // Tra cứu học sinh
   if (query.includes('học sinh') || query.includes('tìm') || query.includes('tra cứu')) {
+    // ✅ Xác định route phù hợp dựa trên effectiveRole
+    let classesRoute = '/my-classes';
+    if (effectiveRole === 'gvcn') {
+      classesRoute = '/my-classes'; // GVCN xem lớp chủ nhiệm và lớp dạy
+    } else if (effectiveRole === 'bgh') {
+      classesRoute = '/classes'; // BGH xem tất cả lớp
+    }
+    
     return {
       text: `🔍 **Tra cứu học sinh:**
 
@@ -503,7 +898,7 @@ async function handleTeacherQuery(query, user) {
 💡 Bạn chỉ có thể xem thông tin học sinh trong các lớp bạn dạy.`,
       type: 'text',
       action: 'navigate',
-      data: { path: '/teacher/classes' }
+      data: { path: getRoutePath(effectiveRole, classesRoute) }
     };
   }
 
@@ -706,17 +1101,39 @@ function getDayName(dayOfWeek) {
    👨‍💼 XỬ LÝ CÂU HỎI ADMIN
 ========================================================= */
 
-async function handleAdminQuery(query, user) {
+async function handleAdminQuery(query, user, effectiveRole, teacherFlags) {
+  // ✅ Kiểm tra quyền: BGH chỉ xem, không được tạo/sửa/xóa
+  if (effectiveRole === 'bgh') {
+    const writeActions = ['tạo', 'sửa', 'xóa', 'thêm', 'cập nhật', 'delete', 'create', 'update'];
+    if (writeActions.some(action => query.includes(action))) {
+      return {
+        text: '❌ Bạn không có quyền tạo, sửa hoặc xóa dữ liệu. Bạn chỉ có quyền xem thông tin.\n\n💡 Bạn có thể hỏi về:\n- Xem danh sách học sinh, giáo viên\n- Xem lịch thi, thời khóa biểu\n- Xem điểm số, thống kê\n- Hướng dẫn sử dụng hệ thống',
+        type: 'text'
+      };
+    }
+  }
+  
+  // ✅ QLBM chỉ có quyền quản lý trong bộ môn
+  if (effectiveRole === 'qlbm') {
+    const restrictedActions = ['tất cả học sinh', 'tất cả giáo viên', 'phân phòng thi', 'chia phòng', 'tạo học kỳ'];
+    if (restrictedActions.some(action => query.includes(action))) {
+      return {
+        text: '❌ Bạn không có quyền thực hiện hành động này. Bạn chỉ có quyền quản lý trong bộ môn của mình.\n\n💡 Bạn có thể hỏi về:\n- Tìm giáo viên trong tổ bộ môn\n- Xem lớp dạy, thời khóa biểu\n- Gửi thông báo cho tổ bộ môn\n- Quản lý môn học trong bộ môn',
+        type: 'text'
+      };
+    }
+  }
+
   // Tìm học sinh theo lớp
   if ((query.includes('tìm') || query.includes('tìm kiếm') || query.includes('danh sách')) && 
       (query.includes('học sinh') || query.includes('hs'))) {
-    return await findStudentsByClass(query, user);
+    return await findStudentsByClass(query, user, effectiveRole, teacherFlags);
   }
 
   // Tìm giáo viên theo môn
   if ((query.includes('tìm') || query.includes('tìm kiếm') || query.includes('danh sách') || query.includes('giáo viên dạy')) && 
       (query.includes('giáo viên') || query.includes('gv') || query.includes('thầy') || query.includes('cô'))) {
-    return await findTeachersBySubject(query, user);
+    return await findTeachersBySubject(query, user, effectiveRole, teacherFlags);
   }
 
   // Gợi ý phòng thi tự động
@@ -800,7 +1217,14 @@ async function handleAdminQuery(query, user) {
   return null;
 }
 
-async function findStudentsByClass(query, user) {
+async function findStudentsByClass(query, user, effectiveRole, teacherFlags) {
+  // ✅ Kiểm tra quyền: Chỉ Admin, BGH, GVCN mới có quyền xem danh sách học sinh
+  if (effectiveRole !== 'admin' && effectiveRole !== 'bgh' && effectiveRole !== 'gvcn') {
+    return {
+      text: '❌ Bạn không có quyền xem danh sách học sinh.\n\n💡 Chỉ Admin, Ban Giám Hiệu và Giáo viên chủ nhiệm mới có quyền này.',
+      type: 'text'
+    };
+  }
   try {
     // Tìm tên lớp trong query (ví dụ: 10A1, 11B2, 12C3)
     const classMatch = query.match(/(\d{1,2}[a-z]\d{1,2})/i) || query.match(/(lớp\s*)?(\d{1,2}[a-z]\d{1,2})/i);
@@ -887,7 +1311,14 @@ async function findStudentsByClass(query, user) {
   }
 }
 
-async function findTeachersBySubject(query, user) {
+async function findTeachersBySubject(query, user, effectiveRole, teacherFlags) {
+  // ✅ Kiểm tra quyền: Chỉ Admin, BGH, QLBM mới có quyền xem danh sách giáo viên
+  if (effectiveRole !== 'admin' && effectiveRole !== 'bgh' && effectiveRole !== 'qlbm') {
+    return {
+      text: '❌ Bạn không có quyền xem danh sách giáo viên.\n\n💡 Chỉ Admin, Ban Giám Hiệu và Quản lý bộ môn mới có quyền này.',
+      type: 'text'
+    };
+  }
   try {
     // Tìm tên môn học trong query
     const subjectKeywords = {

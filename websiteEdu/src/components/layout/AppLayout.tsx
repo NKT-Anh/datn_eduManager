@@ -2,7 +2,7 @@ import { ReactNode } from "react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "../ui/button";
 import { useAuth } from "@/contexts/AuthContext";
-import { AIChatbox } from "@/components/ai/AIChatbox";
+import { AIFloatingChat } from "@/components/ai/AIFloatingChat";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { usePublicSchoolInfo } from "@/hooks/usePublicSchoolInfo";
 
@@ -50,8 +50,8 @@ const AppLayout = ({ children }: AppLayoutProps) => {
           <main className="flex-1 p-6 overflow-auto pb-40">{children}</main>
         </div>
         
-        {/* AI Chatbox - hiển thị trên tất cả trang */}
-        <AIChatbox />
+        {/* AI Floating Chat - hiển thị trên tất cả trang */}
+        <AIFloatingChat />
       </div>
     </SidebarProvider>
   );

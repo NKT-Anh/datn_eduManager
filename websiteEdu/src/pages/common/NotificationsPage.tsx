@@ -18,6 +18,9 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useClasses } from "@/hooks";
+import { assignmentApi } from "@/services/assignmentApi";
+import { departmentManagementApi } from "@/services/departmentManagementApi";
+import { useCurrentAcademicYear } from "@/hooks/useCurrentAcademicYear";
 import { cn } from "@/lib/utils";
 import { 
   Bell, 
@@ -207,6 +210,11 @@ export default function NotificationsPage() {
   const [recipientSearchTerm, setRecipientSearchTerm] = useState("");
   const { classes } = useClasses();
   
+  // ✅ State để lấy danh sách lớp đang dạy và giáo viên trong tổ
+  const [teachingClassIds, setTeachingClassIds] = useState<string[]>([]);
+  const [departmentTeachers, setDepartmentTeachers] = useState<any[]>([]);
+  const { currentYearCode } = useCurrentAcademicYear();
+  
   // Rich text editor states
   const [isBold, setIsBold] = useState(false);
   const [isItalic, setIsItalic] = useState(false);
@@ -295,6 +303,78 @@ export default function NotificationsPage() {
       fetchUnreadCount();
     }
   }, [isStudent]);
+  
+  // ✅ Lấy danh sách lớp đang dạy cho GVCN, GVBM, QLBM
+  useEffect(() => {
+    const fetchTeachingClasses = async () => {
+      if (!backendUser || (!isGVCNUser && !isGVBMUser && !isQLBMUser)) {
+        setTeachingClassIds([]);
+        return;
+      }
+      
+      try {
+        // ✅ Lấy teacherId đúng cách
+        let teacherId: string | undefined;
+        if (backendUser.teacherId) {
+          teacherId = typeof backendUser.teacherId === 'object' 
+            ? (backendUser.teacherId as any)?._id 
+            : backendUser.teacherId;
+        }
+        
+        if (!teacherId || !currentYearCode) {
+          console.log('⚠️ Không có teacherId hoặc currentYearCode:', { teacherId, currentYearCode });
+          setTeachingClassIds([]);
+          return;
+        }
+        
+        console.log('🔍 Fetching teaching classes for teacher:', teacherId, 'year:', currentYearCode);
+        
+        const assignments = await assignmentApi.getByTeacher(teacherId, { year: currentYearCode });
+        
+        console.log('📚 Assignments received:', assignments?.length || 0, assignments);
+        
+        // Lấy danh sách classId từ assignments
+        const classIds = (assignments || [])
+          .map(a => {
+            if (!a || !a.classId) return null;
+            const classId = typeof a.classId === 'object' ? a.classId._id : a.classId;
+            return classId ? String(classId) : null;
+          })
+          .filter(Boolean) as string[];
+        
+        const uniqueClassIds = [...new Set(classIds)];
+        console.log('✅ Teaching class IDs:', uniqueClassIds);
+        setTeachingClassIds(uniqueClassIds);
+      } catch (error) {
+        console.error('❌ Lỗi khi lấy danh sách lớp đang dạy:', error);
+        setTeachingClassIds([]);
+      }
+    };
+    
+    fetchTeachingClasses();
+  }, [backendUser, isGVCNUser, isGVBMUser, isQLBMUser, currentYearCode]);
+  
+  // ✅ Lấy danh sách giáo viên trong tổ cho QLBM
+  useEffect(() => {
+    const fetchDepartmentTeachers = async () => {
+      if (!backendUser || !isQLBMUser || !currentYearCode) {
+        setDepartmentTeachers([]);
+        return;
+      }
+      
+      try {
+        const response = await departmentManagementApi.getTeachers({ year: currentYearCode });
+        const teachers = response.teachers || [];
+        console.log('👥 Department teachers received:', teachers.length, teachers);
+        setDepartmentTeachers(teachers);
+      } catch (error) {
+        console.error('❌ Lỗi khi lấy danh sách giáo viên trong tổ:', error);
+        setDepartmentTeachers([]);
+      }
+    };
+    
+    fetchDepartmentTeachers();
+  }, [backendUser, isQLBMUser, currentYearCode]);
 
   const fetchNotifications = async () => {
     try {
@@ -730,7 +810,10 @@ export default function NotificationsPage() {
     } else if (recipientType === 'role') {
       const roleMap: Record<string, { id: string; label: string }> = {
         'student': { id: 'all_students', label: 'Tất cả học sinh' },
-        'teacher': { id: 'all_teachers', label: 'Tất cả giáo viên' },
+        'teacher': { 
+          id: isQLBMUser ? 'role_teachers_in_department' : 'all_teachers', 
+          label: isQLBMUser ? 'Tất cả giáo viên trong tổ' : 'Tất cả giáo viên' 
+        },
         'leader': { id: 'role_leader', label: 'Ban Giám Hiệu' },
         'department_head': { id: 'role_department_head', label: 'Quản lý bộ môn' },
         'homeroom_teacher': { id: 'role_homeroom_teacher', label: 'Giáo viên Chủ nhiệm' },
@@ -1415,6 +1498,7 @@ export default function NotificationsPage() {
                       value={recipientSearchTerm}
                       onValueChange={setRecipientSearchTerm}
                     />
+                    <ScrollArea className="max-h-[400px]">
                     <CommandList>
                       <CommandEmpty>Không tìm thấy kết quả.</CommandEmpty>
                       {/* Chỉ hiển thị "Tất cả" và "Theo vai trò" nếu có quyền (Admin, BGH) */}
@@ -1589,9 +1673,66 @@ export default function NotificationsPage() {
                           </CommandItem>
                         </CommandGroup>
                       )}
+                      
+                      {/* ✅ QLBM: Gửi cho tất cả giáo viên trong tổ */}
+                      {isQLBMUser && (
+                        <CommandGroup heading="Gửi cho tổ bộ môn">
+                          <CommandItem
+                            onSelect={() => {
+                              const exists = selectedRecipients.find(r => r.id === 'role_teachers_in_department');
+                              if (!exists) {
+                                setSelectedRecipients([{ id: 'role_teachers_in_department', label: 'Tất cả giáo viên trong tổ', type: 'role' }]);
+                                setFormData({ 
+                                  ...formData, 
+                                  recipientType: 'role', 
+                                  recipientRole: 'teacher',
+                                  classId: '',
+                                  recipientId: ''
+                                });
+                              }
+                              setRecipientSearchOpen(false);
+                            }}
+                          >
+                            <Check className={cn("mr-2 h-4 w-4", selectedRecipients.find(r => r.id === 'role_teachers_in_department') ? "opacity-100" : "opacity-0")} />
+                            Tất cả giáo viên trong tổ
+                          </CommandItem>
+                        </CommandGroup>
+                      )}
+                      
                       {/* Lớp học - Chỉ hiển thị lớp mà giáo viên có quyền */}
                       <CommandGroup heading="Lớp học">
-                        {classes
+                        {(() => {
+                          const filteredClasses = classes
+                            .map(c => {
+                              // Thêm thông tin về loại lớp (đang dạy hoặc chủ nhiệm)
+                              let classType: 'teaching' | 'homeroom' | 'both' | null = null;
+                              
+                              if (isGVCNUser) {
+                                // Lấy danh sách lớp chủ nhiệm từ backendUser
+                                const homeroomClassIds = (backendUser as any)?.homeroomClassIds || [];
+                                const homeroomClassIdStrings = homeroomClassIds.map((hc: any) => {
+                                  return typeof hc === 'string' ? String(hc) : String(hc._id || hc);
+                                });
+                                
+                                // Kiểm tra lớp chủ nhiệm
+                                const isHomeroomClass = homeroomClassIdStrings.includes(String(c._id));
+                                
+                                // Kiểm tra lớp đang dạy
+                                const isTeachingClass = teachingClassIds.includes(String(c._id));
+                                
+                                if (isHomeroomClass && isTeachingClass) {
+                                  classType = 'both';
+                                } else if (isHomeroomClass) {
+                                  classType = 'homeroom';
+                                } else if (isTeachingClass) {
+                                  classType = 'teaching';
+                                }
+                                
+                                return { ...c, classType };
+                              }
+                              
+                              return { ...c, classType };
+                            })
                           .filter(c => {
                             // Filter theo search term
                             if (recipientSearchTerm && !c.className.toLowerCase().includes(recipientSearchTerm.toLowerCase())) {
@@ -1603,38 +1744,39 @@ export default function NotificationsPage() {
                               return true;
                             }
                             
-                            // ✅ GVCN: Chỉ xem lớp chủ nhiệm
+                              // ✅ GVCN: Xem lớp đang dạy + lớp chủ nhiệm
                             if (isGVCNUser) {
-                              // Lấy danh sách lớp chủ nhiệm từ backendUser hoặc từ API
-                              const homeroomClassIds = (backendUser as any)?.homeroomClassIds || [];
-                              if (homeroomClassIds.length === 0) {
-                                // Nếu không có lớp chủ nhiệm, không hiển thị lớp nào
-                                return false;
-                              }
-                              // Chỉ hiển thị lớp chủ nhiệm
-                              return homeroomClassIds.some((hc: any) => {
-                                const classId = typeof hc === 'string' ? hc : hc._id || hc;
-                                return classId === c._id;
-                              });
+                                return c.classType !== null;
                             }
                             
                             // ✅ GVBM: Chỉ xem lớp đang dạy
                             if (isGVBMUser) {
-                              // Lấy danh sách lớp đang dạy từ backendUser hoặc từ API
-                              const teachingClassIds = (backendUser as any)?.classIds || [];
-                              if (teachingClassIds.length === 0) {
-                                // Nếu không có lớp đang dạy, không hiển thị lớp nào
-                                return false;
+                                // Hiển thị lớp đang dạy
+                                return teachingClassIds.includes(String(c._id));
                               }
-                              // Chỉ hiển thị lớp đang dạy
-                              return teachingClassIds.some((tc: any) => {
-                                const classId = typeof tc === 'string' ? tc : tc._id || tc;
-                                return classId === c._id;
-                              });
+                              
+                              // ✅ QLBM: Xem lớp đang dạy (như GVBM)
+                              if (isQLBMUser) {
+                                // Hiển thị lớp đang dạy
+                                return teachingClassIds.includes(String(c._id));
                             }
                             
                       return false;
-                    })
+                            });
+                          
+                          // ✅ Debug log
+                          if ((isGVCNUser || isGVBMUser || isQLBMUser) && filteredClasses.length === 0 && classes.length > 0) {
+                            console.log('⚠️ Không tìm thấy lớp phù hợp:', {
+                              role: isGVCNUser ? 'GVCN' : isGVBMUser ? 'GVBM' : 'QLBM',
+                              totalClasses: classes.length,
+                              teachingClassIds,
+                              homeroomClassIds: isGVCNUser ? (backendUser as any)?.homeroomClassIds : null,
+                              searchTerm: recipientSearchTerm
+                            });
+                          }
+                          
+                          return filteredClasses;
+                        })()
                           .map((cls) => (
                             <CommandItem
                               key={cls._id}
@@ -1654,11 +1796,90 @@ export default function NotificationsPage() {
                               }}
                             >
                               <Check className={cn("mr-2 h-4 w-4", selectedRecipients.find(r => r.id === cls._id) ? "opacity-100" : "opacity-0")} />
-                              {cls.className}
+                              <div className="flex items-center gap-2 flex-1">
+                                <span>{cls.className}</span>
+                                {/* ✅ Hiển thị badge phân biệt loại lớp cho GVCN */}
+                                {isGVCNUser && cls.classType && (
+                                  <div className="flex gap-1">
+                                    {cls.classType === 'both' && (
+                                      <>
+                                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-300">
+                                          Lớp CN
+                                        </Badge>
+                                        <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-300">
+                                          Đang dạy
+                                        </Badge>
+                                      </>
+                                    )}
+                                    {cls.classType === 'homeroom' && (
+                                      <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-300">
+                                        Lớp CN
+                                      </Badge>
+                                    )}
+                                    {cls.classType === 'teaching' && (
+                                      <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-300">
+                                        Đang dạy
+                                      </Badge>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             </CommandItem>
                           ))}
                       </CommandGroup>
+                      
+                      {/* ✅ QLBM: Hiển thị giáo viên trong tổ bộ môn */}
+                      {isQLBMUser && departmentTeachers.length > 0 && (
+                        <CommandGroup heading="Giáo viên trong tổ">
+                          {departmentTeachers
+                            .filter((teacher: any) => {
+                              // Filter theo search term
+                              if (recipientSearchTerm && !teacher.name?.toLowerCase().includes(recipientSearchTerm.toLowerCase())) {
+                                return false;
+                              }
+                              return true;
+                            })
+                            .map((teacher: any) => {
+                              const teacherAccountId = teacher.accountId?._id || teacher.accountId;
+                              if (!teacherAccountId) return null;
+                              
+                              return (
+                                <CommandItem
+                                  key={teacher._id}
+                                  onSelect={() => {
+                                    const exists = selectedRecipients.find(r => r.id === teacherAccountId);
+                                    if (!exists) {
+                                      setSelectedRecipients(prev => [...prev, { 
+                                        id: teacherAccountId, 
+                                        label: teacher.name || 'Giáo viên', 
+                                        type: 'user' 
+                                      }]);
+                                      setFormData({ 
+                                        ...formData, 
+                                        recipientType: 'user', 
+                                        recipientId: teacherAccountId,
+                                        classId: '',
+                                        recipientRole: ''
+                                      });
+                                    }
+                                    setRecipientSearchOpen(false);
+                                  }}
+                                >
+                                  <Check className={cn("mr-2 h-4 w-4", selectedRecipients.find(r => r.id === teacherAccountId) ? "opacity-100" : "opacity-0")} />
+                                  {teacher.name || 'Giáo viên'}
+                                  {teacher.isDepartmentHead && (
+                                    <Badge variant="outline" className="ml-2 text-xs">QLBM</Badge>
+                                  )}
+                                  {teacher.isHomeroom && (
+                                    <Badge variant="outline" className="ml-2 text-xs">GVCN</Badge>
+                                  )}
+                                </CommandItem>
+                              );
+                            })}
+                        </CommandGroup>
+                      )}
                     </CommandList>
+                    </ScrollArea>
                   </Command>
                 </PopoverContent>
               </Popover>
@@ -1704,6 +1925,7 @@ export default function NotificationsPage() {
                                 'all_students': 'student',
                                 'all_teachers': 'teacher',
                                 'role_teacher': 'teacher',
+                                'role_teachers_in_department': 'teacher', // QLBM: Gửi cho tất cả giáo viên trong tổ
                                 'role_student': 'student',
                                 'role_leader': 'leader',
                                 'role_department_head': 'department_head',

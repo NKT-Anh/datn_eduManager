@@ -167,10 +167,13 @@ const TeacherDashboard = () => {
             (sch.timetable || []).forEach((dayEntry: any) => {
               const dayKey = DAY_LABELS.find(d => d.toLowerCase().includes((dayEntry.day || '').toLowerCase().slice(0,3))) || dayEntry.day;
               (dayEntry.periods || []).forEach((p: any) => {
+                // ✅ Lấy tên lớp từ classId (đã được populate) hoặc className
+                const classObj = sch.classId;
+                const className = classObj?.className || sch.className || 'Lớp';
                 weeklyItems.push({
                   weekday: dayKey,
                   period: p.period || p.periodIndex,
-                  class: sch.classId || { name: sch.className },
+                  class: classObj ? { ...classObj, name: className } : { name: className },
                   subject: p.subject || p.subjectName,
                 });
               });
@@ -361,7 +364,7 @@ const TeacherDashboard = () => {
                           </div>
                           <div>
                             <p className="font-medium">
-                              Tiết {it.period ?? '?'} • {it.class?.name || 'Lớp'} • {typeof it.subject === 'string' ? it.subject : (it.subject?.name || 'Môn')}
+                              Tiết {it.period ?? '?'} • {it.class?.name || it.class?.className || 'Lớp'} • {typeof it.subject === 'string' ? it.subject : (it.subject?.name || 'Môn')}
                             </p>
                           </div>
                         </div>

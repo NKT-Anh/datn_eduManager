@@ -474,6 +474,7 @@ const handleDeleteAccounts = async () => {
               reader.readAsText(response.data);
             });
             const jsonData = JSON.parse(text);
+            res = jsonData; // ✅ Set res để có thể sử dụng ở cuối function
             setResult(jsonData);
             setAlert({
               type: 'info',
@@ -500,6 +501,13 @@ const handleDeleteAccounts = async () => {
             link.click();
             document.body.removeChild(link);
             window.URL.revokeObjectURL(url);
+            
+            // ✅ Set res với thông tin mặc định để tránh lỗi undefined
+            res = {
+              createdAccounts: [],
+              existedAccounts: [],
+              message: 'Đã tạo tài khoản và tải xuống file Excel chứa thông tin đăng nhập',
+            };
             
             toast({
               title: 'Thành công',
@@ -573,12 +581,15 @@ const handleDeleteAccounts = async () => {
         await refetchTeachers();
       }
 
-      setResult(res);
-      setAlert({
-        type: 'success',
-        title: 'Thành công',
-        message: `Đã tạo ${res.createdAccounts?.length || 0} tài khoản mới, ${res.existedAccounts?.length || 0} tài khoản đã tồn tại.`,
-      });
+      // ✅ Chỉ set result và alert nếu res tồn tại (tránh lỗi undefined)
+      if (res) {
+        setResult(res);
+        setAlert({
+          type: 'success',
+          title: 'Thành công',
+          message: `Đã tạo ${res.createdAccounts?.length || 0} tài khoản mới, ${res.existedAccounts?.length || 0} tài khoản đã tồn tại.`,
+        });
+      }
     } catch (err: any) {
       setAlert({
         type: 'error',

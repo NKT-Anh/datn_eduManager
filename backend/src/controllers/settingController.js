@@ -35,6 +35,8 @@ exports.getPublicSchoolInfo = async (req, res) => {
       website: setting.website || '',
       facebook: setting.facebook || '',
       schoolLogo: setting.schoolLogo || null,
+      // ✅ Bổ sung để mobile/web có thể đồng bộ năm học hiện tại (không cần auth)
+      currentSchoolYear: setting.currentSchoolYear || null,
     });
   } catch (err) {
     console.error(err);

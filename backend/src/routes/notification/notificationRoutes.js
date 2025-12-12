@@ -17,6 +17,15 @@ const {
 // Tất cả routes đều cần xác thực
 router.use(authMiddleware);
 
+// ✅ IMPORTANT: đặt các route tĩnh trước route param ":id" để tránh bị match nhầm
+// Ví dụ: /notifications/unread/count hoặc /notifications/read-all không được match vào "/:id"
+
+// 🔔 Đếm số thông báo chưa đọc
+router.get('/unread/count', getUnreadCount);
+
+// ✅ Đánh dấu tất cả đã đọc
+router.post('/read-all', markAllAsRead);
+
 // 📋 Lấy danh sách thông báo (Tất cả role đều có thể xem thông báo của mình)
 router.get('/', getNotifications);
 
@@ -59,14 +68,8 @@ router.delete('/:id',
   deleteNotification
 );
 
-// 🔔 Đếm số thông báo chưa đọc
-router.get('/unread/count', getUnreadCount);
-
 // ✅ Đánh dấu đã đọc
 router.post('/:id/read', markAsRead);
-
-// ✅ Đánh dấu tất cả đã đọc
-router.post('/read-all', markAllAsRead);
 
 module.exports = router;
 

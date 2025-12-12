@@ -45,7 +45,7 @@ export function AIChatbox() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      text: 'Xin chào! Tôi là trợ lý AI của hệ thống. Tôi có thể giúp bạn:\n\n👨‍🎓 **Học sinh:** Tìm email, mã số, lịch thi, phòng học, xem điểm\n👨‍🏫 **Giáo viên:** Xem lớp dạy, thời khóa biểu, hướng dẫn nhập điểm\n👨‍💼 **Admin:** Gợi ý phân phòng thi, kiểm tra lỗi, hướng dẫn sử dụng\n\nHãy đặt câu hỏi để tôi hỗ trợ bạn nhé!',
+      text: 'Xin chào! 👋 Tôi là trợ lý AI thông minh của hệ thống quản lý trường học.\n\nTôi có thể hỗ trợ bạn:\n\n📚 **Tra cứu thông tin:** Email, mã số, lịch thi, phòng học, điểm số\n📅 **Xem lịch:** Thời khóa biểu, lịch dạy, lịch thi\n👥 **Tìm kiếm:** Học sinh, giáo viên, lớp học\n📝 **Hướng dẫn:** Cách sử dụng hệ thống, nhập điểm, quản lý\n\n💡 Hãy đặt câu hỏi bất kỳ, tôi sẽ hỗ trợ bạn ngay!',
       isUser: false,
       timestamp: new Date(),
     },
@@ -100,7 +100,14 @@ export function AIChatbox() {
     setLoading(true);
 
     try {
-      const response = await aiChatApi.sendMessage(messageText);
+      // ✅ Gửi conversation history để AI nhớ ngữ cảnh
+      const conversationHistory = messages.slice(-10).map(msg => ({
+        role: msg.isUser ? 'user' : 'assistant',
+        text: msg.text,
+        isUser: msg.isUser
+      }));
+      
+      const response = await aiChatApi.sendMessage(messageText, conversationHistory);
       
       const botMessage: Message = {
         id: (Date.now() + 1).toString(),

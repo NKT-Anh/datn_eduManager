@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ArrowLeft, CheckCircle2, Mail } from 'lucide-react';
 import { sendResetPasswordEmail } from '@/services/firebase/authService';
-import logoSchool from '@/assets/logo_school.png';
+// Logo sẽ lấy từ settings, không cần import fallback
 import { usePublicSchoolInfo } from '@/hooks/usePublicSchoolInfo';
 
 const ForgotPasswordPage = () => {
@@ -83,11 +83,17 @@ const ForgotPasswordPage = () => {
         {/* Header */}
         <div className="text-center space-y-4">
           <div className="flex justify-center">
-            <img
-              src={schoolInfo.logoUrl || logoSchool}
-              alt="Logo trường học"
-              className="w-16 h-16 object-contain rounded-lg"
-            />
+            {schoolInfo.logoUrl ? (
+              <img
+                src={schoolInfo.logoUrl}
+                alt="Logo trường học"
+                className="w-16 h-16 object-contain rounded-lg"
+              />
+            ) : (
+              <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center">
+                <span className="text-xs text-gray-400">Logo</span>
+              </div>
+            )}
           </div>
           <div className="space-y-1">
             <h1 className="text-2xl font-bold text-gray-900">Quên mật khẩu</h1>

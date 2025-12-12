@@ -10,6 +10,7 @@ import {
   SidebarMenuItem,
   SidebarHeader,
   SidebarFooter,
+  SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
 import {
@@ -42,9 +43,11 @@ import {
   Trash2,
   Trophy,
   Edit,
-  Clock
+  Clock,
+  PanelLeft,
+  ChevronLeft
 } from "lucide-react";
-import logoSchool from "@/assets/logo_school.png";
+// Logo sẽ lấy từ settings, không cần import fallback
 import { useAuth } from "@/contexts/AuthContext";
 import { usePublicSchoolInfo } from "@/hooks";
 import { isBGH, isGVCN, isQLBM, isGVBM } from "@/utils/permissions";
@@ -94,21 +97,31 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
             children: [
               { id: "school-years", title: "Năm học", url: `${prefix}/school-years`, icon: Calendar },
               { id: "classes", title: "Lớp học", url: `${prefix}/classes`, icon: School },
-              { id: "rooms", title: "Phòng học", url: `${prefix}/rooms`, icon: School },
               { id: "subjects", title: "Môn học", url: `${prefix}/subjects`, icon: BookOpen },
+              { id: "rooms", title: "Phòng học", url: `${prefix}/rooms`, icon: School },
             ],
           },
+        ],
+      },
+      {
+        label: "Giảng dạy",
+        items: [
           {
             id: "teaching",
             title: "Giảng dạy",
             icon: Presentation,
             children: [
-              { id: "proposal-history", title: "Lịch sử đề xuất", url: `${prefix}/proposal-history`, icon: FileText },
               { id: "assignment", title: "Phân công giảng dạy", url: `${prefix}/teachingAssignmentPage`, icon: Presentation },
               { id: "schedule", title: "Thời khóa biểu", url: `${prefix}/schedule`, icon: Calendar },
+              { id: "proposal-history", title: "Lịch sử đề xuất", url: `${prefix}/proposal-history`, icon: FileText },
               { id: "survey-dashboard", title: "Dashboard khảo sát", url: `${prefix}/survey-dashboard`, icon: BarChart3 },
             ],
           },
+        ],
+      },
+      {
+        label: "Học tập",
+        items: [
           {
             id: "study",
             title: "Học tập",
@@ -118,14 +131,19 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
               { id: "conduct", title: "Hạnh kiểm", url: `${prefix}/conduct`, icon: ClipboardList },
             ],
           },
+        ],
+      },
+      {
+        label: "Kỳ thi",
+        items: [
           {
             id: "exam",
             title: "Kỳ thi",
             icon: CalendarCheck2Icon,
             children: [
               { id: "exam-list", title: "Danh sách kỳ thi", url: `${prefix}/exam/exam-list`, icon: CalendarCheck2Icon },
-              { id: "exam-dashboard", title: "DashBoard", url: `${prefix}/exam/exam-dashboard`, icon: Users },
               { id: "exam-schedule", title: "Lịch thi", url: `${prefix}/exam/schedule`, icon: Calendar },
+              { id: "exam-dashboard", title: "DashBoard", url: `${prefix}/exam/exam-dashboard`, icon: Users },
             ],
           },
         ],
@@ -133,14 +151,9 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
       {
         label: "Giao tiếp",
         items: [
+          { id: "notifications", title: "Thông báo", url: `${prefix}/notifications`, icon: Bell },
           { id: "send-email", title: "Gửi email hàng loạt", url: `${prefix}/send-email`, icon: Mail },
           { id: "email-stats", title: "Thống kê email", url: `${prefix}/email-stats`, icon: BarChart3 },
-          { id: "notifications", title: "Thông báo", url: `${prefix}/notifications`, icon: Bell },
-        ],
-      },
-      {
-        label: "Khác",
-        items: [
         ],
       },
       {
@@ -163,9 +176,9 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
         label: "Lớp chủ nhiệm",
         items: [
           { id: "homeroom-class", title: "Thông tin lớp", url: `${prefix}/homeroom-class`, icon: School },
+          { id: "students", title: "Học sinh", url: `${prefix}/students`, icon: Users },
           { id: "homeroom-grades", title: "Bảng điểm lớp CN", url: `${prefix}/homeroom-grades`, icon: FileText },
           { id: "attendance", title: "Điểm danh", url: `${prefix}/attendance`, icon: ClipboardList },
-          { id: "students", title: "Học sinh", url: `${prefix}/students`, icon: Users },
           { id: "conduct", title: "Hạnh kiểm", url: `${prefix}/conduct`, icon: ClipboardList },
         ],
       },
@@ -192,11 +205,6 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
         label: "Giao tiếp",
         items: [
           { id: "notifications", title: "Thông báo", url: `${prefix}/notifications`, icon: Bell },
-        ],
-      },
-      {
-        label: "Khác",
-        items: [
         ],
       },
       {
@@ -274,6 +282,11 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
           { id: "grades", title: "Nhập điểm", url: `${prefix}/grades`, icon: BarChart3 },
           { id: "awards", title: "Danh hiệu / Khen thưởng", url: `${prefix}/awards`, icon: Trophy },
           { id: "survey-statistics", title: "Thống kê khảo sát", url: `${prefix}/survey-statistics`, icon: BarChart3 },
+        ],
+      },
+      {
+        label: "Kỳ thi",
+        items: [
           {
             id: "exams",
             title: "Kỳ thi",
@@ -338,18 +351,46 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
               children: [
                 { id: "school-years", title: "Năm học", url: `${prefix}/school-years`, icon: Calendar },
                 { id: "classes", title: "Lớp học", url: `${prefix}/classes`, icon: School },
-                { id: "rooms", title: "Phòng học", url: `${prefix}/rooms`, icon: School },
                 { id: "subjects", title: "Môn học", url: `${prefix}/subjects`, icon: BookOpen },
+                { id: "rooms", title: "Phòng học", url: `${prefix}/rooms`, icon: School },
               ],
             },
             {
-              id: "communication",
-              title: "Giao tiếp",
-              icon: Mail,
+              id: "teaching",
+              title: "Giảng dạy",
+              icon: Presentation,
               children: [
-                { id: "send-email", title: "Gửi email hàng loạt", url: `${prefix}/send-email`, icon: Mail },
-                { id: "email-history", title: "Lịch sử email", url: `${prefix}/email-history`, icon: Mail },
-                { id: "notifications", title: "Thông báo", url: `${prefix}/notifications`, icon: Bell },
+                { id: "assignment", title: "Phân công giảng dạy", url: `${prefix}/teachingAssignmentPage`, icon: Presentation },
+                { id: "proposal-history", title: "Lịch sử đề xuất", url: `${prefix}/proposal-history`, icon: FileText },
+                { id: "schedule", title: "Thời khóa biểu", url: `${prefix}/schedule`, icon: Calendar },
+                { id: "schedule-new", title: "Thời khóa biểu new", url: `${prefix}/scheduleNew`, icon: Calendar },
+                { id: "availability", title: "Lịch trống giáo viên", url: `${prefix}/availability`, icon: CalendarCheck2Icon },
+                { id: "class-periods", title: "Phân bổ số tiết theo lớp", url: `${prefix}/class-periods`, icon: BookOpen },
+              ],
+            },
+            {
+              id: "grades",
+              title: "Điểm số",
+              icon: BarChart3,
+              children: [
+                { id: "grades-list", title: "Bảng điểm", url: `${prefix}/grades`, icon: BarChart3 },
+                { id: "conduct-admin", title: "Quản lý hạnh kiểm", url: `${prefix}/conduct`, icon: ClipboardList },
+                { id: "attendance", title: "Điểm danh", url: `${prefix}/attendance`, icon: ClipboardList },
+                { id: "grade-config", title: "Cấu hình điểm", url: `${prefix}/grade-config`, icon: Settings },
+                { id: "init-grades", title: "Khởi tạo bảng điểm", url: `${prefix}/init-grades`, icon: Database },
+              ],
+            },
+            {
+              id: "exam",
+              title: "Kỳ thi",
+              icon: CalendarCheck2Icon,
+              children: [
+                { id: "exam-list", title: "Danh sách kỳ thi", url: `${prefix}/exam/exam-list`, icon: CalendarCheck2Icon },
+                { id: "exam-schedule", title: "Lịch thi", url: `${prefix}/exam/schedule`, icon: Calendar },
+                { id: "room-assignment", title: "Phân phòng thi", url: `${prefix}/exam/room-assignment`, icon: School },
+                { id: "supervisor-assignment", title: "Phân công giám thị", url: `${prefix}/exam/supervisor-assignment`, icon: UserCheck },
+                { id: "exam-grades-search", title: "Điểm thi", url: `${prefix}/exam/grades-search`, icon: BarChart3 },
+                { id: "exam-dashboard", title: "DashBoard", url: `${prefix}/exam/exam-dashboard`, icon: Users },
               ],
             },
             {
@@ -363,49 +404,15 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
               ],
             },
             {
-              id: "exam",
-              title: "Kỳ thi",
-              icon: CalendarCheck2Icon,
+              id: "communication",
+              title: "Giao tiếp",
+              icon: Mail,
               children: [
-                { id: "exam-list", title: "Danh sách kỳ thi", url: `${prefix}/exam/exam-list`, icon: CalendarCheck2Icon },
-                { id: "exam-dashboard", title: "DashBoard", url: `${prefix}/exam/exam-dashboard`, icon: Users },
-                { id: "exam-schedule", title: "Lịch thi", url: `${prefix}/exam/schedule`, icon: Calendar },
-                { id: "exam-grades-search", title: "Điểm thi", url: `${prefix}/exam/grades-search`, icon: BarChart3 },
-                { id: "room-assignment", title: "Phân phòng thi", url: `${prefix}/exam/room-assignment`, icon: School },
-                { id: "supervisor-assignment", title: "Phân công giám thị", url: `${prefix}/exam/supervisor-assignment`, icon: UserCheck },
+                { id: "notifications", title: "Thông báo", url: `${prefix}/notifications`, icon: Bell },
+                { id: "send-email", title: "Gửi email hàng loạt", url: `${prefix}/send-email`, icon: Mail },
+                { id: "email-history", title: "Lịch sử email", url: `${prefix}/email-history`, icon: Mail },
               ],
             },
-          ],
-        },
-        {
-          label: "Hệ thống",
-          items: [
-            {
-              id: "teaching",
-              title: "Giảng dạy",
-              icon: Presentation,
-              children: [
-                { id: "proposal-history", title: "Lịch sử đề xuất", url: `${prefix}/proposal-history`, icon: FileText },
-                { id: "assignment", title: "Phân công giảng dạy", url: `${prefix}/teachingAssignmentPage`, icon: Presentation },
-                { id: "availability", title: "Lịch trống giáo viên", url: `${prefix}/availability`, icon: CalendarCheck2Icon },
-                { id: "schedule", title: "Thời khóa biểu", url: `${prefix}/schedule`, icon: Calendar },
-                { id: "schedule-new", title: "Thời khóa biểu new", url: `${prefix}/scheduleNew`, icon: Calendar },
-                { id: "class-periods", title: "Phân bổ số tiết theo lớp", url: `${prefix}/class-periods`, icon: BookOpen },
-              ],
-            },
-            {
-              id: "grades",
-              title: "Điểm số",
-              icon: BarChart3,
-              children: [
-                { id: "grades-list", title: "Bảng điểm", url: `${prefix}/grades`, icon: BarChart3 },
-                { id: "conduct-admin", title: "Quản lý hạnh kiểm", url: `${prefix}/conduct`, icon: ClipboardList },
-                { id: "grade-config", title: "Cấu hình điểm", url: `${prefix}/grade-config`, icon: Settings },
-                { id: "init-grades", title: "Khởi tạo bảng điểm", url: `${prefix}/init-grades`, icon: Database },
-              ],
-            },
-            { id: "attendance", title: "Điểm danh", url: `${prefix}/attendance`, icon: ClipboardList },
-            { id: "conduct", title: "Hạnh kiểm", url: `${prefix}/conduct`, icon: ClipboardList },
           ],
         },
         {
@@ -426,13 +433,12 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
           ],
         },
         {
-          label: "Khác",
+          label: "Cá nhân",
           items: [
-            { id: "notifications", title: "Thông báo", url: `${prefix}/notifications`, icon: Bell },
+            { id: "profile", title: "Hồ sơ", url: `${prefix}/profile`, icon: User },
+            { id: "settings", title: "Cài đặt", url: `${prefix}/settings`, icon: Settings },
           ],
         },
-
-
       ];
     case "student":
       return [
@@ -440,7 +446,6 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
           label: "Điều hướng",
           items: [
             { id: "home", title: "Trang chủ", url: `${prefix}/home`, icon: Home },
-            { id: "notifications", title: "Thông báo", url: `${prefix}/notifications`, icon: Bell },
           ],
         },
         {
@@ -450,7 +455,6 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
             { id: "grades", title: "Điểm số", url: `${prefix}/grades`, icon: BarChart3 },
             { id: "conduct", title: "Hạnh kiểm", url: `${prefix}/conduct`, icon: ClipboardList },
             { id: "attendance", title: "Điểm danh", url: `${prefix}/attendance`, icon: ClipboardList },
-            { id: "surveys", title: "Khảo sát đánh giá", url: `${prefix}/surveys`, icon: FileText },
             {
               id: "exams",
               title: "Kỳ thi",
@@ -460,11 +464,13 @@ const getNavigationGroups = (backendUser: any, prefix: string) => {
                 { id: "exam-grades-search", title: "Điểm thi", url: `${prefix}/exams/grades-search`, icon: BarChart3 },
               ],
             },
+            { id: "surveys", title: "Khảo sát đánh giá", url: `${prefix}/surveys`, icon: FileText },
           ],
         },
         {
-          label: "Khác",
+          label: "Giao tiếp",
           items: [
+            { id: "notifications", title: "Thông báo", url: `${prefix}/notifications`, icon: Bell },
           ],
         },
         {
@@ -499,13 +505,14 @@ const getRoleTitle = (backendUser: any) => {
 };
 
 const AppSidebar = () => {
-  const { state } = useSidebar();
+  const { state, toggleSidebar } = useSidebar();
   const collapsed = state === "collapsed";
   const { backendUser, logout } = useAuth();
   const location = useLocation();
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
   const { info: schoolInfo, loading: schoolInfoLoading } = usePublicSchoolInfo();
-  const schoolLogo = schoolInfo.logoUrl || logoSchool;
+  // Logo lấy từ settings, không dùng fallback
+  const schoolLogo = schoolInfo.logoUrl;
   const roleTitle = backendUser ? getRoleTitle(backendUser) : "";
   const parentIconSize = collapsed ? "h-6 w-6" : "h-4 w-4";
   const childIconSize = collapsed ? "h-5 w-5" : "h-3.5 w-3.5";
@@ -586,17 +593,40 @@ const AppSidebar = () => {
 
   return (
     <Sidebar collapsible="icon">
+      {/* Sidebar Rail - Cho phép kéo ra/kéo vào */}
+      <SidebarRail />
+      
       {/* Header */}
       <SidebarHeader className="p-4 border-b border-border/60 bg-gradient-to-br from-primary/10 via-transparent to-transparent">
         <div className={`flex flex-col items-center ${collapsed ? "gap-2" : "gap-3"}`}>
+          {/* Nút toggle sidebar */}
+          {!collapsed && (
+            <div className="w-full flex justify-end mb-1">
+              <button
+                onClick={toggleSidebar}
+                className="p-1.5 rounded-md hover:bg-accent transition-colors"
+                title="Thu gọn sidebar"
+                aria-label="Thu gọn sidebar"
+              >
+                <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </div>
+          )}
+          
           <div className="flex items-center justify-center">
             {schoolInfoLoading ? (
               <Skeleton className={`${collapsed ? "h-10 w-10" : "h-14 w-14"} rounded-xl`} />
-            ) : (
+            ) : schoolLogo ? (
               <div
                 className={`flex items-center justify-center ${collapsed ? "h-10 w-10" : "h-14 w-14"} rounded-xl border border-border/70 bg-background shadow-sm overflow-hidden`}
               >
                 <img src={schoolLogo} alt="Logo trường học" className="h-full w-full object-contain" />
+              </div>
+            ) : (
+              <div
+                className={`flex items-center justify-center ${collapsed ? "h-10 w-10" : "h-14 w-14"} rounded-xl border border-border/70 bg-muted/50`}
+              >
+                <School className={`${collapsed ? "h-6 w-6" : "h-8 w-8"} text-muted-foreground`} />
               </div>
             )}
           </div>
