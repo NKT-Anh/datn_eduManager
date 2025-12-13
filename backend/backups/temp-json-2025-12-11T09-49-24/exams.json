@@ -1,0 +1,974 @@
+[
+  {
+    "_id": "690a0f7e4732a5a25eb2ad14",
+    "examId": "exam_2024_hk1",
+    "name": "d",
+    "year": "2024-2025",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-20T00:00:00.000Z",
+    "endDate": "2025-11-28T00:00:00.000Z",
+    "status": "published",
+    "description": "",
+    "totalStudents": 0,
+    "examSchedulesCount": 0,
+    "grades": [
+      "10"
+    ],
+    "config": {
+      "autoSplitRoom": true,
+      "autoGenerateSBD": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-04T14:36:46.420Z",
+    "updatedAt": "2025-11-06T13:28:19.503Z",
+    "__v": 0
+  },
+  {
+    "_id": "690a142e0583ef07fb127142",
+    "examId": "exam_2023_hk1",
+    "name": "da",
+    "year": "2023-2024",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-11T00:00:00.000Z",
+    "endDate": "2025-11-19T00:00:00.000Z",
+    "status": "locked",
+    "description": "",
+    "totalStudents": 0,
+    "examSchedulesCount": 0,
+    "grades": [
+      "10"
+    ],
+    "config": {
+      "autoSplitRoom": true,
+      "autoGenerateSBD": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-04T14:56:46.762Z",
+    "updatedAt": "2025-11-06T13:26:20.675Z",
+    "__v": 0,
+    "archivedAt": "2025-11-05T09:17:12.532Z"
+  },
+  {
+    "_id": "690b626a078bbb004899a162",
+    "examId": "exam_2025-2026_hk1",
+    "name": "dadđ",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-04T17:00:00.000Z",
+    "endDate": "2025-11-12T17:00:00.000Z",
+    "status": "draft",
+    "totalStudents": 0,
+    "examSchedulesCount": 0,
+    "grades": [
+      "10"
+    ],
+    "config": {
+      "autoSplitRoom": true,
+      "autoGenerateSBD": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-05T14:42:50.873Z",
+    "updatedAt": "2025-11-05T14:42:50.873Z",
+    "__v": 0
+  },
+  {
+    "_id": "690b6a40078bbb004899a1e2",
+    "examId": "exam_2024-2025_hk2",
+    "name": "daddddd",
+    "year": "2024-2025",
+    "semester": "2",
+    "type": "regular",
+    "startDate": "2025-11-17T17:00:00.000Z",
+    "endDate": "2025-11-25T17:00:00.000Z",
+    "status": "published",
+    "totalStudents": 0,
+    "examSchedulesCount": 0,
+    "grades": [
+      "11",
+      "12",
+      "10"
+    ],
+    "config": {
+      "autoSplitRoom": true,
+      "autoGenerateSBD": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-05T15:16:16.551Z",
+    "updatedAt": "2025-11-05T15:16:36.604Z",
+    "__v": 1
+  },
+  {
+    "_id": "690b6c1960e93179d69a02e8",
+    "examId": "exam_2026-2027_hk1",
+    "name": "thi",
+    "year": "2026-2027",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-15T17:00:00.000Z",
+    "endDate": "2025-11-21T17:00:00.000Z",
+    "status": "draft",
+    "totalStudents": 0,
+    "examSchedulesCount": 0,
+    "grades": [
+      "10",
+      "11",
+      "12"
+    ],
+    "config": {
+      "autoSplitRoom": true,
+      "autoGenerateSBD": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-05T15:24:09.249Z",
+    "updatedAt": "2025-11-05T15:24:09.249Z",
+    "__v": 0
+  },
+  {
+    "_id": "690b6c3560e93179d69a02ee",
+    "examId": "exam_2024-2025_hk1",
+    "name": "a",
+    "year": "2024-2025",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-16T17:00:00.000Z",
+    "endDate": "2025-11-18T17:00:00.000Z",
+    "status": "archived",
+    "totalStudents": 0,
+    "examSchedulesCount": 0,
+    "grades": [
+      "11",
+      "12",
+      "10"
+    ],
+    "config": {
+      "autoSplitRoom": true,
+      "autoGenerateSBD": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-05T15:24:37.298Z",
+    "updatedAt": "2025-11-06T13:26:28.701Z",
+    "__v": 0
+  },
+  {
+    "_id": "690cb5aeea78409d0a93a3a3",
+    "examId": "exam_2023-2024_hk1_regular",
+    "name": "ddd",
+    "year": "2023-2024",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-05T17:00:00.000Z",
+    "endDate": "2025-11-20T17:00:00.000Z",
+    "grades": [
+      11
+    ],
+    "status": "draft",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "isArchived": false,
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-06T14:50:22.965Z",
+    "updatedAt": "2025-11-06T14:50:22.965Z",
+    "__v": 0
+  },
+  {
+    "_id": "690cb5dbea78409d0a93a3b2",
+    "examId": "exam_2025-2026_hk1_regular",
+    "name": "Giáo viên 01",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-05T17:00:00.000Z",
+    "endDate": "2025-11-13T17:00:00.000Z",
+    "grades": [
+      10
+    ],
+    "status": "draft",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "isArchived": false,
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-06T14:51:07.688Z",
+    "updatedAt": "2025-11-06T14:51:07.688Z",
+    "__v": 0
+  },
+  {
+    "_id": "690cb685ea78409d0a93a3cd",
+    "examId": "exam_2024-2025_hk1_regular",
+    "name": "Thi giữa kì",
+    "year": "2024-2025",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-08T17:00:00.000Z",
+    "endDate": "2025-11-14T17:00:00.000Z",
+    "grades": [
+      11
+    ],
+    "status": "draft",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "isArchived": false,
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-06T14:53:57.280Z",
+    "updatedAt": "2025-11-06T14:53:57.280Z",
+    "__v": 0
+  },
+  {
+    "_id": "69105407f61d9ef31850eb67",
+    "examId": "test1",
+    "grades": [
+      10
+    ]
+  },
+  {
+    "_id": "69105407f61d9ef31850eb68",
+    "examId": "test2",
+    "grades": [
+      10,
+      11
+    ]
+  },
+  {
+    "_id": "69105407f61d9ef31850eb69",
+    "examId": "test3",
+    "grades": [
+      10,
+      11,
+      12
+    ]
+  },
+  {
+    "_id": "69105407f61d9ef31850eb6a",
+    "examId": "test4",
+    "grades": [
+      11,
+      12
+    ]
+  },
+  {
+    "_id": "6910695535f6f65ad420bb60",
+    "examId": "exam_2023-2024_hk2_regular",
+    "name": "hksaaaa",
+    "year": "2023-2024",
+    "semester": "2",
+    "type": "regular",
+    "startDate": "2025-11-08T17:00:00.000Z",
+    "endDate": "2025-11-14T17:00:00.000Z",
+    "grades": [
+      11,
+      12
+    ],
+    "status": "locked",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "isArchived": false,
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-09T10:13:41.755Z",
+    "updatedAt": "2025-11-09T13:34:31.679Z",
+    "__v": 0
+  },
+  {
+    "_id": "691072582894ddb0fcf47d56",
+    "examId": "exam_2025-2026_hk2_regular",
+    "name": "da",
+    "year": "2025-2026",
+    "semester": "2",
+    "type": "regular",
+    "startDate": "2025-11-09T17:00:00.000Z",
+    "endDate": "2025-11-13T17:00:00.000Z",
+    "grades": [
+      10
+    ],
+    "status": "draft",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "isArchived": false,
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-09T10:52:08.411Z",
+    "updatedAt": "2025-11-09T10:52:08.411Z",
+    "__v": 0
+  },
+  {
+    "_id": "691072812894ddb0fcf47d5f",
+    "examId": "exam_2026-2027_hk1_regular",
+    "name": "dac",
+    "year": "2026-2027",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-09T17:00:00.000Z",
+    "endDate": "2025-11-16T17:00:00.000Z",
+    "grades": [
+      10,
+      11
+    ],
+    "status": "published",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "isArchived": false,
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-09T10:52:49.443Z",
+    "updatedAt": "2025-11-09T11:46:41.715Z",
+    "__v": 0
+  },
+  {
+    "_id": "6910782ab11e85dc7b74f1b9",
+    "examId": "exam_2026-2027_hk1_regular_aaaaa",
+    "name": "aaaaa",
+    "year": "2026-2027",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-16T17:00:00.000Z",
+    "endDate": "2025-11-18T17:00:00.000Z",
+    "grades": [
+      10,
+      11,
+      12
+    ],
+    "status": "draft",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-09T11:16:58.891Z",
+    "updatedAt": "2025-11-09T11:16:58.891Z",
+    "__v": 0
+  },
+  {
+    "_id": "69108371050d607b90654f41",
+    "examId": "exam_2026-2027_hk1_a123",
+    "name": "a123",
+    "year": "2026-2027",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-16T17:00:00.000Z",
+    "endDate": "2025-11-21T17:00:00.000Z",
+    "grades": [
+      11,
+      12,
+      10
+    ],
+    "status": "draft",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-09T12:05:05.549Z",
+    "updatedAt": "2025-11-09T12:05:05.549Z",
+    "__v": 0
+  },
+  {
+    "_id": "69109880050d607b906550a2",
+    "examId": "exam_2024-2025_hk2_d",
+    "name": "d",
+    "year": "2024-2025",
+    "semester": "2",
+    "type": "regular",
+    "startDate": "2025-11-08T17:00:00.000Z",
+    "endDate": "2025-11-12T17:00:00.000Z",
+    "grades": [
+      10
+    ],
+    "status": "draft",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-09T13:34:56.662Z",
+    "updatedAt": "2025-11-09T13:34:56.662Z",
+    "__v": 0
+  },
+  {
+    "_id": "69109907050d607b906550ae",
+    "examId": "exam_2024-2025_hk2_giao_vien_01",
+    "name": "Giáo viên 01",
+    "year": "2024-2025",
+    "semester": "2",
+    "type": "regular",
+    "startDate": "2025-11-08T17:00:00.000Z",
+    "endDate": "2025-11-12T17:00:00.000Z",
+    "grades": [
+      11
+    ],
+    "status": "published",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-09T13:37:11.949Z",
+    "updatedAt": "2025-11-09T13:37:32.032Z",
+    "__v": 0
+  },
+  {
+    "_id": "691186d8473c780570c7e6f1",
+    "examId": "exam_2026-2027_hk1_daa",
+    "name": "daa",
+    "year": "2026-2027",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-15T17:00:00.000Z",
+    "endDate": "2025-11-21T17:00:00.000Z",
+    "grades": [
+      10,
+      11,
+      12
+    ],
+    "status": "draft",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-10T06:31:52.138Z",
+    "updatedAt": "2025-11-10T06:31:52.138Z",
+    "__v": 0
+  },
+  {
+    "_id": "6911889bf2e8ad9201ca8079",
+    "examId": "exam_2024-2025_hk1_aszz",
+    "name": "aszz",
+    "year": "2024-2025",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-09T17:00:00.000Z",
+    "endDate": "2025-11-14T17:00:00.000Z",
+    "grades": [
+      10,
+      11,
+      12
+    ],
+    "status": "locked",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-10T06:39:23.709Z",
+    "updatedAt": "2025-11-10T06:58:09.611Z",
+    "__v": 0
+  },
+  {
+    "_id": "6911896038fc38cb41197fec",
+    "examId": "exam_2024-2025_hk1_axxx",
+    "name": "axxx",
+    "year": "2024-2025",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-08T17:00:00.000Z",
+    "endDate": "2025-11-14T17:00:00.000Z",
+    "grades": [
+      10,
+      11
+    ],
+    "status": "locked",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-10T06:42:40.585Z",
+    "updatedAt": "2025-11-10T06:53:05.310Z",
+    "__v": 0
+  },
+  {
+    "_id": "69118a23d8c88cc662b01085",
+    "examId": "exam_2024-2025_hk1_thi_giua_ki_1",
+    "name": "Thi giữa kì 1",
+    "year": "2024-2025",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-16T17:00:00.000Z",
+    "endDate": "2025-11-21T17:00:00.000Z",
+    "grades": [
+      10,
+      11,
+      12
+    ],
+    "status": "published",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-10T06:45:55.463Z",
+    "updatedAt": "2025-11-10T06:47:30.882Z",
+    "__v": 0
+  },
+  {
+    "_id": "6914ac585a62b1074ec631b3",
+    "examId": "exam_2025-2026_hk1_thi_cuoi_ki_1_toan_khoi",
+    "name": "Thi cuối kì 1 toàn khối",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-23T17:00:00.000Z",
+    "endDate": "2025-11-28T17:00:00.000Z",
+    "grades": [
+      "10",
+      "11",
+      "12"
+    ],
+    "status": "draft",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-12T15:48:40.752Z",
+    "updatedAt": "2025-11-12T15:48:40.752Z",
+    "__v": 0
+  },
+  {
+    "_id": "6914b281fa0655fe9d0d3467",
+    "examId": "exam_2025-2026_hk1_test_1",
+    "name": "test 1",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-15T17:00:00.000Z",
+    "endDate": "2025-11-21T17:00:00.000Z",
+    "grades": [
+      "10",
+      "11",
+      "12"
+    ],
+    "status": "draft",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-12T16:14:57.928Z",
+    "updatedAt": "2025-11-12T16:14:57.928Z",
+    "__v": 0
+  },
+  {
+    "_id": "6914b4775b069adb42923deb",
+    "examId": "exam_2025-2026_hk1_test3",
+    "name": "test3",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-15T17:00:00.000Z",
+    "endDate": "2025-11-21T17:00:00.000Z",
+    "grades": [
+      "10"
+    ],
+    "status": "draft",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-12T16:23:19.299Z",
+    "updatedAt": "2025-11-12T16:23:19.299Z",
+    "__v": 0
+  },
+  {
+    "_id": "6914cbb47f6ed7c0f9067872",
+    "examId": "exam_2025-2026_hk2_test4",
+    "name": "test4",
+    "year": "2025-2026",
+    "semester": "2",
+    "type": "regular",
+    "startDate": "2025-11-01T17:00:00.000Z",
+    "endDate": "2025-11-07T17:00:00.000Z",
+    "grades": [
+      "10"
+    ],
+    "status": "draft",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-12T18:02:28.247Z",
+    "updatedAt": "2025-11-12T18:02:28.247Z",
+    "__v": 0
+  },
+  {
+    "_id": "6914ce3fe8e8d2298cd7fbc6",
+    "examId": "exam_2025-2026_hk1_test56",
+    "name": "test56",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-22T17:00:00.000Z",
+    "endDate": "2025-11-27T17:00:00.000Z",
+    "grades": [
+      "11",
+      "10"
+    ],
+    "status": "draft",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-12T18:13:19.881Z",
+    "updatedAt": "2025-11-12T18:13:19.881Z",
+    "__v": 0
+  },
+  {
+    "_id": "6914cf91e591ced88c7c5223",
+    "examId": "exam_2025-2026_hk1_test6",
+    "name": "test6",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-22T17:00:00.000Z",
+    "endDate": "2025-11-27T17:00:00.000Z",
+    "grades": [
+      "10",
+      "11"
+    ],
+    "status": "draft",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-12T18:18:57.778Z",
+    "updatedAt": "2025-11-12T18:18:57.778Z",
+    "__v": 0
+  },
+  {
+    "_id": "6915902f3cf38d1e3bd7ea84",
+    "examId": "exam_2025-2026_hk1_testend",
+    "name": "testend",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-23T17:00:00.000Z",
+    "endDate": "2025-11-28T17:00:00.000Z",
+    "grades": [
+      "10",
+      "11",
+      "12"
+    ],
+    "status": "draft",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-13T08:00:47.627Z",
+    "updatedAt": "2025-11-13T08:00:47.627Z",
+    "__v": 0
+  },
+  {
+    "_id": "69159bfd1f4521c0f4df8e9d",
+    "examId": "exam_2025-2026_hk1_test11",
+    "name": "test11",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-15T17:00:00.000Z",
+    "endDate": "2025-11-20T17:00:00.000Z",
+    "grades": [
+      "10"
+    ],
+    "status": "draft",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-13T08:51:09.443Z",
+    "updatedAt": "2025-11-13T08:51:09.443Z",
+    "__v": 0
+  },
+  {
+    "_id": "6915aeb754f0b11817f5f890",
+    "examId": "exam_2025-2026_hk1_teex",
+    "name": "teex",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-22T17:00:00.000Z",
+    "endDate": "2025-11-27T17:00:00.000Z",
+    "grades": [
+      "10",
+      "11",
+      "12"
+    ],
+    "status": "draft",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-13T10:11:03.229Z",
+    "updatedAt": "2025-11-13T10:11:03.229Z",
+    "__v": 0
+  },
+  {
+    "_id": "6915c130777c247b50bb3c23",
+    "examId": "exam_2025-2026_hk1_test100",
+    "name": "test100",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-23T17:00:00.000Z",
+    "endDate": "2025-11-28T17:00:00.000Z",
+    "grades": [
+      "10",
+      "11"
+    ],
+    "status": "draft",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-13T11:29:52.662Z",
+    "updatedAt": "2025-11-13T11:29:52.662Z",
+    "__v": 0
+  },
+  {
+    "_id": "6915c2b0f229656823e1a5fe",
+    "examId": "exam_2025-2026_hk1_test33",
+    "name": "test33",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-16T17:00:00.000Z",
+    "endDate": "2025-11-21T17:00:00.000Z",
+    "grades": [
+      "10"
+    ],
+    "status": "draft",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-13T11:36:16.633Z",
+    "updatedAt": "2025-11-13T11:36:16.633Z",
+    "__v": 0
+  },
+  {
+    "_id": "6915d544904a3867afb1870c",
+    "examId": "exam_2025-2026_hk1_texxx12",
+    "name": "texxx12",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-15T17:00:00.000Z",
+    "endDate": "2025-11-21T17:00:00.000Z",
+    "grades": [
+      "10",
+      "11",
+      "12"
+    ],
+    "status": "archived",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-13T12:55:32.209Z",
+    "updatedAt": "2025-11-23T02:47:40.628Z",
+    "__v": 0
+  },
+  {
+    "_id": "6915d6965dde9e0ca59410ad",
+    "examId": "exam_2025-2026_hk1_ax",
+    "name": "ax",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-16T17:00:00.000Z",
+    "endDate": "2025-11-21T17:00:00.000Z",
+    "grades": [
+      "11",
+      "12",
+      "10"
+    ],
+    "status": "locked",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-13T13:01:10.574Z",
+    "updatedAt": "2025-11-23T02:47:19.313Z",
+    "__v": 0
+  },
+  {
+    "_id": "6915dd091f9828f80555f199",
+    "examId": "exam_2025-2026_hk1_axx",
+    "name": "axx",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "regular",
+    "startDate": "2025-11-16T17:00:00.000Z",
+    "endDate": "2025-11-21T17:00:00.000Z",
+    "grades": [
+      "10",
+      "11",
+      "12"
+    ],
+    "status": "archived",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "createdAt": "2025-11-13T13:28:41.819Z",
+    "updatedAt": "2025-11-27T05:08:21.486Z",
+    "__v": 0
+  },
+  {
+    "_id": "6927dcc0de1d8b32fccdb017",
+    "examId": "exam_2025-2026_hk1_kiem_tra_tap_trung",
+    "name": "kiểm tra tập trung",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "midterm",
+    "startDate": "2025-11-23T17:00:00.000Z",
+    "endDate": "2025-11-28T17:00:00.000Z",
+    "grades": [
+      "10",
+      "11",
+      "12"
+    ],
+    "status": "published",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "gradesPublished": true,
+    "gradesPublishedAt": "2025-12-01T15:51:45.354Z",
+    "gradesPublishedBy": "68b94f39232dbb3761dc4796",
+    "createdAt": "2025-11-27T05:08:16.292Z",
+    "updatedAt": "2025-12-01T15:51:45.354Z",
+    "__v": 0
+  },
+  {
+    "_id": "692abca5def7aff0a5585ff0",
+    "examId": "exam_2025-2026_hk1_ki_thi_giua_ki",
+    "name": "Kì thi giưa kì",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "midterm",
+    "startDate": "2025-11-30T17:00:00.000Z",
+    "endDate": "2025-12-05T17:00:00.000Z",
+    "grades": [
+      "10",
+      "11",
+      "12"
+    ],
+    "status": "published",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "gradesPublished": true,
+    "gradesPublishedAt": "2025-12-04T15:24:01.361Z",
+    "gradesPublishedBy": "68b94f39232dbb3761dc4796",
+    "createdAt": "2025-11-29T09:28:05.988Z",
+    "updatedAt": "2025-12-04T15:24:01.361Z",
+    "__v": 0
+  },
+  {
+    "_id": "693a8d8dd3dbb2b235cafcf3",
+    "examId": "exam_2025-2026_hk1_kiem_tra_cuoi_ki_1_",
+    "name": "Kiểm tra cuối kì 1 ",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "final",
+    "startDate": "2025-12-27T17:00:00.000Z",
+    "endDate": "2026-01-05T17:00:00.000Z",
+    "grades": [
+      "10",
+      "11",
+      "12"
+    ],
+    "status": "published",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "gradesPublished": true,
+    "gradesPublishedAt": "2025-12-11T09:27:11.690Z",
+    "gradesPublishedBy": "68b94f39232dbb3761dc4796",
+    "createdAt": "2025-12-11T09:23:25.152Z",
+    "updatedAt": "2025-12-11T09:27:11.691Z",
+    "__v": 0
+  },
+  {
+    "_id": "693a9073d3dbb2b235cb4349",
+    "examId": "exam_2025-2026_hk1_thi_cuoi_ki_1",
+    "name": "thi cuối kì 1",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "final",
+    "startDate": "2025-12-27T17:00:00.000Z",
+    "endDate": "2026-01-05T17:00:00.000Z",
+    "grades": [
+      "10",
+      "11",
+      "12"
+    ],
+    "status": "published",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "gradesPublished": false,
+    "gradesPublishedAt": null,
+    "gradesPublishedBy": null,
+    "createdAt": "2025-12-11T09:35:47.217Z",
+    "updatedAt": "2025-12-11T09:37:31.598Z",
+    "__v": 0
+  },
+  {
+    "_id": "693a9203d3dbb2b235cb7b5d",
+    "examId": "exam_2025-2026_hk1_thi_cuoi_ki_1__ot_1",
+    "name": "Thi cuối kì 1 ( đợt 1)",
+    "year": "2025-2026",
+    "semester": "1",
+    "type": "final",
+    "startDate": "2026-01-03T17:00:00.000Z",
+    "endDate": "2026-01-09T17:00:00.000Z",
+    "grades": [
+      "10",
+      "11",
+      "12"
+    ],
+    "status": "published",
+    "createdBy": "klJBLwrtCzSYuapg5ZjVUVob1Lp1",
+    "config": {
+      "autoSplitRoom": true,
+      "maxStudentsPerRoom": 24
+    },
+    "gradesPublished": true,
+    "gradesPublishedAt": "2025-12-11T09:46:26.203Z",
+    "gradesPublishedBy": "68b94f39232dbb3761dc4796",
+    "createdAt": "2025-12-11T09:42:27.377Z",
+    "updatedAt": "2025-12-11T09:46:26.203Z",
+    "__v": 0
+  }
+]

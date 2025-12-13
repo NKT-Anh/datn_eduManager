@@ -4,12 +4,14 @@
 
 import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
+// 1. Import SafeAreaProvider
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+
 import { AuthProvider } from './src/context/AuthContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import CustomSplashScreen from './src/components/SplashScreen';
 
-// ✅ Dev guard: detect boolean props accidentally passed as strings ("true"/"false")
-// This helps pinpoint the exact component/prop causing Android crash: String cannot be cast to Boolean.
+// ✅ Dev guard: detect boolean props accidentally passed as strings
 if (__DEV__) {
   const rAny = React as any;
   if (!rAny.__BOOL_PROP_GUARD_INSTALLED__) {
@@ -41,12 +43,10 @@ if (__DEV__) {
               typeof type === 'string'
                 ? type
                 : type?.displayName || type?.name || 'AnonymousComponent';
-            // eslint-disable-next-line no-console
             console.error(
               `[BoolPropGuard] Prop "${key}" is a STRING (${JSON.stringify(v)}) on <${name}>. Fix to {${v}}.`,
               { propValue: v, props }
             );
-            // eslint-disable-next-line no-console
             console.error(new Error('[BoolPropGuard] stack').stack);
           }
         }
@@ -60,13 +60,19 @@ export default function App() {
   const [isSplashReady, setIsSplashReady] = useState(false);
 
   return (
-    <AuthProvider>
-      <StatusBar style="auto" />
-      {!isSplashReady ? (
-        <CustomSplashScreen onFinish={() => setIsSplashReady(true)} />
-      ) : (
-        <AppNavigator />
-      )}
-    </AuthProvider>
+    // 2. Bọc toàn bộ App trong SafeAreaProvider
+    // Đây là chìa khóa để xóa khoảng trắng trên đầu và giúp useSafeAreaInsets hoạt động
+    <SafeAreaProvider>
+      <AuthProvider>
+        {/* style="light" để chữ trên thanh pin màu trắng (nền xanh) */}
+        <StatusBar style="light" translucent /> 
+        
+        {!isSplashReady ? (
+          <CustomSplashScreen onFinish={() => setIsSplashReady(true)} />
+        ) : (
+          <AppNavigator />
+        )}
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }

@@ -1,5 +1,5 @@
 /**
- * Student Attendance Screen
+ * Student Attendance Screen - Modern UI
  */
 
 import React, { useState, useEffect } from 'react';
@@ -10,9 +10,29 @@ import {
   ScrollView,
   ActivityIndicator,
   TouchableOpacity,
+  Dimensions,
+  StatusBar,
 } from 'react-native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { studentService } from '../../services/studentService';
+
+const { width } = Dimensions.get('window');
+
+// Màu sắc
+const COLORS = {
+  primary: '#2563EB',
+  background: '#F3F4F6',
+  cardBg: '#FFFFFF',
+  text: '#1F2937',
+  textSecondary: '#6B7280',
+  success: '#10B981',
+  danger: '#EF4444',
+  warning: '#F59E0B',
+  info: '#3B82F6',
+  border: '#E5E7EB',
+};
 
 interface AttendanceRecord {
   _id: string;
@@ -35,12 +55,14 @@ interface AttendanceStats {
 }
 
 export default function AttendanceScreen({ navigation }: any) {
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [stats, setStats] = useState<AttendanceStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedSemester, setSelectedSemester] = useState('1');
-  const [viewMode, setViewMode] = useState<'list' | 'stats'>('stats');
+  const [viewMode, setViewMode] = useState<'stats' | 'list'>('stats');
 
   useEffect(() => {
     loadAttendance();
@@ -50,17 +72,12 @@ export default function AttendanceScreen({ navigation }: any) {
     try {
       setLoading(true);
       const currentYear = new Date().getFullYear();
-      const year = `${currentYear}-${currentYear + 1}`;
+      // Logic năm học có thể tùy chỉnh
+      const year = `${currentYear}-${currentYear + 1}`; 
       
       const [recordsData, statsData] = await Promise.all([
-        studentService.getAttendanceRecords({
-          year,
-          semester: selectedSemester,
-        }),
-        studentService.getAttendanceStats({
-          year,
-          semester: selectedSemester,
-        }),
+        studentService.getAttendanceRecords({ year, semester: selectedSemester }),
+        studentService.getAttendanceStats({ year, semester: selectedSemester }),
       ]);
 
       setRecords(Array.isArray(recordsData) ? recordsData : []);
@@ -74,74 +91,92 @@ export default function AttendanceScreen({ navigation }: any) {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'present':
-        return '#34C759';
-      case 'absent':
-        return '#FF3B30';
-      case 'late':
-        return '#FF9500';
-      case 'excused':
-        return '#007AFF';
-      default:
-        return '#999';
+      case 'present': return COLORS.success;
+      case 'absent': return COLORS.danger;
+      case 'late': return COLORS.warning;
+      case 'excused': return COLORS.info;
+      default: return COLORS.textSecondary;
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'present': return 'checkmark-circle';
+      case 'absent': return 'close-circle';
+      case 'late': return 'time';
+      case 'excused': return 'document-text';
+      default: return 'help-circle';
     }
   };
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'present':
-        return 'Có mặt';
-      case 'absent':
-        return 'Vắng';
-      case 'late':
-        return 'Muộn';
-      case 'excused':
-        return 'Có phép';
-      default:
-        return status;
+      case 'present': return 'Có mặt';
+      case 'absent': return 'Vắng';
+      case 'late': return 'Đi muộn';
+      case 'excused': return 'Có phép';
+      default: return 'Không xác định';
     }
   };
 
-  if (loading) {
+  if (loading && !stats) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Đang tải...</Text>
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Đang tải dữ liệu...</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Điểm danh</Text>
-        
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: insets.top + 10, height: 80 + insets.top }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Điểm danh</Text>
+        <View style={{ width: 40 }} /> 
+      </View>
+
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Semester Selector */}
-        <View style={styles.selectorRow}>
+        <View style={styles.semesterContainer}>
           <TouchableOpacity
-            style={[styles.selectorButton, selectedSemester === '1' && styles.selectorButtonActive]}
+            style={[styles.semesterTab, selectedSemester === '1' && styles.semesterTabActive]}
             onPress={() => setSelectedSemester('1')}
           >
-            <Text style={[styles.selectorText, selectedSemester === '1' && styles.selectorTextActive]}>
+            <Text style={[styles.semesterText, selectedSemester === '1' && styles.semesterTextActive]}>
               Học kỳ 1
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.selectorButton, selectedSemester === '2' && styles.selectorButtonActive]}
+            style={[styles.semesterTab, selectedSemester === '2' && styles.semesterTabActive]}
             onPress={() => setSelectedSemester('2')}
           >
-            <Text style={[styles.selectorText, selectedSemester === '2' && styles.selectorTextActive]}>
+            <Text style={[styles.semesterText, selectedSemester === '2' && styles.semesterTextActive]}>
               Học kỳ 2
             </Text>
           </TouchableOpacity>
         </View>
 
         {/* View Mode Toggle */}
-        <View style={styles.viewModeRow}>
+        <View style={styles.viewModeContainer}>
           <TouchableOpacity
             style={[styles.viewModeButton, viewMode === 'stats' && styles.viewModeButtonActive]}
             onPress={() => setViewMode('stats')}
           >
+            <Ionicons 
+              name="pie-chart" 
+              size={16} 
+              color={viewMode === 'stats' ? '#fff' : COLORS.textSecondary} 
+              style={{ marginRight: 6 }}
+            />
             <Text style={[styles.viewModeText, viewMode === 'stats' && styles.viewModeTextActive]}>
               Thống kê
             </Text>
@@ -150,268 +185,386 @@ export default function AttendanceScreen({ navigation }: any) {
             style={[styles.viewModeButton, viewMode === 'list' && styles.viewModeButtonActive]}
             onPress={() => setViewMode('list')}
           >
+            <Ionicons 
+              name="list" 
+              size={16} 
+              color={viewMode === 'list' ? '#fff' : COLORS.textSecondary} 
+              style={{ marginRight: 6 }}
+            />
             <Text style={[styles.viewModeText, viewMode === 'list' && styles.viewModeTextActive]}>
               Lịch sử
             </Text>
           </TouchableOpacity>
         </View>
-      </View>
 
-      {viewMode === 'stats' && stats && (
-        <View style={styles.statsContainer}>
-          <View style={styles.statsCard}>
-            <Text style={styles.statsLabel}>Tỷ lệ có mặt</Text>
-            <Text style={styles.statsValue}>
-              {stats.rate ? `${(stats.rate * 100).toFixed(1)}%` : 'N/A'}
-            </Text>
+        {viewMode === 'stats' && stats && (
+          <View style={styles.statsWrapper}>
+            {/* Main Rate Card */}
+            <View style={styles.rateCard}>
+              <View>
+                <Text style={styles.rateLabel}>Tỷ lệ chuyên cần</Text>
+                <Text style={styles.rateSub}>Tổng số buổi: {stats.total}</Text>
+              </View>
+              <View style={styles.circularProgress}>
+                <Text style={styles.rateValue}>
+                  {stats.rate ? `${(stats.rate * 100).toFixed(0)}%` : '0%'}
+                </Text>
+              </View>
+            </View>
+
+            {/* Grid Stats */}
+            <View style={styles.gridStats}>
+              <View style={[styles.statBox, { borderColor: COLORS.success }]}>
+                <Ionicons name="checkmark-circle" size={24} color={COLORS.success} />
+                <Text style={styles.statBoxValue}>{stats.present || 0}</Text>
+                <Text style={styles.statBoxLabel}>Có mặt</Text>
+              </View>
+              
+              <View style={[styles.statBox, { borderColor: COLORS.danger }]}>
+                <Ionicons name="close-circle" size={24} color={COLORS.danger} />
+                <Text style={styles.statBoxValue}>{stats.absent || 0}</Text>
+                <Text style={styles.statBoxLabel}>Vắng</Text>
+              </View>
+
+              <View style={[styles.statBox, { borderColor: COLORS.warning }]}>
+                <Ionicons name="time" size={24} color={COLORS.warning} />
+                <Text style={styles.statBoxValue}>{stats.late || 0}</Text>
+                <Text style={styles.statBoxLabel}>Muộn</Text>
+              </View>
+
+              <View style={[styles.statBox, { borderColor: COLORS.info }]}>
+                <Ionicons name="document-text" size={24} color={COLORS.info} />
+                <Text style={styles.statBoxValue}>{stats.excused || 0}</Text>
+                <Text style={styles.statBoxLabel}>Có phép</Text>
+              </View>
+            </View>
           </View>
+        )}
 
-          <View style={styles.statsGrid}>
-            <View style={[styles.statItem, { backgroundColor: '#34C75920' }]}>
-              <Text style={styles.statValue}>{stats.present || 0}</Text>
-              <Text style={styles.statLabel}>Có mặt</Text>
-            </View>
-            <View style={[styles.statItem, { backgroundColor: '#FF3B3020' }]}>
-              <Text style={styles.statValue}>{stats.absent || 0}</Text>
-              <Text style={styles.statLabel}>Vắng</Text>
-            </View>
-            <View style={[styles.statItem, { backgroundColor: '#FF950020' }]}>
-              <Text style={styles.statValue}>{stats.late || 0}</Text>
-              <Text style={styles.statLabel}>Muộn</Text>
-            </View>
-            <View style={[styles.statItem, { backgroundColor: '#007AFF20' }]}>
-              <Text style={styles.statValue}>{stats.excused || 0}</Text>
-              <Text style={styles.statLabel}>Có phép</Text>
-            </View>
-          </View>
-        </View>
-      )}
-
-      {viewMode === 'list' && (
-        <View style={styles.listContainer}>
-          {records.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Chưa có dữ liệu điểm danh</Text>
-            </View>
-          ) : (
-            records.map((record) => (
-              <TouchableOpacity
-                key={record._id}
-                style={styles.recordCard}
-                activeOpacity={0.85}
-                onPress={() => navigation.navigate('AttendanceDetail', { record })}
-              >
-                <View style={styles.recordHeader}>
-                  <Text style={styles.recordDate}>
-                    {new Date(record.date).toLocaleDateString('vi-VN', {
-                      weekday: 'long',
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                    })}
-                  </Text>
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      { backgroundColor: getStatusColor(record.status) },
-                    ]}
-                  >
-                    <Text style={styles.statusText}>{getStatusText(record.status)}</Text>
+        {viewMode === 'list' && (
+          <View style={styles.listWrapper}>
+            {records.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="calendar-outline" size={64} color="#D1D5DB" />
+                <Text style={styles.emptyText}>Chưa có dữ liệu điểm danh</Text>
+              </View>
+            ) : (
+              records.map((record, index) => (
+                <View key={record._id || index} style={styles.recordRow}>
+                  {/* Left: Date */}
+                  <View style={styles.dateColumn}>
+                    <Text style={styles.dateDay}>
+                      {new Date(record.date).getDate()}
+                    </Text>
+                    <Text style={styles.dateMonth}>
+                      Th{new Date(record.date).getMonth() + 1}
+                    </Text>
                   </View>
+
+                  {/* Middle: Info */}
+                  <TouchableOpacity 
+                    style={styles.recordCard}
+                    activeOpacity={0.7}
+                    onPress={() => navigation.navigate('AttendanceDetail', { record })}
+                  >
+                    <View style={styles.cardTop}>
+                      <Text style={styles.subjectName}>
+                        {record.subjectId?.name || 'Môn học'}
+                      </Text>
+                      <Ionicons 
+                        name={getStatusIcon(record.status)} 
+                        size={20} 
+                        color={getStatusColor(record.status)} 
+                      />
+                    </View>
+                    
+                    <View style={styles.cardBottom}>
+                      <View style={[
+                        styles.statusTag, 
+                        { backgroundColor: getStatusColor(record.status) + '20' }
+                      ]}>
+                        <Text style={[
+                          styles.statusTagText, 
+                          { color: getStatusColor(record.status) }
+                        ]}>
+                          {getStatusText(record.status)}
+                        </Text>
+                      </View>
+                      
+                      {record.notes && (
+                        <Text style={styles.noteText} numberOfLines={1}>
+                          • {record.notes}
+                        </Text>
+                      )}
+                    </View>
+                  </TouchableOpacity>
                 </View>
-                {record.subjectId && (
-                  <Text style={styles.recordSubject}>Môn: {record.subjectId.name}</Text>
-                )}
-                {record.notes && (
-                  <Text style={styles.recordNotes}>Ghi chú: {record.notes}</Text>
-                )}
-              </TouchableOpacity>
-            ))
-          )}
-        </View>
-      )}
-    </ScrollView>
+              ))
+            )}
+          </View>
+        )}
+        <View style={{ height: 40 }} />
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: COLORS.background,
   },
-  center: {
+  centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
   },
   loadingText: {
-    marginTop: 12,
-    color: '#666',
+    marginTop: 10,
+    color: COLORS.textSecondary,
   },
+
+  // Header
   header: {
-    backgroundColor: '#fff',
-    padding: 20,
-    marginBottom: 12,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 16,
-  },
-  selectorRow: {
+    backgroundColor: COLORS.primary,
     flexDirection: 'row',
-    marginBottom: 16,
-    gap: 8,
-  },
-  selectorButton: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: '#f0f0f0',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    zIndex: 10,
   },
-  selectorButtonActive: {
-    backgroundColor: '#007AFF',
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 20,
   },
-  selectorText: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '600',
-  },
-  selectorTextActive: {
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
     color: '#fff',
   },
-  viewModeRow: {
+
+  scrollContent: {
+    padding: 16,
+  },
+
+  // Semester Selector
+  semesterContainer: {
     flexDirection: 'row',
-    gap: 8,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 16,
+  },
+  semesterTab: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  semesterTabActive: {
+    backgroundColor: COLORS.primary,
+  },
+  semesterText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  semesterTextActive: {
+    color: '#fff',
+  },
+
+  // View Mode
+  viewModeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 20,
+    gap: 12,
   },
   viewModeButton: {
-    flex: 1,
-    padding: 10,
-    borderRadius: 8,
-    backgroundColor: '#f0f0f0',
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   viewModeButtonActive: {
-    backgroundColor: '#007AFF',
+    backgroundColor: COLORS.text, // Dark bg for active
+    borderColor: COLORS.text,
   },
   viewModeText: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 13,
     fontWeight: '600',
+    color: COLORS.textSecondary,
   },
   viewModeTextActive: {
     color: '#fff',
   },
-  statsContainer: {
-    padding: 16,
+
+  // Stats View
+  statsWrapper: {
+    gap: 16,
   },
-  statsCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
+  rateCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: COLORS.primary,
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
-  statsLabel: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 8,
-  },
-  statsValue: {
-    fontSize: 32,
+  rateLabel: {
+    color: '#fff',
+    fontSize: 16,
     fontWeight: 'bold',
-    color: '#007AFF',
+    marginBottom: 4,
   },
-  statsGrid: {
+  rateSub: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 13,
+  },
+  circularProgress: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#fff',
+  },
+  rateValue: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  
+  gridStats: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
   },
-  statItem: {
-    flex: 1,
+  statBox: {
+    flex: 1, // 2 columns
     minWidth: '45%',
     backgroundColor: '#fff',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
     alignItems: 'center',
+    borderLeftWidth: 4, // Colored border left
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 2,
   },
-  statValue: {
+  statBoxValue: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 4,
+    color: COLORS.text,
+    marginVertical: 4,
   },
-  statLabel: {
+  statBoxLabel: {
     fontSize: 12,
-    color: '#666',
+    color: COLORS.textSecondary,
   },
-  listContainer: {
-    padding: 16,
+
+  // List View
+  listWrapper: {
+    gap: 12,
   },
-  emptyContainer: {
-    padding: 40,
+  recordRow: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  emptyText: {
-    fontSize: 16,
-    color: '#999',
-  },
-  recordCard: {
+  dateColumn: {
+    width: 50,
+    alignItems: 'center',
+    marginRight: 10,
     backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    paddingVertical: 8,
   },
-  recordHeader: {
+  dateDay: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  dateMonth: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  recordCard: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  cardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
   },
-  recordDate: {
-    fontSize: 16,
+  subjectName: {
+    fontSize: 15,
     fontWeight: '600',
-    color: '#333',
+    color: COLORS.text,
+    flex: 1,
+    marginRight: 8,
+  },
+  cardBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  statusTagText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  noteText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    fontStyle: 'italic',
     flex: 1,
   },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+
+  emptyState: {
+    alignItems: 'center',
+    marginTop: 40,
   },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  recordSubject: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
-  },
-  recordNotes: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 4,
-    fontStyle: 'italic',
+  emptyText: {
+    marginTop: 12,
+    fontSize: 15,
+    color: COLORS.textSecondary,
   },
 });
-

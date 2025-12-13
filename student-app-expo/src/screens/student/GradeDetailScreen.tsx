@@ -1,31 +1,65 @@
 /**
- * Student Grade Detail Screen
- * - Chi tiết 1 môn: liệt kê các đầu điểm + điểm tổng kết
+ * Student Grade Detail Screen - Modern UI
  */
 
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Dimensions,
+  StatusBar,
+} from 'react-native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-type Grade = any;
+const { width } = Dimensions.get('window');
+
+// Màu sắc
+const COLORS = {
+  primary: '#2563EB',
+  background: '#F3F4F6',
+  card: '#FFFFFF',
+  text: '#1F2937',
+  textSecondary: '#6B7280',
+  success: '#10B981',
+  warning: '#F59E0B',
+  danger: '#EF4444',
+  info: '#3B82F6',
+  border: '#E5E7EB',
+};
 
 const TYPE_LABELS: Record<string, string> = {
-  mieng: 'Điểm miệng',
-  '15phut': 'Điểm 15 phút',
-  '1tiet': 'Điểm 1 tiết',
-  hocky: 'Điểm học kỳ',
+  mieng: 'Kiểm tra Miệng',
+  '15phut': 'Kiểm tra 15 phút',
+  '1tiet': 'Kiểm tra 1 tiết',
+  hocky: 'Thi Học kỳ',
+};
+
+// Hàm xác định màu dựa trên điểm số
+const getScoreColor = (score: number) => {
+  if (score >= 8.0) return COLORS.success;
+  if (score >= 6.5) return COLORS.info;
+  if (score >= 5.0) return COLORS.warning;
+  return COLORS.danger;
 };
 
 export default function GradeDetailScreen({ route, navigation }: any) {
-  const grade: Grade | undefined = route?.params?.grade;
+  const insets = useSafeAreaInsets();
+  const grade: any = route?.params?.grade;
 
   const title = useMemo(() => grade?.subjectId?.name || 'Chi tiết điểm', [grade?.subjectId?.name]);
+  
   const semesterLabel = useMemo(() => {
     if (!grade) return '';
     const y = grade.year || grade.schoolYear || '';
     const sem = grade.semester || '';
-    return y && sem ? `${y} - Học kỳ ${sem}` : '';
+    return y && sem ? `HK${sem} • ${y}` : '';
   }, [grade]);
 
+  // Phân loại điểm theo Type
   const itemsByType = useMemo(() => {
     const map: Record<string, number[]> = {};
     const gradeItems = grade?.gradeItems || [];
@@ -39,89 +73,286 @@ export default function GradeDetailScreen({ route, navigation }: any) {
     return map;
   }, [grade]);
 
+  // Lấy điểm tổng kết
+  const finalScore = grade?.summary?.final != null ? Number(grade.summary.final) : null;
+
   if (!grade) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.emptyText}>Không có dữ liệu điểm</Text>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>Quay lại</Text>
+      <View style={styles.centerContainer}>
+        <Ionicons name="alert-circle-outline" size={48} color={COLORS.textSecondary} />
+        <Text style={styles.emptyText}>Không tìm thấy dữ liệu</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButtonCenter}>
+          <Text style={styles.backTextCenter}>Quay lại</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backInline}>
-          <Text style={styles.backInlineText}>←</Text>
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+
+      {/* --- HEADER --- */}
+      <View style={[styles.header, { paddingTop: insets.top + 10, height: 80 + insets.top }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>{title}</Text>
-          <Text style={styles.subtitle}>{semesterLabel}</Text>
-        </View>
+        <Text style={styles.headerTitle}>Chi tiết điểm môn học</Text>
+        <View style={{ width: 40 }} /> 
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Tổng kết</Text>
-        <View style={styles.row}>
-          <Text style={styles.label}>Điểm tổng kết</Text>
-          <Text style={styles.valueStrong}>
-            {grade?.summary?.final != null ? Number(grade.summary.final).toFixed(2) : '-'}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Chi tiết đầu điểm</Text>
-        {Object.keys(TYPE_LABELS).map((typeKey) => {
-          const list = itemsByType[typeKey] || [];
-          return (
-            <View key={typeKey} style={styles.block}>
-              <Text style={styles.blockTitle}>
-                {TYPE_LABELS[typeKey]} ({list.length})
-              </Text>
-              {list.length === 0 ? (
-                <Text style={styles.emptySubText}>Chưa có</Text>
-              ) : (
-                <View style={styles.chipsRow}>
-                  {list.map((v, idx) => (
-                    <View key={`${typeKey}-${idx}`} style={styles.chip}>
-                      <Text style={styles.chipText}>{Number(v).toString().replace(/\.0$/, '')}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* --- HERO CARD (Subject & Final Score) --- */}
+        <View style={styles.heroCard}>
+          <View style={styles.heroInfo}>
+            <Text style={styles.subjectName}>{title}</Text>
+            <View style={styles.semesterBadge}>
+              <Text style={styles.semesterText}>{semesterLabel}</Text>
             </View>
-          );
-        })}
-      </View>
-    </ScrollView>
+          </View>
+          
+          <View style={styles.finalScoreCircle}>
+            <Text style={styles.finalLabel}>Tổng kết</Text>
+            <Text style={[styles.finalValue, { color: finalScore !== null ? getScoreColor(finalScore) : COLORS.textSecondary }]}>
+              {finalScore !== null ? finalScore.toFixed(1) : '--'}
+            </Text>
+          </View>
+        </View>
+
+        {/* --- DETAIL SCORES --- */}
+        <View style={styles.detailsContainer}>
+          <Text style={styles.sectionTitle}>Các đầu điểm thành phần</Text>
+          
+          {Object.keys(TYPE_LABELS).map((typeKey) => {
+            const list = itemsByType[typeKey] || [];
+            return (
+              <View key={typeKey} style={styles.typeBlock}>
+                <View style={styles.typeHeader}>
+                  <View style={styles.typeDot} />
+                  <Text style={styles.typeTitle}>{TYPE_LABELS[typeKey]}</Text>
+                  <Text style={styles.countText}>({list.length})</Text>
+                </View>
+
+                {list.length === 0 ? (
+                  <Text style={styles.emptySubText}>Chưa có điểm</Text>
+                ) : (
+                  <View style={styles.chipsContainer}>
+                    {list.map((v, idx) => (
+                      <View 
+                        key={`${typeKey}-${idx}`} 
+                        style={[
+                          styles.scoreChip, 
+                          { borderColor: getScoreColor(v), backgroundColor: getScoreColor(v) + '15' } // 15% opacity bg
+                        ]}
+                      >
+                        <Text style={[styles.chipText, { color: getScoreColor(v) }]}>
+                          {Number(v).toString().replace(/\.0$/, '')}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            );
+          })}
+        </View>
+        <View style={{ height: 40 }} />
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  emptyText: { fontSize: 16, color: '#333', marginBottom: 12 },
-  backBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, backgroundColor: '#007AFF' },
-  backText: { color: '#fff', fontWeight: '700' },
-  header: { backgroundColor: '#fff', padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  backInline: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#f0f0f0', alignItems: 'center', justifyContent: 'center' },
-  backInlineText: { fontSize: 18, color: '#333' },
-  title: { fontSize: 18, fontWeight: '800', color: '#111' },
-  subtitle: { marginTop: 2, fontSize: 12, color: '#777' },
-  card: { backgroundColor: '#fff', margin: 12, borderRadius: 12, padding: 16, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: '#333', marginBottom: 12 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  label: { fontSize: 14, color: '#666' },
-  valueStrong: { fontSize: 18, fontWeight: '900', color: '#007AFF' },
-  block: { paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
-  blockTitle: { fontSize: 14, fontWeight: '700', color: '#333', marginBottom: 10 },
-  emptySubText: { fontSize: 13, color: '#999' },
-  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: '#EEF2FF' },
-  chipText: { fontSize: 14, fontWeight: '800', color: '#3730A3' },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  
+  // Header
+  header: {
+    backgroundColor: COLORS.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    zIndex: 10,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 20,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+
+  scrollContent: {
+    padding: 16,
+    paddingTop: 20,
+  },
+
+  // Hero Card
+  heroCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  heroInfo: {
+    flex: 1,
+    paddingRight: 16,
+  },
+  subjectName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 8,
+  },
+  semesterBadge: {
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  semesterText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    fontWeight: '600',
+  },
+  finalScoreCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 4,
+    borderColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  finalLabel: {
+    fontSize: 10,
+    color: COLORS.textSecondary,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  finalValue: {
+    fontSize: 22,
+    fontWeight: 'bold',
+  },
+
+  // Details
+  detailsContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 16,
+  },
+  typeBlock: {
+    marginBottom: 20,
+  },
+  typeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  typeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.primary,
+    marginRight: 8,
+  },
+  typeTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  countText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginLeft: 4,
+  },
+  emptySubText: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    fontStyle: 'italic',
+    marginLeft: 14,
+  },
+  chipsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginLeft: 14,
+    gap: 10,
+  },
+  scoreChip: {
+    width: 44,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  chipText: {
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+
+  // Empty State & Buttons
+  emptyText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    marginBottom: 20,
+  },
+  backButtonCenter: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: COLORS.primary,
+    borderRadius: 20,
+  },
+  backTextCenter: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
 });
-
-

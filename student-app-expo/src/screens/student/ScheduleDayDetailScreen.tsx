@@ -1,22 +1,55 @@
 /**
- * Student Schedule Day Detail Screen
- * - Chi tiết lịch học theo 1 ngày (tiết, môn, giáo viên)
+ * Student Schedule Day Detail Screen - Modern UI
  */
 
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Dimensions,
+  StatusBar,
+} from 'react-native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+const { width } = Dimensions.get('window');
+
+// Màu sắc chủ đạo
+const COLORS = {
+  primary: '#2563EB',
+  background: '#F3F4F6',
+  cardBg: '#FFFFFF',
+  text: '#1F2937',
+  textSecondary: '#6B7280',
+  line: '#E5E7EB',
+  accent: '#F59E0B',
+};
+
+// Hàm chuyển đổi thứ sang tiếng Việt
+const convertDayToVietnamese = (dayName: string) => {
+  const map: Record<string, string> = {
+    'Monday': 'Thứ 2', 'Tuesday': 'Thứ 3', 'Wednesday': 'Thứ 4',
+    'Thursday': 'Thứ 5', 'Friday': 'Thứ 6', 'Saturday': 'Thứ 7', 'Sunday': 'Chủ Nhật',
+    'Mon': 'Thứ 2', 'Tue': 'Thứ 3', 'Wed': 'Thứ 4', 'Thu': 'Thứ 5', 'Fri': 'Thứ 6', 'Sat': 'Thứ 7', 'Sun': 'CN',
+  };
+  return map[dayName] || dayName;
+};
 
 export default function ScheduleDayDetailScreen({ route, navigation }: any) {
+  const insets = useSafeAreaInsets();
   const day: any = route?.params?.day;
   const meta: any = route?.params?.meta;
 
-  const title = useMemo(() => day?.day || 'Chi tiết lịch học', [day?.day]);
+  const title = useMemo(() => convertDayToVietnamese(day?.day || ''), [day?.day]);
+  
   const subtitle = useMemo(() => {
-    const cls = meta?.className || meta?.classId?.className || '';
-    const y = meta?.year || '';
-    const sem = meta?.semester || '';
-    return [cls, y && sem ? `${y} - HK${sem}` : ''].filter(Boolean).join(' • ');
-  }, [meta, meta?.className, meta?.year, meta?.semester]);
+    const cls = meta?.className || meta?.classId?.className || 'Lớp học';
+    const sem = meta?.semester ? `HK${meta.semester}` : '';
+    return `${cls} ${sem ? `• ${sem}` : ''}`;
+  }, [meta]);
 
   const periods = useMemo(() => {
     const arr = Array.isArray(day?.periods) ? day.periods : [];
@@ -26,53 +59,244 @@ export default function ScheduleDayDetailScreen({ route, navigation }: any) {
   }, [day]);
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backInline}>
-          <Text style={styles.backInlineText}>←</Text>
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+
+      {/* --- HEADER (CÓ NÚT BACK) --- */}
+      <View style={[styles.header, { paddingTop: insets.top + 10, height: 80 + insets.top }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>{title}</Text>
-          <Text style={styles.subtitle}>{subtitle}</Text>
+        
+        <View style={styles.headerInfo}>
+          <Text style={styles.headerTitle}>{title}</Text>
+          <Text style={styles.headerSubtitle}>{subtitle}</Text>
         </View>
+        
+        <View style={{ width: 40 }} /> 
       </View>
 
-      <View style={styles.card}>
+      <ScrollView 
+        style={styles.content} 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Date Info Card (Optional context) */}
+        <View style={styles.dateCard}>
+          <Ionicons name="calendar" size={20} color={COLORS.primary} />
+          <Text style={styles.dateCardText}>
+            Danh sách tiết học trong ngày
+          </Text>
+        </View>
+
         {periods.length === 0 ? (
-          <Text style={styles.emptyText}>Không có tiết học</Text>
+          <View style={styles.emptyContainer}>
+            <Ionicons name="cafe-outline" size={64} color="#D1D5DB" />
+            <Text style={styles.emptyText}>Ngày nghỉ / Không có tiết học</Text>
+          </View>
         ) : (
-          periods.map((p: any, idx: number) => (
-            <View key={idx} style={styles.item}>
-              <View style={styles.left}>
-                <Text style={styles.period}>Tiết {p.period}</Text>
-              </View>
-              <View style={styles.right}>
-                <Text style={styles.subject}>{p.subject}</Text>
-                {p.teacher ? <Text style={styles.teacher}>GV: {p.teacher}</Text> : null}
-              </View>
-            </View>
-          ))
+          <View style={styles.timelineContainer}>
+            {periods.map((p: any, idx: number) => {
+              const isLast = idx === periods.length - 1;
+              return (
+                <View key={idx} style={styles.timelineItem}>
+                  {/* Cột trái: Số tiết + Đường kẻ */}
+                  <View style={styles.leftColumn}>
+                    <View style={styles.periodBadge}>
+                      <Text style={styles.periodText}>{p.period}</Text>
+                    </View>
+                    {!isLast && <View style={styles.timelineLine} />}
+                  </View>
+
+                  {/* Cột phải: Card thông tin */}
+                  <View style={styles.cardContainer}>
+                    <View style={styles.card}>
+                      <View style={styles.cardHeader}>
+                        <Text style={styles.subjectName}>{p.subject}</Text>
+                      </View>
+                      
+                      <View style={styles.cardDivider} />
+                      
+                      <View style={styles.cardRow}>
+                        <Ionicons name="person-outline" size={16} color={COLORS.textSecondary} />
+                        <Text style={styles.cardDetail}>
+                          GV: <Text style={{fontWeight: '600', color: COLORS.text}}>{p.teacher || '---'}</Text>
+                        </Text>
+                      </View>
+
+                      {/* Nếu có thông tin phòng học thì hiển thị (giả sử p.room) */}
+                      {p.room && (
+                        <View style={[styles.cardRow, { marginTop: 4 }]}>
+                          <Ionicons name="location-outline" size={16} color={COLORS.textSecondary} />
+                          <Text style={styles.cardDetail}>Phòng: {p.room}</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
         )}
-      </View>
-    </ScrollView>
+        <View style={{ height: 40 }} />
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  header: { backgroundColor: '#fff', padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  backInline: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#f0f0f0', alignItems: 'center', justifyContent: 'center' },
-  backInlineText: { fontSize: 18, color: '#333' },
-  title: { fontSize: 18, fontWeight: '800', color: '#111' },
-  subtitle: { marginTop: 2, fontSize: 12, color: '#777' },
-  card: { backgroundColor: '#fff', margin: 12, borderRadius: 12, padding: 16, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
-  emptyText: { color: '#999', fontStyle: 'italic' },
-  item: { flexDirection: 'row', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  left: { width: 70 },
-  period: { fontSize: 14, fontWeight: '800', color: '#666' },
-  right: { flex: 1 },
-  subject: { fontSize: 16, fontWeight: '800', color: '#111' },
-  teacher: { marginTop: 4, fontSize: 13, color: '#666' },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  
+  // Header Styles
+  header: {
+    backgroundColor: COLORS.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 20,
+  },
+  headerInfo: {
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginTop: 2,
+  },
+
+  // Content Styles
+  content: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 20,
+  },
+
+  // Helper Card
+  dateCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DBEAFE', // Xanh nhạt
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 20,
+  },
+  dateCardText: {
+    marginLeft: 8,
+    color: COLORS.primary,
+    fontWeight: '600',
+    fontSize: 14,
+  },
+
+  // Timeline Styles
+  timelineContainer: {
+    //
+  },
+  timelineItem: {
+    flexDirection: 'row',
+    marginBottom: 0, 
+  },
+  leftColumn: {
+    alignItems: 'center',
+    width: 50,
+    marginRight: 10,
+  },
+  periodBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  periodText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  timelineLine: {
+    width: 2,
+    flex: 1,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 4,
+  },
+  
+  // Detail Card Styles
+  cardContainer: {
+    flex: 1,
+    paddingBottom: 20,
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  cardHeader: {
+    marginBottom: 8,
+  },
+  subjectName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  cardDivider: {
+    height: 1,
+    backgroundColor: '#F3F4F6',
+    marginBottom: 8,
+  },
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cardDetail: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+
+  // Empty State
+  emptyContainer: {
+    alignItems: 'center',
+    marginTop: 60,
+  },
+  emptyText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: COLORS.textSecondary,
+  },
 });
-
-

@@ -1,0 +1,165 @@
+[
+  {
+    "_id": "68dcb4da896a1f27984115c2",
+    "name": "Toán",
+    "code": "TOAN",
+    "grades": [
+      "10",
+      "12",
+      "11"
+    ],
+    "createdAt": "2025-10-01T04:58:02.099Z",
+    "__v": 0,
+    "defaultExamDuration": 120
+  },
+  {
+    "_id": "68dcb53c896a1f27984115c4",
+    "name": "Tiếng anh",
+    "code": "TIENGANH",
+    "grades": [
+      "10",
+      "11",
+      "12"
+    ],
+    "createdAt": "2025-10-01T04:59:40.691Z",
+    "__v": 0,
+    "includeInAverage": true,
+    "defaultExamDuration": 60
+  },
+  {
+    "_id": "68dcec3dcb90a9a8aa83398b",
+    "name": "Lịch sử",
+    "code": "LICHSU",
+    "grades": [
+      "12",
+      "11",
+      "10"
+    ],
+    "createdAt": "2025-10-01T08:54:21.158Z",
+    "__v": 0
+  },
+  {
+    "_id": "68e092be0a4a0bed113b57cd",
+    "name": "GDCD",
+    "code": "GDCD",
+    "grades": [
+      "10",
+      "12",
+      "11"
+    ],
+    "createdAt": "2025-10-04T03:21:34.759Z",
+    "__v": 0,
+    "departmentId": "692c0c85950aba5e3eac39b4"
+  },
+  {
+    "_id": "68e0b4878625a967d638e7da",
+    "name": "Hóa học",
+    "code": "HOAHOC",
+    "grades": [
+      "12",
+      "11",
+      "10"
+    ],
+    "createdAt": "2025-10-04T05:45:43.788Z",
+    "__v": 0
+  },
+  {
+    "_id": "68e0b4a88625a967d638e7dc",
+    "name": "Ngữ văn",
+    "code": "NGUVAN",
+    "grades": [
+      "11",
+      "10",
+      "12"
+    ],
+    "createdAt": "2025-10-04T05:46:16.450Z",
+    "__v": 0,
+    "defaultExamDuration": 120
+  },
+  {
+    "_id": "68e0b4b68625a967d638e7de",
+    "name": "Sinh học",
+    "code": "SINHHOC",
+    "grades": [
+      "10",
+      "12",
+      "11"
+    ],
+    "createdAt": "2025-10-04T05:46:30.860Z",
+    "__v": 0
+  },
+  {
+    "_id": "68e0b4d78625a967d638e7e0",
+    "name": "Vật lý",
+    "code": "VATLY",
+    "grades": [
+      "12",
+      "11",
+      "10"
+    ],
+    "createdAt": "2025-10-04T05:47:03.512Z",
+    "__v": 0
+  },
+  {
+    "_id": "68e0b61c8625a967d638e7e2",
+    "name": "Địa lý",
+    "code": "DIALY",
+    "grades": [
+      "11",
+      "12",
+      "10"
+    ],
+    "createdAt": "2025-10-04T05:52:28.976Z",
+    "__v": 0
+  },
+  {
+    "_id": "68e0b62b8625a967d638e7e4",
+    "name": "Tin học",
+    "code": "TINHOC",
+    "grades": [
+      "11",
+      "12",
+      "10"
+    ],
+    "createdAt": "2025-10-04T05:52:43.145Z",
+    "__v": 0
+  },
+  {
+    "_id": "68e0b65f8625a967d638e7e8",
+    "name": "Giáo dục quốc phòng – an ninh",
+    "code": "QPAN",
+    "grades": [
+      "11",
+      "12"
+    ],
+    "createdAt": "2025-10-04T05:53:35.497Z",
+    "__v": 0,
+    "departmentId": "692c0c85950aba5e3eac39b4"
+  },
+  {
+    "_id": "68e0b6808625a967d638e7ea",
+    "name": "Công nghệ",
+    "code": "CONGNGHE",
+    "grades": [
+      "10",
+      "11",
+      "12"
+    ],
+    "createdAt": "2025-10-04T05:54:08.237Z",
+    "__v": 0,
+    "departmentId": "692c0c85950aba5e3eac39b4"
+  },
+  {
+    "_id": "68e0b68f8625a967d638e7ec",
+    "name": "Giáo dục thể chất",
+    "code": "GDTC",
+    "grades": [
+      "10",
+      "11",
+      "12"
+    ],
+    "createdAt": "2025-10-04T05:54:23.485Z",
+    "__v": 0,
+    "includeInAverage": false
+  }
+]

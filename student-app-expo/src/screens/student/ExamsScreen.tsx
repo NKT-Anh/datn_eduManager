@@ -1,7 +1,3 @@
-/**
- * Student Exams Screen
- */
-
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -10,10 +6,29 @@ import {
   ScrollView,
   ActivityIndicator,
   TouchableOpacity,
+  Dimensions,
+  StatusBar,
 } from 'react-native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { studentService } from '../../services/studentService';
 import { ExamSchedule } from '../../types';
+
+const { width } = Dimensions.get('window');
+
+// Màu sắc
+const COLORS = {
+  primary: '#2563EB',
+  background: '#F3F4F6',
+  card: '#FFFFFF',
+  text: '#1F2937',
+  textLight: '#6B7280',
+  success: '#10B981',
+  warning: '#F59E0B',
+  danger: '#EF4444',
+  border: '#E5E7EB',
+};
 
 interface Exam {
   _id: string;
@@ -36,7 +51,9 @@ interface ExamGrade {
 }
 
 export default function ExamsScreen({ navigation }: any) {
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  
   const [schedules, setSchedules] = useState<ExamSchedule[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
   const [grades, setGrades] = useState<ExamGrade[]>([]);
@@ -56,7 +73,7 @@ export default function ExamsScreen({ navigation }: any) {
       loadExamGrades();
     }
     if (viewMode === 'schedule' && selectedExamId) {
-      loadExamSchedules();
+      loadExamSchedules(); // Reload schedule when exam changes if needed
     }
   }, [selectedExamId, viewMode]);
 
@@ -107,33 +124,21 @@ export default function ExamsScreen({ navigation }: any) {
   };
 
   const getScoreColor = (score?: number) => {
-    if (score === undefined || score === null) return '#999';
-    if (score >= 9) return '#34C759';
-    if (score >= 8) return '#007AFF';
-    if (score >= 6.5) return '#FF9500';
-    return '#FF3B30';
+    if (score === undefined || score === null) return COLORS.textLight;
+    if (score >= 8.5) return COLORS.success;
+    if (score >= 7) return COLORS.primary;
+    if (score >= 5) return COLORS.warning;
+    return COLORS.danger;
   };
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Đang tải lịch thi...</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>{error}</Text>
-      </View>
-    );
-  }
-
-  // Group by date
+  // Group schedules by date
   const groupedByDate = schedules.reduce((acc, schedule) => {
-    const date = new Date(schedule.date).toLocaleDateString('vi-VN');
+    const date = new Date(schedule.date).toLocaleDateString('vi-VN', {
+      weekday: 'long', 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric'
+    });
     if (!acc[date]) {
       acc[date] = [];
     }
@@ -141,324 +146,432 @@ export default function ExamsScreen({ navigation }: any) {
     return acc;
   }, {} as Record<string, ExamSchedule[]>);
 
+  if (loading && !schedules.length) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Đang tải dữ liệu...</Text>
+      </View>
+    );
+  }
+
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Kỳ thi</Text>
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: insets.top + 10, height: 80 + insets.top }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Kỳ thi & Điểm số</Text>
+        <View style={{ width: 40 }} /> 
+      </View>
+
+      {/* Main Content */}
+      <View style={styles.content}>
         
-        {/* View Mode Toggle */}
-        <View style={styles.viewModeRow}>
+        {/* Tab Switcher */}
+        <View style={styles.tabContainer}>
           <TouchableOpacity
-            style={[styles.viewModeButton, viewMode === 'schedule' && styles.viewModeButtonActive]}
+            style={[styles.tabButton, viewMode === 'schedule' && styles.tabButtonActive]}
             onPress={() => setViewMode('schedule')}
           >
-            <Text style={[styles.viewModeText, viewMode === 'schedule' && styles.viewModeTextActive]}>
+            <Text style={[styles.tabText, viewMode === 'schedule' && styles.tabTextActive]}>
               Lịch thi
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.viewModeButton, viewMode === 'grades' && styles.viewModeButtonActive]}
+            style={[styles.tabButton, viewMode === 'grades' && styles.tabButtonActive]}
             onPress={() => setViewMode('grades')}
           >
-            <Text style={[styles.viewModeText, viewMode === 'grades' && styles.viewModeTextActive]}>
-              Điểm thi
+            <Text style={[styles.tabText, viewMode === 'grades' && styles.tabTextActive]}>
+              Kết quả thi
             </Text>
           </TouchableOpacity>
         </View>
-      </View>
 
-      {viewMode === 'schedule' && (
-        <>
-          {schedules.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Chưa có lịch thi</Text>
-            </View>
-          ) : (
-            Object.entries(groupedByDate).map(([date, daySchedules]) => (
-            <View key={date} style={styles.dateGroup}>
-              <Text style={styles.dateTitle}>{date}</Text>
-              {daySchedules.map((schedule) => (
-                  <TouchableOpacity
-                    key={schedule._id}
-                    style={styles.examCard}
-                    activeOpacity={0.85}
-                    onPress={() => navigation.navigate('ExamRoomDetail', { schedule })}
-                  >
-                  <Text style={styles.subjectName}>
-                    {schedule.subject?.name || 'Môn thi'}
-                  </Text>
-                  <View style={styles.examInfo}>
-                    <Text style={styles.examTime}>
-                      {schedule.startTime} - {schedule.endTime}
-                    </Text>
-                    <Text style={styles.examDuration}>
-                      {schedule.duration} phút
-                    </Text>
-                  </View>
-                  {schedule.exam && (
-                    <Text style={styles.examName}>
-                      {schedule.exam.name} - {schedule.exam.year} - Học kỳ {schedule.exam.semester}
-                    </Text>
-                  )}
-                  </TouchableOpacity>
-              ))}
-            </View>
-            ))
-          )}
-        </>
-      )}
-
-      {viewMode === 'grades' && (
-        <View style={styles.gradesContainer}>
-          {/* Exam Selector */}
-          {exams.length > 0 && (
-            <View style={styles.examSelector}>
-              <Text style={styles.selectorLabel}>Chọn kỳ thi:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {exams.map((exam) => (
-                  <TouchableOpacity
-                    key={exam._id}
-                    style={[
-                      styles.examOption,
-                      selectedExamId === exam._id && styles.examOptionActive,
-                    ]}
-                    onPress={() => setSelectedExamId(exam._id)}
-                  >
-                    <Text
-                      style={[
-                        styles.examOptionText,
-                        selectedExamId === exam._id && styles.examOptionTextActive,
-                      ]}
-                    >
-                      {exam.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
-
-          {/* Grades List */}
-          {loadingGrades ? (
-            <View style={styles.center}>
-              <ActivityIndicator size="large" color="#007AFF" />
-              <Text style={styles.loadingText}>Đang tải điểm...</Text>
-            </View>
-          ) : grades.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Chưa có điểm thi</Text>
-            </View>
-          ) : (
-            grades.map((grade) => (
-              <View key={grade._id} style={styles.gradeCard}>
-                <View style={styles.gradeHeader}>
-                  <Text style={styles.gradeSubject}>
-                    {grade.subject?.name || 'Môn thi'}
-                  </Text>
-                  <View
-                    style={[
-                      styles.gradeBadge,
-                      { backgroundColor: getScoreColor(grade.gradeValue) },
-                    ]}
-                  >
-                    <Text style={styles.gradeValue}>
-                      {grade.gradeValue !== undefined && grade.gradeValue !== null
-                        ? grade.gradeValue.toFixed(1)
-                        : 'Chưa có'}
-                    </Text>
-                  </View>
+        <ScrollView 
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {/* View Mode: SCHEDULE */}
+          {viewMode === 'schedule' && (
+            <>
+              {schedules.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="calendar-outline" size={64} color="#D1D5DB" />
+                  <Text style={styles.emptyText}>Chưa có lịch thi nào sắp tới</Text>
                 </View>
-                {grade.teacher && (
-                  <Text style={styles.gradeTeacher}>
-                    Giáo viên: {grade.teacher.name}
-                  </Text>
-                )}
-              </View>
-            ))
+              ) : (
+                Object.entries(groupedByDate).map(([date, daySchedules]) => (
+                  <View key={date} style={styles.dateGroup}>
+                    <View style={styles.dateHeader}>
+                      <Ionicons name="calendar" size={16} color={COLORS.primary} />
+                      <Text style={styles.dateTitle}>{date}</Text>
+                    </View>
+                    
+                    {daySchedules.map((schedule) => (
+                      <TouchableOpacity
+                        key={schedule._id}
+                        style={styles.examCard}
+                        activeOpacity={0.9}
+                        onPress={() => navigation.navigate('ExamRoomDetail', { schedule })}
+                      >
+                        <View style={styles.examTimeBox}>
+                          <Text style={styles.examTimeText}>{schedule.startTime}</Text>
+                          <Text style={styles.examDurationText}>{schedule.duration}'</Text>
+                        </View>
+                        
+                        <View style={styles.examInfo}>
+                          <Text style={styles.subjectName}>
+                            {schedule.subject?.name || 'Môn thi'}
+                          </Text>
+                          {schedule.exam && (
+                            <Text style={styles.examName} numberOfLines={1}>
+                              {schedule.exam.name}
+                            </Text>
+                          )}
+                          <View style={styles.roomTag}>
+                             <Ionicons name="location-outline" size={12} color={COLORS.textLight} />
+                             <Text style={styles.roomText}>Xem phòng thi</Text>
+                          </View>
+                        </View>
+
+                        <Ionicons name="chevron-forward" size={20} color={COLORS.border} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ))
+              )}
+            </>
           )}
-        </View>
-      )}
-    </ScrollView>
+
+          {/* View Mode: GRADES */}
+          {viewMode === 'grades' && (
+            <View>
+              {/* Exam Selector Horizontal Scroll */}
+              {exams.length > 0 && (
+                <View style={styles.examSelectorContainer}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    {exams.map((exam) => (
+                      <TouchableOpacity
+                        key={exam._id}
+                        style={[
+                          styles.examChip,
+                          selectedExamId === exam._id && styles.examChipActive,
+                        ]}
+                        onPress={() => setSelectedExamId(exam._id)}
+                      >
+                        <Text
+                          style={[
+                            styles.examChipText,
+                            selectedExamId === exam._id && styles.examChipTextActive,
+                          ]}
+                        >
+                          {exam.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
+              {loadingGrades ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={COLORS.primary} />
+                </View>
+              ) : grades.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="school-outline" size={64} color="#D1D5DB" />
+                  <Text style={styles.emptyText}>Chưa có điểm thi cho kỳ này</Text>
+                </View>
+              ) : (
+                grades.map((grade) => (
+                  <View key={grade._id} style={styles.gradeCard}>
+                    <View style={styles.gradeInfo}>
+                      <Text style={styles.gradeSubject}>
+                        {grade.subject?.name || 'Môn học'}
+                      </Text>
+                      {grade.teacher && (
+                        <View style={styles.teacherRow}>
+                          <Ionicons name="person-outline" size={12} color={COLORS.textLight} />
+                          <Text style={styles.gradeTeacher}>{grade.teacher.name}</Text>
+                        </View>
+                      )}
+                    </View>
+                    
+                    <View style={[
+                      styles.scoreCircle,
+                      { borderColor: getScoreColor(grade.gradeValue) }
+                    ]}>
+                      <Text style={[
+                        styles.scoreText,
+                        { color: getScoreColor(grade.gradeValue) }
+                      ]}>
+                        {grade.gradeValue !== undefined && grade.gradeValue !== null
+                          ? grade.gradeValue.toFixed(1)
+                          : '--'}
+                      </Text>
+                    </View>
+                  </View>
+                ))
+              )}
+            </View>
+          )}
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: COLORS.background,
   },
-  center: {
+  centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
   },
   loadingText: {
-    marginTop: 12,
-    color: '#666',
+    marginTop: 10,
+    color: COLORS.textLight,
   },
-  errorText: {
-    color: '#FF3B30',
-    fontSize: 16,
-  },
-  emptyText: {
-    color: '#999',
-    fontSize: 16,
-  },
+
+  // Header Styles
   header: {
-    backgroundColor: '#fff',
-    padding: 20,
-    marginBottom: 12,
+    backgroundColor: COLORS.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    zIndex: 10,
   },
-  title: {
-    fontSize: 24,
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 20,
+  },
+  headerTitle: {
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#fff',
   },
+
+  content: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+  },
+
+  // Tab Switcher
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    margin: 16,
+    marginBottom: 8,
+    borderRadius: 12,
+    padding: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  tabButtonActive: {
+    backgroundColor: COLORS.primary,
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textLight,
+  },
+  tabTextActive: {
+    color: '#fff',
+  },
+
+  // Schedule View Styles
   dateGroup: {
     marginBottom: 20,
   },
+  dateHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    marginLeft: 4,
+  },
   dateTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#007AFF',
-    paddingHorizontal: 12,
-    marginBottom: 8,
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginLeft: 8,
+    textTransform: 'capitalize',
   },
   examCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#fff',
-    marginHorizontal: 12,
-    marginBottom: 12,
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
+    marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 2,
   },
-  subjectName: {
-    fontSize: 18,
+  examTimeBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingRight: 16,
+    borderRightWidth: 1,
+    borderRightColor: COLORS.border,
+    minWidth: 70,
+  },
+  examTimeText: {
+    fontSize: 16,
     fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
+    color: COLORS.text,
+  },
+  examDurationText: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    marginTop: 2,
   },
   examInfo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
+    flex: 1,
+    paddingLeft: 16,
   },
-  examTime: {
+  subjectName: {
     fontSize: 16,
-    color: '#666',
-  },
-  examDuration: {
-    fontSize: 14,
-    color: '#999',
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 4,
   },
   examName: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
+    fontSize: 13,
+    color: COLORS.textLight,
+    marginBottom: 6,
   },
-  viewModeRow: {
+  roomTag: {
     flexDirection: 'row',
-    marginTop: 16,
-    gap: 8,
-  },
-  viewModeButton: {
-    flex: 1,
-    padding: 10,
-    borderRadius: 8,
-    backgroundColor: '#f0f0f0',
     alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
-  viewModeButtonActive: {
-    backgroundColor: '#007AFF',
+  roomText: {
+    fontSize: 11,
+    color: COLORS.textLight,
+    marginLeft: 4,
   },
-  viewModeText: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '600',
-  },
-  viewModeTextActive: {
-    color: '#fff',
-  },
-  gradesContainer: {
-    padding: 16,
-  },
-  examSelector: {
+
+  // Grades View Styles
+  examSelectorContainer: {
     marginBottom: 16,
   },
-  selectorLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-  },
-  examOption: {
+  examChip: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: COLORS.border,
     marginRight: 8,
   },
-  examOptionActive: {
-    backgroundColor: '#007AFF',
+  examChipActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
-  examOptionText: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '600',
+  examChipText: {
+    fontSize: 13,
+    color: COLORS.textLight,
+    fontWeight: '500',
   },
-  examOptionTextActive: {
+  examChipTextActive: {
     color: '#fff',
   },
   gradeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#fff',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
     marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 2,
   },
-  gradeHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  gradeSubject: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
+  gradeInfo: {
     flex: 1,
   },
-  gradeBadge: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  gradeValue: {
-    fontSize: 18,
+  gradeSubject: {
+    fontSize: 16,
     fontWeight: 'bold',
-    color: '#fff',
+    color: COLORS.text,
+    marginBottom: 4,
   },
-  gradeTeacher: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
-  },
-  emptyContainer: {
-    padding: 40,
+  teacherRow: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  emptyText: {
+  gradeTeacher: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    marginLeft: 4,
+  },
+  scoreCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 3,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scoreText: {
     fontSize: 16,
-    color: '#999',
+    fontWeight: 'bold',
+  },
+
+  // Common Styles
+  emptyState: {
+    alignItems: 'center',
+    marginTop: 40,
+    padding: 20,
+  },
+  emptyText: {
+    marginTop: 12,
+    fontSize: 15,
+    color: COLORS.textLight,
+    textAlign: 'center',
+  },
+  loadingContainer: {
+    padding: 20,
+    alignItems: 'center',
   },
 });
-

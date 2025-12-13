@@ -3,7 +3,7 @@
  * Đọc biến môi trường từ .env
  */
 
-require('dotenv').config();
+// require('dotenv').config();
 
 // ✅ CẤU HÌNH API URL
 // Cách 1: Tạo file .env với: API_BASE_URL=http://YOUR_IP:3000/api
@@ -15,11 +15,11 @@ const API_BASE_URL = process.env.API_BASE_URL || 'http://192.168.2.225:3000/api'
 
 module.exports = {
   expo: {
-    name: 'student-app-expo',
+    name: 'Student App',
     slug: 'student-app-expo',
     version: '1.0.0',
     orientation: 'portrait',
-    icon: './assets/icon.png',
+    icon: './assets/logo_school_outline.png',
     userInterfaceStyle: 'light',
     // ✅ Tắt New Architecture để tránh crash kiểu "String cannot be cast to Boolean" trên Android
     // (có thể bật lại sau khi ổn định)
@@ -33,17 +33,19 @@ module.exports = {
       supportsTablet: true,
     },
     android: {
+        // package: "com.thaianh2003.studentappexpo", 
       adaptiveIcon: {
         foregroundImage: './assets/logo_school_outline.png',
         backgroundColor: '#ffffff',
       },
       edgeToEdgeEnabled: true,
-      predictiveBackGestureEnabled: false,
+
+      // predictiveBackGestureEnabled: false,
       usesCleartextTraffic: true,
 
     },
     web: {
-      favicon: './assets/favicon.png',
+      favicon: './assets/logo_school_outline.png',
     },
     extra: {
       apiBaseUrl: API_BASE_URL,

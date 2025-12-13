@@ -1,0 +1,478 @@
+[
+  {
+    "_id": "691c5eedce4011911f653f8e",
+    "defaultStartTimeMorning": "07:00",
+    "defaultStartTimeAfternoon": "13:00",
+    "minutesPerPeriod": 45,
+    "defaultBreakMinutes": 5,
+    "specialBreaks": [
+      {
+        "period": 2,
+        "session": "morning",
+        "minutes": 25
+      },
+      {
+        "period": 2,
+        "session": "afternoon",
+        "minutes": 25
+      }
+    ],
+    "days": {
+      "Monday": {
+        "totalPeriods": 10,
+        "morningPeriods": 5,
+        "afternoonPeriods": 5
+      },
+      "Tuesday": {
+        "totalPeriods": 10,
+        "morningPeriods": 5,
+        "afternoonPeriods": 5
+      },
+      "Wednesday": {
+        "totalPeriods": 10,
+        "morningPeriods": 5,
+        "afternoonPeriods": 5
+      },
+      "Thursday": {
+        "totalPeriods": 10,
+        "morningPeriods": 5,
+        "afternoonPeriods": 5
+      },
+      "Friday": {
+        "totalPeriods": 10,
+        "morningPeriods": 5,
+        "afternoonPeriods": 5
+      },
+      "Saturday": {
+        "totalPeriods": 10,
+        "morningPeriods": 5,
+        "afternoonPeriods": 5
+      }
+    },
+    "gradeConfigs": {
+      "10": {
+        "subjects": {
+          "68e0b6808625a967d638e7ea": {
+            "periodsPerWeek": 2,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68dcec3dcb90a9a8aa83398b": {
+            "periodsPerWeek": 1,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68dcb53c896a1f27984115c4": {
+            "periodsPerWeek": 4,
+            "session": "main",
+            "maxPeriodsPerDay": 2,
+            "allowConsecutive": true,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b4a88625a967d638e7dc": {
+            "periodsPerWeek": 5,
+            "session": "main",
+            "maxPeriodsPerDay": 3,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b4878625a967d638e7da": {
+            "periodsPerWeek": 2,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e092be0a4a0bed113b57cd": {
+            "periodsPerWeek": 1,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b4b68625a967d638e7de": {
+            "periodsPerWeek": 1,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b4d78625a967d638e7e0": {
+            "periodsPerWeek": 2,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b61c8625a967d638e7e2": {
+            "periodsPerWeek": 2,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b68f8625a967d638e7ec": {
+            "periodsPerWeek": 2,
+            "session": "extra",
+            "maxPeriodsPerDay": 2,
+            "allowConsecutive": true,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68dcb4da896a1f27984115c2": {
+            "periodsPerWeek": 6,
+            "session": "main",
+            "maxPeriodsPerDay": 3,
+            "allowConsecutive": true,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b62b8625a967d638e7e4": {
+            "periodsPerWeek": 1,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          }
+        },
+        "activities": [
+          {
+            "activityId": "68eccc10bb42f43fbcff05f1",
+            "periodsPerWeek": 1,
+            "session": "main",
+            "isPermanent": true,
+            "startDate": null,
+            "endDate": null,
+            "fixedSlots": {
+              "dayOfWeek": "Monday",
+              "period": 1
+            },
+            "classPeriods": {}
+          },
+          {
+            "activityId": "68f0c78925cb941c61aed379",
+            "periodsPerWeek": 1,
+            "session": "main",
+            "isPermanent": true,
+            "startDate": null,
+            "endDate": null,
+            "fixedSlots": {
+              "dayOfWeek": "Monday",
+              "period": 2
+            },
+            "classPeriods": {}
+          }
+        ],
+        "rules": {
+          "grade": "10",
+          "session": "morning"
+        },
+        "restPeriods": [
+          {
+            "day": "Thursday",
+            "period": 5
+          }
+        ]
+      },
+      "11": {
+        "subjects": {
+          "68dcb4da896a1f27984115c2": {
+            "periodsPerWeek": 6,
+            "session": "main",
+            "maxPeriodsPerDay": 3,
+            "allowConsecutive": true,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68dcb53c896a1f27984115c4": {
+            "periodsPerWeek": 4,
+            "session": "main",
+            "maxPeriodsPerDay": 2,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68dcec3dcb90a9a8aa83398b": {
+            "periodsPerWeek": 2,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e092be0a4a0bed113b57cd": {
+            "periodsPerWeek": 1,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b4878625a967d638e7da": {
+            "periodsPerWeek": 2,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b4a88625a967d638e7dc": {
+            "periodsPerWeek": 6,
+            "session": "main",
+            "maxPeriodsPerDay": 3,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b61c8625a967d638e7e2": {
+            "periodsPerWeek": 1,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b4d78625a967d638e7e0": {
+            "periodsPerWeek": 2,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b4b68625a967d638e7de": {
+            "periodsPerWeek": 1,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b62b8625a967d638e7e4": {
+            "periodsPerWeek": 1,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b65f8625a967d638e7e8": {
+            "periodsPerWeek": 1,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b6808625a967d638e7ea": {
+            "periodsPerWeek": 1,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b68f8625a967d638e7ec": {
+            "periodsPerWeek": 2,
+            "session": "extra",
+            "maxPeriodsPerDay": 2,
+            "allowConsecutive": true,
+            "fixedSlots": null,
+            "classPeriods": {}
+          }
+        },
+        "activities": [
+          {
+            "activityId": "68eccc10bb42f43fbcff05f1",
+            "periodsPerWeek": 1,
+            "session": "main",
+            "isPermanent": true,
+            "startDate": null,
+            "endDate": null,
+            "fixedSlots": {
+              "dayOfWeek": "Monday",
+              "period": 9
+            },
+            "classPeriods": {}
+          },
+          {
+            "activityId": "68f0c78925cb941c61aed379",
+            "periodsPerWeek": 1,
+            "session": "main",
+            "isPermanent": true,
+            "startDate": null,
+            "endDate": null,
+            "fixedSlots": {
+              "dayOfWeek": "Monday",
+              "period": 10
+            },
+            "classPeriods": {}
+          }
+        ],
+        "rules": {
+          "grade": "11",
+          "session": "afternoon"
+        },
+        "restPeriods": []
+      },
+      "12": {
+        "subjects": {
+          "68dcb4da896a1f27984115c2": {
+            "periodsPerWeek": 5,
+            "session": "main",
+            "maxPeriodsPerDay": 3,
+            "allowConsecutive": true,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68dcb53c896a1f27984115c4": {
+            "periodsPerWeek": 4,
+            "session": "main",
+            "maxPeriodsPerDay": 2,
+            "allowConsecutive": true,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68dcec3dcb90a9a8aa83398b": {
+            "periodsPerWeek": 2,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b4a88625a967d638e7dc": {
+            "periodsPerWeek": 6,
+            "session": "main",
+            "maxPeriodsPerDay": 2,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b4878625a967d638e7da": {
+            "periodsPerWeek": 2,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e092be0a4a0bed113b57cd": {
+            "periodsPerWeek": 1,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b4b68625a967d638e7de": {
+            "periodsPerWeek": 2,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b4d78625a967d638e7e0": {
+            "periodsPerWeek": 2,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b61c8625a967d638e7e2": {
+            "periodsPerWeek": 1,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b6808625a967d638e7ea": {
+            "periodsPerWeek": 1,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b65f8625a967d638e7e8": {
+            "periodsPerWeek": 1,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b62b8625a967d638e7e4": {
+            "periodsPerWeek": 1,
+            "session": "main",
+            "maxPeriodsPerDay": 1,
+            "allowConsecutive": false,
+            "fixedSlots": null,
+            "classPeriods": {}
+          },
+          "68e0b68f8625a967d638e7ec": {
+            "periodsPerWeek": 2,
+            "session": "extra",
+            "maxPeriodsPerDay": 2,
+            "allowConsecutive": true,
+            "fixedSlots": null,
+            "classPeriods": {}
+          }
+        },
+        "activities": [
+          {
+            "activityId": "68f0c78925cb941c61aed379",
+            "periodsPerWeek": 1,
+            "session": "main",
+            "isPermanent": true,
+            "startDate": null,
+            "endDate": null,
+            "fixedSlots": {
+              "dayOfWeek": "Monday",
+              "period": 2
+            },
+            "classPeriods": {}
+          },
+          {
+            "activityId": "68eccc10bb42f43fbcff05f1",
+            "periodsPerWeek": 1,
+            "session": "main",
+            "isPermanent": true,
+            "startDate": null,
+            "endDate": null,
+            "fixedSlots": {
+              "dayOfWeek": "Monday",
+              "period": 1
+            },
+            "classPeriods": {}
+          }
+        ],
+        "rules": {
+          "grade": "12",
+          "session": "both"
+        },
+        "restPeriods": []
+      }
+    },
+    "createdAt": "2025-11-18T11:56:29.087Z",
+    "updatedAt": "2025-11-26T16:46:52.681Z",
+    "__v": 1
+  }
+]

@@ -1,5 +1,6 @@
 /**
- * Login Screen - Đầy đủ chức năng như web
+ * Login Screen - UI Modern & Vector Icons
+ * Yêu cầu: npm install react-native-vector-icons
  */
 
 import React, { useState } from 'react';
@@ -15,17 +16,35 @@ import {
   Platform,
   ScrollView,
   Image,
+  Dimensions,
+  StatusBar,
 } from 'react-native';
+// Nếu dùng Expo thì đổi dòng dưới thành: import { Ionicons } from '@expo/vector-icons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+
 import { useAuth } from '../../context/AuthContext';
 import { usePublicSchoolInfo } from '../../hooks/usePublicSchoolInfo';
 import { authService } from '../../services/authService';
 
-// Google Logo Component - Sử dụng Image với URL PNG
+const { width } = Dimensions.get('window');
+
+// Màu sắc
+const COLORS = {
+  primary: '#2563EB',
+  secondary: '#FFFFFF',
+  background: '#F3F4F6',
+  text: '#1F2937',
+  textSecondary: '#9CA3AF',
+  inputBg: '#F9FAFB',
+  borderColor: '#E5E7EB',
+  error: '#EF4444',
+  success: '#10B981',
+};
+
+// Google Logo (Vẫn giữ ảnh màu gốc vì quy chuẩn thương hiệu)
 const GoogleLogo = () => (
   <Image
-    source={{
-      uri: 'https://developers.google.com/identity/images/g-logo.png',
-    }}
+    source={{ uri: 'https://developers.google.com/identity/images/g-logo.png' }}
     style={styles.googleLogo}
     resizeMode="contain"
   />
@@ -40,6 +59,9 @@ export default function LoginScreen() {
   const [sendingOTP, setSendingOTP] = useState(false);
   const [showOTPForm, setShowOTPForm] = useState(false);
   const [error, setError] = useState('');
+  
+  const [focusedInput, setFocusedInput] = useState<string | null>(null);
+
   const { login, loginWithToken } = useAuth();
   const { info: schoolInfo, loading: loadingSchoolInfo } = usePublicSchoolInfo();
 
@@ -48,15 +70,11 @@ export default function LoginScreen() {
       setError('Vui lòng nhập đầy đủ thông tin đăng nhập.');
       return;
     }
-
     setError('');
     setLoading(true);
     try {
       await login(phoneOrEmail.trim(), password.trim());
     } catch (error: any) {
-      console.error('[Login Error]', error);
-      
-      // Xử lý các lỗi cụ thể
       if (error.message?.includes('user-not-found')) {
         setError('Không tìm thấy tài khoản với email này.');
       } else if (error.message?.includes('wrong-password') || error.message?.includes('invalid-credential')) {
@@ -76,20 +94,17 @@ export default function LoginScreen() {
   const handleSendOTP = async () => {
     const trimmedEmail = phoneOrEmail.trim();
     if (!trimmedEmail) {
-      setError('Vui lòng nhập email');
+      setError('Vui lòng nhập email để nhận OTP');
       return;
     }
-
     setSendingOTP(true);
     setError('');
-
     try {
       await authService.sendLoginOTP(trimmedEmail);
       setShowOTPForm(true);
       Alert.alert('Thành công', 'Mã OTP đã được gửi đến email của bạn.');
     } catch (err: any) {
-      console.error('[Send OTP Error]', err);
-      setError(err.message || 'Không thể gửi mã OTP. Vui lòng thử lại.');
+      setError(err.message || 'Không thể gửi mã OTP.');
     } finally {
       setSendingOTP(false);
     }
@@ -101,85 +116,120 @@ export default function LoginScreen() {
       setError('Vui lòng nhập đầy đủ email và mã OTP.');
       return;
     }
-
     setError('');
     setLoading(true);
-
     try {
       const response = await authService.loginWithOTP(trimmedEmail, otp.trim());
-      // authService.loginWithOTP đã đổi customToken -> Firebase idToken
       await loginWithToken(response.token);
     } catch (err: any) {
-      console.error('[OTP Login Error]', err);
-      setError(err.message || 'Mã OTP không chính xác hoặc đã hết hạn. Vui lòng thử lại.');
+      setError(err.message || 'Mã OTP không chính xác.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
+      
+      {/* Background Shapes */}
+      <View style={styles.headerBackground}>
+        <View style={styles.headerCircle1} />
+        <View style={styles.headerCircle2} />
+      </View>
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
       >
-        <View style={styles.content}>
-          {/* Header với Logo và Tên trường */}
-          <View style={styles.header}>
-            {!loadingSchoolInfo && schoolInfo.logoUrl ? (
-              <Image
-                source={{ uri: schoolInfo.logoUrl }}
-                style={styles.logo}
-                resizeMode="contain"
-              />
-            ) : (
-              <View style={styles.logoPlaceholder}>
-                <Text style={styles.logoPlaceholderText}>
-                  {loadingSchoolInfo ? 'Đang tải...' : 'Logo'}
-                </Text>
-              </View>
-            )}
-            <Text style={styles.title}>
-              {loadingSchoolInfo ? 'Hệ thống quản lý trường học' : schoolInfo.name}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          {/* Header Section */}
+          <View style={styles.topSection}>
+            <View style={styles.logoContainer}>
+              {!loadingSchoolInfo && schoolInfo.logoUrl ? (
+                <Image
+                  source={{ uri: schoolInfo.logoUrl }}
+                  style={styles.logo}
+                  resizeMode="contain"
+                />
+              ) : (
+                <View style={styles.logoPlaceholder}>
+                  {/* Thay Text LOGO bằng Icon School */}
+                  <Ionicons name="school-outline" size={40} color={COLORS.primary} />
+                </View>
+              )}
+            </View>
+            <Text style={styles.schoolName}>
+              {loadingSchoolInfo ? 'Đang tải...' : schoolInfo.name || 'School Management'}
             </Text>
+            <Text style={styles.welcomeText}>Chào mừng bạn quay trở lại!</Text>
           </View>
 
-          {/* Form */}
-          <View style={styles.form}>
-            <Text style={styles.formTitle}>Đăng nhập</Text>
-
-            {/* Email/Phone Input */}
+          {/* Form Section */}
+          <View style={styles.formContainer}>
+            
+            {/* Input Email/Phone */}
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Tên đăng nhập</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Nhập email hoặc tên đăng nhập"
-                value={phoneOrEmail}
-                onChangeText={(text) => {
-                  setPhoneOrEmail(text.trimStart());
-                  setError('');
-                }}
-                onBlur={() => setPhoneOrEmail(phoneOrEmail.trim())}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoComplete="email"
-                editable={!loading && !sendingOTP}
-              />
+              <Text style={styles.label}>Tên đăng nhập / Email</Text>
+              <View style={[
+                styles.inputWrapper,
+                focusedInput === 'email' && styles.inputFocused
+              ]}>
+                {/* Icon User/Mail ở đầu input */}
+                <Ionicons 
+                  name="person-outline" 
+                  size={20} 
+                  color={focusedInput === 'email' ? COLORS.primary : COLORS.textSecondary} 
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Nhập email hoặc số điện thoại"
+                  placeholderTextColor={COLORS.textSecondary}
+                  value={phoneOrEmail}
+                  onChangeText={(text) => {
+                    setPhoneOrEmail(text);
+                    setError('');
+                  }}
+                  onFocus={() => setFocusedInput('email')}
+                  onBlur={() => {
+                    setPhoneOrEmail(phoneOrEmail.trim());
+                    setFocusedInput(null);
+                  }}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  editable={!loading && !sendingOTP}
+                />
+              </View>
             </View>
 
-            {/* Password Input (chỉ hiện khi không dùng OTP) */}
+            {/* Password Field */}
             {!showOTPForm && (
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Mật khẩu</Text>
-                <View style={styles.passwordContainer}>
+                <View style={[
+                  styles.inputWrapper,
+                  focusedInput === 'password' && styles.inputFocused
+                ]}>
+                  {/* Icon Lock */}
+                  <Ionicons 
+                    name="lock-closed-outline" 
+                    size={20} 
+                    color={focusedInput === 'password' ? COLORS.primary : COLORS.textSecondary} 
+                    style={styles.inputIcon}
+                  />
                   <TextInput
-                    style={styles.passwordInput}
+                    style={styles.input}
                     placeholder="Nhập mật khẩu"
+                    placeholderTextColor={COLORS.textSecondary}
                     value={password}
                     onChangeText={setPassword}
+                    onFocus={() => setFocusedInput('password')}
+                    onBlur={() => setFocusedInput(null)}
                     secureTextEntry={!showPassword}
                     autoCapitalize="none"
                     editable={!loading}
@@ -188,48 +238,59 @@ export default function LoginScreen() {
                     onPress={() => setShowPassword(!showPassword)}
                     style={styles.eyeButton}
                   >
-                    <Text style={styles.eyeButtonText}>
-                      {showPassword ? '👁️' : '👁️‍🗨️'}
-                    </Text>
+                    {/* Thay Emoji mắt bằng Icon */}
+                    <Ionicons 
+                      name={showPassword ? "eye-outline" : "eye-off-outline"} 
+                      size={20} 
+                      color={COLORS.textSecondary} 
+                    />
                   </TouchableOpacity>
                 </View>
                 <TouchableOpacity
-                  onPress={() => {
-                    // TODO: Navigate to forgot password screen
-                    Alert.alert('Thông báo', 'Tính năng quên mật khẩu đang được phát triển.');
-                  }}
-                  style={styles.forgotPasswordButton}
+                  onPress={() => Alert.alert('Thông báo', 'Tính năng đang phát triển')}
+                  style={styles.forgotButton}
                 >
-                  <Text style={styles.forgotPasswordText}>Quên mật khẩu?</Text>
+                  <Text style={styles.forgotText}>Quên mật khẩu?</Text>
                 </TouchableOpacity>
               </View>
             )}
 
-            {/* OTP Input (chỉ hiện khi dùng OTP) */}
+            {/* OTP Field */}
             {showOTPForm && (
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Mã OTP</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Nhập mã OTP"
-                  value={otp}
-                  onChangeText={(text) => {
-                    setOtp(text);
-                    setError('');
-                  }}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                  editable={!loading}
-                />
+                <Text style={styles.label}>Nhập mã OTP</Text>
+                <View style={[
+                  styles.inputWrapper,
+                  focusedInput === 'otp' && styles.inputFocused
+                ]}>
+                  <Ionicons 
+                    name="shield-checkmark-outline" 
+                    size={20} 
+                    color={focusedInput === 'otp' ? COLORS.primary : COLORS.textSecondary} 
+                    style={styles.inputIcon}
+                  />
+                  <TextInput
+                    style={[styles.input, { letterSpacing: 4, fontWeight: 'bold' }]}
+                    placeholder="• • • • • •"
+                    placeholderTextColor={COLORS.textSecondary}
+                    value={otp}
+                    onChangeText={(text) => {
+                      setOtp(text);
+                      setError('');
+                    }}
+                    onFocus={() => setFocusedInput('otp')}
+                    onBlur={() => setFocusedInput(null)}
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    editable={!loading}
+                  />
+                </View>
                 <TouchableOpacity
-                  onPress={() => {
-                    setShowOTPForm(false);
-                    setOtp('');
-                    setError('');
-                  }}
-                  style={styles.backButton}
+                  onPress={() => { setShowOTPForm(false); setOtp(''); setError(''); }}
+                  style={styles.backLink}
                 >
-                  <Text style={styles.backButtonText}>← Quay lại đăng nhập với mật khẩu</Text>
+                  <Ionicons name="arrow-back" size={16} color={COLORS.primary} style={{ marginRight: 4 }} />
+                  <Text style={styles.backLinkText}>Quay lại đăng nhập mật khẩu</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -237,146 +298,160 @@ export default function LoginScreen() {
             {/* Error Message */}
             {error ? (
               <View style={styles.errorContainer}>
+                {/* Thay Emoji Warning */}
+                <Ionicons name="alert-circle-outline" size={20} color={COLORS.error} style={{ marginRight: 8 }} />
                 <Text style={styles.errorText}>{error}</Text>
               </View>
             ) : null}
 
-            {/* Login Button */}
-            {!showOTPForm ? (
-              <TouchableOpacity
-                style={[styles.button, styles.primaryButton, loading && styles.buttonDisabled]}
-                onPress={handleLogin}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.buttonText}>Đăng nhập với mật khẩu</Text>
-                )}
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={[styles.button, styles.primaryButton, loading && styles.buttonDisabled]}
-                onPress={handleLoginWithOTP}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.buttonText}>Đăng nhập với mã OTP</Text>
-                )}
-              </TouchableOpacity>
-            )}
+            {/* Main Button */}
+            <TouchableOpacity
+              style={[
+                styles.primaryButton,
+                (loading || (showOTPForm && !otp) || (!showOTPForm && (!phoneOrEmail || !password))) && styles.buttonDisabled
+              ]}
+              onPress={showOTPForm ? handleLoginWithOTP : handleLogin}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.primaryButtonText}>
+                  {showOTPForm ? 'Xác nhận OTP' : 'Đăng nhập'}
+                </Text>
+              )}
+            </TouchableOpacity>
 
-            {/* OTP Button */}
+            {/* Secondary Button */}
             {!showOTPForm && (
               <TouchableOpacity
-                style={[styles.button, styles.secondaryButton, (sendingOTP || !phoneOrEmail.trim()) && styles.buttonDisabled]}
+                style={[styles.secondaryButton, sendingOTP && styles.buttonDisabled]}
                 onPress={handleSendOTP}
                 disabled={sendingOTP || !phoneOrEmail.trim()}
               >
                 {sendingOTP ? (
-                  <ActivityIndicator color="#007AFF" />
+                  <ActivityIndicator color={COLORS.primary} size="small" />
                 ) : (
-                  <Text style={styles.secondaryButtonText}>Đăng nhập với mã OTP</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Ionicons name="keypad-outline" size={18} color={COLORS.primary} style={{ marginRight: 8 }} />
+                    <Text style={styles.secondaryButtonText}>Đăng nhập nhanh bằng OTP</Text>
+                  </View>
                 )}
               </TouchableOpacity>
             )}
 
             {/* Divider */}
-            <View style={styles.divider}>
+            <View style={styles.dividerContainer}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>Hoặc</Text>
+              <Text style={styles.dividerText}>Hoặc tiếp tục với</Text>
               <View style={styles.dividerLine} />
             </View>
 
-            {/* Google Login Button */}
+            {/* Google Button */}
             <TouchableOpacity
-              style={[styles.button, styles.googleButton, loading && styles.buttonDisabled]}
-              onPress={() => {
-                Alert.alert('Thông báo', 'Tính năng đăng nhập với Google đang được phát triển.');
-              }}
+              style={styles.googleButton}
+              onPress={() => Alert.alert('Thông báo', 'Tính năng đang phát triển')}
               disabled={loading}
             >
-              <View style={styles.googleButtonContent}>
-                <GoogleLogo />
-                <Text style={styles.googleButtonText}>Đăng nhập với Google</Text>
-              </View>
+              <GoogleLogo />
+              <Text style={styles.googleButtonText}>Google</Text>
             </TouchableOpacity>
+
           </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: COLORS.background,
+  },
+  headerBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '40%',
+    backgroundColor: COLORS.primary,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    overflow: 'hidden',
+  },
+  headerCircle1: {
+    position: 'absolute',
+    top: -50,
+    left: -50,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  headerCircle2: {
+    position: 'absolute',
+    top: 20,
+    right: -30,
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 40,
   },
-  content: {
-    width: '100%',
-    maxWidth: 400,
-    alignSelf: 'center',
-  },
-  header: {
+  topSection: {
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 30,
+  },
+  logoContainer: {
+    width: 80,
+    height: 80,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
   },
   logo: {
-    width: 64,
-    height: 64,
-    marginBottom: 16,
-    borderRadius: 8,
+    width: '100%',
+    height: '100%',
   },
   logoPlaceholder: {
-    width: 64,
-    height: 64,
-    backgroundColor: '#e0e0e0',
-    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
   },
-  logoPlaceholderText: {
-    fontSize: 12,
-    color: '#999',
-  },
-  title: {
+  schoolName: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
+    color: '#fff',
     textAlign: 'center',
+    marginBottom: 4,
   },
-  subtitle: {
+  welcomeText: {
     fontSize: 14,
-    color: '#666',
+    color: 'rgba(255, 255, 255, 0.9)',
     textAlign: 'center',
   },
-  form: {
+  formContainer: {
     backgroundColor: '#fff',
+    borderRadius: 24,
     padding: 24,
-    borderRadius: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    marginBottom: 16,
-  },
-  formTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 24,
-    textAlign: 'center',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.05,
+    shadowRadius: 20,
+    elevation: 4,
   },
   inputGroup: {
     marginBottom: 16,
@@ -384,134 +459,142 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: COLORS.text,
     marginBottom: 8,
+    marginLeft: 4,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: '#fff',
-    color: '#333',
-  },
-  passwordContainer: {
+  // Style mới cho Input bao gồm cả Icon
+  inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: COLORS.inputBg,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
+    borderColor: COLORS.inputBg,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+  },
+  inputFocused: {
+    borderColor: COLORS.primary,
     backgroundColor: '#fff',
   },
-  passwordInput: {
+  inputIcon: {
+    marginRight: 8,
+  },
+  input: {
     flex: 1,
-    padding: 12,
+    paddingVertical: 14,
     fontSize: 16,
-    color: '#333',
+    color: COLORS.text,
   },
   eyeButton: {
-    padding: 12,
+    padding: 10,
   },
-  eyeButtonText: {
-    fontSize: 18,
-  },
-  forgotPasswordButton: {
+  forgotButton: {
     alignSelf: 'flex-end',
     marginTop: 8,
+    marginRight: 4,
   },
-  forgotPasswordText: {
-    fontSize: 12,
-    color: '#007AFF',
+  forgotText: {
+    color: COLORS.primary,
+    fontWeight: '600',
+    fontSize: 13,
   },
-  backButton: {
-    marginTop: 8,
+  backLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
   },
-  backButtonText: {
-    fontSize: 12,
-    color: '#007AFF',
+  backLinkText: {
+    color: COLORS.primary,
+    fontWeight: '500',
+    fontSize: 14,
   },
   errorContainer: {
-    backgroundColor: '#fee',
-    borderColor: '#fcc',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
     borderWidth: 1,
-    borderRadius: 8,
+    borderColor: '#FECACA',
+    borderRadius: 10,
     padding: 12,
     marginBottom: 16,
   },
   errorText: {
-    color: '#c33',
-    fontSize: 14,
-  },
-  button: {
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-    minHeight: 48,
+    color: COLORS.error,
+    fontSize: 13,
+    flex: 1,
   },
   primaryButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  primaryButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   secondaryButton: {
     backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#007AFF',
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
   },
-  googleButton: {
-    backgroundColor: '#DB4437',
+  secondaryButtonText: {
+    color: COLORS.primary,
+    fontSize: 15,
+    fontWeight: '600',
   },
   buttonDisabled: {
     opacity: 0.6,
   },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  secondaryButtonText: {
-    color: '#007AFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  googleButtonContent: {
+  dividerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-  },
-  googleLogo: {
-    width: 20,
-    height: 20,
-    marginRight: 8,
-  },
-  googleButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 16,
+    marginVertical: 24,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#ddd',
+    backgroundColor: '#E5E7EB',
   },
   dividerText: {
     marginHorizontal: 12,
+    color: '#9CA3AF',
     fontSize: 12,
-    color: '#999',
-    textTransform: 'uppercase',
+    fontWeight: '500',
   },
-  footer: {
+  googleButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 16,
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingVertical: 14,
   },
-  footerText: {
-    fontSize: 12,
-    color: '#999',
+  googleLogo: {
+    width: 20,
+    height: 20,
+    marginRight: 10,
+  },
+  googleButtonText: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

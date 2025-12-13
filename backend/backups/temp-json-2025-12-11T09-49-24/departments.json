@@ -1,0 +1,214 @@
+[
+  {
+    "_id": "69171c0ceb38f24b30e4eab9",
+    "name": "tổ toán tin",
+    "code": "TOANTIN",
+    "description": "",
+    "headTeacherId": null,
+    "subjectIds": [
+      "68dcb4da896a1f27984115c2",
+      "68e0b62b8625a967d638e7e4"
+    ],
+    "status": "inactive",
+    "notes": "",
+    "createdAt": "2025-11-14T12:09:48.884Z",
+    "updatedAt": "2025-11-19T14:16:54.391Z",
+    "__v": 0,
+    "teacherIds": []
+  },
+  {
+    "_id": "691dc174e2e8b40c8f47ae7c",
+    "name": "Tổ Văn-Sử-Địa",
+    "code": "VSD",
+    "description": "Tổ Văn-Sử-Địa",
+    "headTeacherId": null,
+    "subjectIds": [
+      "68e0b4a88625a967d638e7dc",
+      "68dcec3dcb90a9a8aa83398b",
+      "68e0b61c8625a967d638e7e2"
+    ],
+    "status": "inactive",
+    "notes": "",
+    "createdAt": "2025-11-19T13:09:09.007Z",
+    "updatedAt": "2025-11-21T06:04:22.875Z",
+    "__v": 0,
+    "teacherIds": []
+  },
+  {
+    "_id": "691de3690a3f64cd9ea6dac7",
+    "name": "Tổ Toán - Lý - Hóa",
+    "code": "TLH",
+    "description": "Tổ Toán - Lý - Hóa",
+    "headTeacherId": null,
+    "teacherIds": [],
+    "subjectIds": [
+      "68dcb4da896a1f27984115c2",
+      "68e0b4d78625a967d638e7e0",
+      "68e0b4878625a967d638e7da"
+    ],
+    "status": "inactive",
+    "notes": "",
+    "createdAt": "2025-11-19T15:34:01.349Z",
+    "updatedAt": "2025-11-21T06:04:09.769Z",
+    "__v": 0
+  },
+  {
+    "_id": "691de3c953a614eb16b6d52b",
+    "name": "Tổ tin",
+    "code": "TIN",
+    "description": "",
+    "headTeacherId": null,
+    "teacherIds": [],
+    "subjectIds": [
+      "68e0b62b8625a967d638e7e4",
+      "68e092be0a4a0bed113b57cd",
+      "68e0b6808625a967d638e7ea",
+      "68dcb53c896a1f27984115c4"
+    ],
+    "status": "inactive",
+    "notes": "",
+    "createdAt": "2025-11-19T15:35:37.054Z",
+    "updatedAt": "2025-11-21T06:04:12.210Z",
+    "__v": 0
+  },
+  {
+    "_id": "691ff674fd3b341b389595e9",
+    "name": "toanlyhoa",
+    "code": "TOANLYHOA",
+    "description": "",
+    "headTeacherId": null,
+    "teacherIds": [],
+    "subjectIds": [
+      "68dcb4da896a1f27984115c2",
+      "68e0b4d78625a967d638e7e0",
+      "68e0b4878625a967d638e7da"
+    ],
+    "year": "Năm học 2025 - 2026",
+    "status": "inactive",
+    "notes": "toanlyhoa",
+    "createdAt": "2025-11-21T05:19:48.153Z",
+    "updatedAt": "2025-12-03T13:22:54.219Z",
+    "__v": 0,
+    "isDeleted": true
+  },
+  {
+    "_id": "69200edd36e8c58476fa6acc",
+    "name": "tổ công nghệ giáo dục,",
+    "code": "GDCD",
+    "description": "",
+    "headTeacherId": "68e6115ac5079257d0121061",
+    "teacherIds": [
+      "68e6115ac5079257d0121061",
+      "68e60316e54152f7b922310a",
+      "690494db035c027f3750e4be",
+      "68e6115ac5079257d012107d"
+    ],
+    "subjectIds": [
+      "68e0b65f8625a967d638e7e8",
+      "68e092be0a4a0bed113b57cd",
+      "68e0b6808625a967d638e7ea"
+    ],
+    "year": "Năm học 2026 - 2027",
+    "status": "active",
+    "notes": "",
+    "createdAt": "2025-11-21T07:03:57.310Z",
+    "updatedAt": "2025-11-21T07:04:06.048Z",
+    "schoolYear": "Năm học 2026 - 2027",
+    "__v": 0
+  },
+  {
+    "_id": "6921671bebcee43cfb3f9df9",
+    "name": "Tổ văn toán hóa",
+    "code": "TỔ VĂN TOÁN HÓA",
+    "description": "Tổ văn toán hóa",
+    "headTeacherId": null,
+    "teacherIds": [
+      "68e6115ac5079257d012102e",
+      "68e5f585e54152f7b9222fee",
+      "68e6115ac5079257d012103e",
+      "690492700725b6979e46953f"
+    ],
+    "subjectIds": [
+      "68e0b4a88625a967d638e7dc",
+      "68e0b4878625a967d638e7da",
+      "68dcb4da896a1f27984115c2"
+    ],
+    "year": "Năm học 2028 - 2029",
+    "status": "active",
+    "notes": "",
+    "createdAt": "2025-11-22T07:32:43.484Z",
+    "updatedAt": "2025-11-27T05:20:02.023Z",
+    "schoolYear": "Năm học 2028 - 2029",
+    "__v": 0
+  },
+  {
+    "_id": "6927df7b47e6da006d075f5d",
+    "name": "van anh",
+    "code": "VAN ANH",
+    "description": "",
+    "headTeacherId": null,
+    "teacherIds": [],
+    "subjectIds": [
+      "68e0b4a88625a967d638e7dc",
+      "68dcb53c896a1f27984115c4"
+    ],
+    "year": "Năm học 2025 - 2026",
+    "status": "inactive",
+    "notes": "",
+    "createdAt": "2025-11-27T05:19:55.162Z",
+    "updatedAt": "2025-12-06T10:29:13.438Z",
+    "schoolYear": "Năm học 2025 - 2026",
+    "__v": 0,
+    "isDeleted": true
+  },
+  {
+    "_id": "692a8ed51f1f7d176cb66773",
+    "name": "d",
+    "code": "D",
+    "description": "d",
+    "headTeacherId": null,
+    "teacherIds": [],
+    "subjectIds": [
+      "68e0b4b68625a967d638e7de",
+      "68e0b62b8625a967d638e7e4",
+      "68e0b61c8625a967d638e7e2"
+    ],
+    "year": "Năm học 2025 - 2026",
+    "schoolYear": "Năm học 2025 - 2026",
+    "status": "inactive",
+    "isDeleted": true,
+    "notes": "",
+    "createdAt": "2025-11-29T06:12:37.618Z",
+    "updatedAt": "2025-12-06T10:29:11.136Z",
+    "__v": 0
+  },
+  {
+    "_id": "692c0c85950aba5e3eac39b4",
+    "name": "giáo dục",
+    "code": "GIÁO_DỤC",
+    "description": "",
+    "headTeacherId": "69274f1e54b9f8bc58128c03",
+    "teacherIds": [
+      "69274f1e54b9f8bc58128c03",
+      "68e6115ac5079257d012107d",
+      "68e60316e54152f7b922310a",
+      "68e6115ac5079257d0121061",
+      "690494db035c027f3750e4be",
+      "69274ee254b9f8bc58128b67",
+      "69274ebb54b9f8bc58128ad1"
+    ],
+    "subjectIds": [
+      "68e0b6808625a967d638e7ea",
+      "68e0b65f8625a967d638e7e8",
+      "68e092be0a4a0bed113b57cd"
+    ],
+    "year": "2025-2026",
+    "schoolYear": "2025-2026",
+    "status": "active",
+    "isDeleted": false,
+    "notes": "",
+    "createdAt": "2025-11-30T09:21:09.792Z",
+    "updatedAt": "2025-11-30T09:24:35.038Z",
+    "__v": 0
+  }
+]

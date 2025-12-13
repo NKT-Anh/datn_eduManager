@@ -1,0 +1,33 @@
+[
+  {
+    "_id": "68ed19aae29cf6b55083b969",
+    "name": "10",
+    "level": "high",
+    "description": "Khối 10",
+    "createdAt": "2025-10-13T15:24:26.940Z",
+    "updatedAt": "2025-11-14T07:33:52.936Z",
+    "__v": 0
+  },
+  {
+    "_id": "6916da11299e5ba955fac96d",
+    "name": "11",
+    "code": "GRADE11",
+    "level": "high",
+    "order": 2,
+    "description": "Khối 11",
+    "createdAt": "2025-11-14T07:28:17.180Z",
+    "updatedAt": "2025-11-14T07:28:17.180Z",
+    "__v": 0
+  },
+  {
+    "_id": "6916da11299e5ba955fac970",
+    "name": "12",
+    "code": "GRADE12",
+    "level": "high",
+    "order": 3,
+    "description": "Khối 12",
+    "createdAt": "2025-11-14T07:28:17.188Z",
+    "updatedAt": "2025-11-14T07:28:17.188Z",
+    "__v": 0
+  }
+]
